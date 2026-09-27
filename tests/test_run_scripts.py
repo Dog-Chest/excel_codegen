@@ -10,11 +10,17 @@ from __future__ import annotations
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from excel_codegen import create_template, load_config
+
+#: 这两个用例**真的执行**生成的 ``.sh``（用桩程序冒充 excel-codegen）。
+#: Windows 上跑不了：PATH 是 Unix 格式、桩程序是无扩展名的 shell 脚本。
+#: ``.bat`` 那一路改为断言内容（见 test_bat_uses_windows_separators_and_crlf）。
+posix_only = pytest.mark.skipif(sys.platform == "win32", reason="执行 .sh 需要 POSIX shell")
 
 CONFIG = """\
 version: 1
@@ -63,6 +69,7 @@ def test_generates_both_scripts_next_to_workbook(config_path: Path, tmp_path: Pa
     assert "render -c" in sh.read_text(encoding="utf-8")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows 没有可执行位")
 def test_sh_is_executable(config_path: Path, tmp_path: Path) -> None:
     create_template(load_config(config_path), tmp_path / "template.xlsx", cases=1, overwrite=True)
     mode = (tmp_path / "template_render.sh").stat().st_mode
@@ -111,6 +118,7 @@ def test_bat_prefers_uv_with_fallback(config_path: Path, tmp_path: Path) -> None
     assert "\n  excel-codegen render" in bat.replace("\r\n", "\n")
 
 
+@posix_only
 def test_generated_sh_actually_runs(config_path: Path, tmp_path: Path) -> None:
     """真跑一遍：桩程序把收到的参数写下来，脚本应当转发对、并把退出码带出去。"""
     create_template(load_config(config_path), tmp_path / "template.xlsx", cases=1, overwrite=True)
@@ -144,6 +152,7 @@ def test_generated_sh_actually_runs(config_path: Path, tmp_path: Path) -> None:
     assert "[完成]" in proc.stdout
 
 
+@posix_only
 def test_generated_sh_propagates_failure(tmp_path: Path) -> None:
     """工具失败时脚本要以非 0 退出（CI 或批处理里能看出来）。"""
     path = tmp_path / "demo.yaml"
