@@ -22,7 +22,7 @@ from .excel_io import (
 )
 from .jinja_env import build_environment, pvs, wrap
 from .models import CaseData, ProjectConfig, RenderResult, TemplateDef
-from .utils import ExcelError, RenderError, VarValue, safe_filename, to_text
+from .utils import ExcelError, RenderError, VarValue, column_index_to_letter, safe_filename, to_text
 
 __all__ = [
     "FilterValue",
@@ -30,7 +30,9 @@ __all__ = [
     "build_context",
     "build_environment",
     "case_matches",
+    "check_asserts",
     "collect_variables",
+    "compile_asserts",
     "compile_case_filter",
     "export_files",
     "filter_context",
@@ -148,6 +150,68 @@ def compile_case_filter(template: TemplateDef, *, env: Environment | None = None
         return environment.compile_expression(template.case_filter, undefined_to_none=False)
     except TemplateSyntaxError as exc:
         raise RenderError(f"模板 {template.name!r} 的 case_filter 语法错误：第 {exc.lineno} 行: {exc.message}") from exc
+
+
+def compile_asserts(config: ProjectConfig, *, env: Environment | None = None) -> list[tuple[str, Any]]:
+    """编译根级 ``asserts``（跨变量校验），返回 ``[(原始表达式, 编译结果), …]``。
+
+    语法错误在这里就报出来 —— 与 ``case_filter`` 同一套表达式机制，所以 ``x.value``
+    那套写法与报错风格都一致。
+    """
+    if not config.asserts:
+        return []
+    environment = env or build_environment()
+    compiled: list[tuple[str, Any]] = []
+    for index, expression in enumerate(config.asserts, start=1):
+        try:
+            program = environment.compile_expression(expression, undefined_to_none=False)
+        except TemplateSyntaxError as exc:
+            raise RenderError(
+                f"asserts 第 {index} 条语法错误：第 {exc.lineno} 行: {exc.message}（{expression!r}）"
+            ) from exc
+        compiled.append((expression, program))
+    return compiled
+
+
+def check_asserts(
+    config: ProjectConfig,
+    global_values: Mapping[str, VarValue],
+    cases: Sequence[CaseData],
+    *,
+    env: Environment | None = None,
+) -> None:
+    """对每个 Case 求值 ``asserts``；有假就抛 :class:`ExcelError`。
+
+    单变量约束拦不住"吃水不能超过型深"这类**组合**错误，这一层补的就是它。
+    """
+    compiled = compile_asserts(config, env=env)
+    if not compiled:
+        return
+    problems: list[str] = []
+    for case in cases:
+        context = build_context(global_values, case.values, case.name)
+        for expression, program in compiled:
+            try:
+                passed = bool(program(**filter_context(context)))
+            except TemplateError as exc:
+                raise RenderError(
+                    f"asserts {expression!r} 在 Case {case.name!r} 求值失败: {exc}"
+                    "（表达式里引用的变量必须能在 Global / Local 表中取到）"
+                ) from exc
+            except Exception as exc:
+                raise RenderError(
+                    f"asserts {expression!r} 在 Case {case.name!r} 求值失败: {exc}"
+                    "（数值比较请写 x.value，例如 draft.value <= d_tank.value）"
+                ) from exc
+            if not passed:
+                column = column_index_to_letter(case.column)
+                problems.append(f"  Case '{case.name}'（Local 第 {column} 列）不满足：{expression}")
+    if problems:
+        raise ExcelError(
+            f"参数不满足 YAML 里的 asserts（跨变量校验），共 {len(problems)} 处：\n"
+            + "\n".join(problems)
+            + "\n  → 改 Excel 里的取值，或调整 YAML 里的 asserts"
+        )
 
 
 def case_matches(
@@ -272,6 +336,8 @@ def render_all(
 
     # 取值约束（min / max / choices / pattern）：声明了就一定查，别让手滑的数字生成出错误代码
     check_value_constraints(config, global_values, cases)
+    # 跨变量校验（asserts）：拦"吃水不能超过型深"这类组合错误
+    check_asserts(config, global_values, cases)
 
     if only_cases:
         wanted = [to_text(name).strip() for name in only_cases]

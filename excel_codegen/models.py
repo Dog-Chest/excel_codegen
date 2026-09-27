@@ -479,6 +479,12 @@ class ProjectConfig(BaseModel):
     variables: VariablesConfig = Field(default_factory=VariablesConfig)
     templates: list[TemplateDef]
 
+    #: **跨变量校验**：对**每个 Case** 求值的 Jinja 表达式，结果为假就报错（见指南 §3.6）。
+    #: 单变量约束（``min`` / ``max`` / ``choices`` / ``pattern``）拦不住"吃水不能超过型深"
+    #: 这类**组合**错误，这一层补的就是它。写法与 ``case_filter`` 一样：裸变量是组合值，
+    #: **数值比较请写 ``.value``** —— ``asserts: ["draft.value <= d_tank.value"]``。
+    asserts: list[str] = Field(default_factory=list)
+
     #: 配置文件所在目录（加载时自动填充，用于解析相对路径的 template_file）。
     source_dir: Path | None = Field(default=None, exclude=True)
     #: 配置文件本身的绝对路径（加载时自动填充）。生成的运行脚本与 HOWTO 表要用它。
@@ -491,6 +497,21 @@ class ProjectConfig(BaseModel):
     #: 工作簿旁边**是否真的有一键刷新脚本**（由 create_template / write_results 填）。
     #: HOWTO 表据此决定要不要写「懒得开终端就双击那个脚本」。
     scripts_enabled: bool = Field(default=False, exclude=True)
+
+    @field_validator("asserts", mode="before")
+    @classmethod
+    def _check_asserts(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+            raise ValueError('asserts 必须是表达式列表，例如 asserts: ["draft.value <= d_tank.value"]')
+        out: list[str] = []
+        for index, item in enumerate(value, start=1):
+            text = to_text(item).strip()
+            if not text:
+                raise ValueError(f"asserts 第 {index} 条是空的（不想要就删掉它）")
+            out.append(text)
+        return out
 
     @model_validator(mode="after")
     def _validate_config(self) -> ProjectConfig:
@@ -689,6 +710,9 @@ def _merge_into(
                 warnings=warnings,
             )
 
+    # 跨变量校验都保留下来（顺序：先被 extends 的在前），互不覆盖
+    merged["asserts"].extend(raw.get("asserts") or [])
+
     for template in raw.get("templates") or []:
         if not isinstance(template, dict):
             merged["templates"].append(template)
@@ -723,7 +747,7 @@ def _load_with_extends(
     if not isinstance(parents, list) or not all(isinstance(p, str) for p in parents):
         raise ConfigError(f"extends 必须是文件路径的列表，例如 extends: [rules/a.yaml, rules/b.yaml]: {config_path}")
 
-    merged: dict = {"variables": {"global": [], "local": []}, "templates": []}
+    merged: dict = {"variables": {"global": [], "local": []}, "templates": [], "asserts": []}
     origins: dict[str, Path] = {}
 
     for relative in parents:

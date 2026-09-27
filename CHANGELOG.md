@@ -61,6 +61,26 @@
 新增 `tests/test_check_report.py` 9 项（差异汇总的 4 种形态 + CLI 表格模式 + `--json` 的
 新鲜 / 过期 / 参数漂移 / 无渲染记录）。
 
+### 2. 跨变量校验：根级 `asserts`
+
+单变量约束只能看一列；工程上真正容易出事的是**组合**（吃水超过型深、内压工况带真空压力）。
+
+```yaml
+asserts:
+  - "draft.value <= d_tank.value"
+  - "not (kind.value == 'INT' and p_vp.value > 0)"
+```
+
+* 对**每个 Case** 求值，为假就报错并指名道姓（哪张表、哪一列、哪个 Case、哪条规则）；
+* 复用 `case_filter` 的表达式机制（`renderer.compile_asserts` / `check_asserts`），
+  所以 `.value` 语义与报错风格完全一致：裸变量是组合值，**数值比较必须写 `.value`**；
+* `render` / `validate -x` / `check` 都会查；不带 `--excel` 的 `validate` 只编译（查语法）；
+* `extends` 进来的文件里的 `asserts` 全部保留（先被 extends 的在前）。
+
+`validate` 会把 assert 清单一并打出来，方便一眼看到"这本工作簿受哪些规则约束"。
+
+新增 `tests/test_asserts.py` 15 项（配置期 5、求值 6、与 extends 的关系 1、端到端 3）。
+
 ---
 
 ## 0.6.0 — 取值约束 / `extends` / 行内 `{% if %}` / 质量护栏（2026-09-27）

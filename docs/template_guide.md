@@ -47,6 +47,7 @@ Jinja2 语法速查、Excel 表结构与填写规则、输出布局、导出代�
 | `excel` | mapping | 否 | 见下 | Excel 相关配置 |
 | `variables` | mapping | 否 | 空 | 变量定义：`global` / `local` |
 | `templates` | list | **是** | — | 至少一个模板 |
+| `asserts` | list[str] | 否 | `[]` | **跨变量校验**：对每个 Case 求值的表达式，为假就报错。见 3.6 |
 
 ### 2.2 `excel`
 
@@ -202,6 +203,42 @@ ERROR 参数取值不满足变量声明的约束，共 2 处：
   Local Parameter 第 F 列 'EXT-T15' 第 2 行 'kind'：取值 （空） 不在允许列表 EXT/INT 里
   → 改 Excel 里的取值，或放宽 YAML 里的 min / max / choices / pattern
 ```
+
+### 3.6 跨变量校验：`asserts`
+
+单变量约束（3.5）只能看一列。工程上真正容易出事的往往是**组合**：吃水超过了型深、
+液舱高度超过了双层底、内外压规则集混用。根级 `asserts` 就是补这一层：
+
+```yaml
+asserts:
+  - "draft.value <= d_tank.value"                       # 吃水不能超过型深
+  - "0 < rho_tank.value < 1100"                         # 密度得在合理区间
+  - "not (kind.value == 'INT' and p_vp.value > 0)"      # 内压工况不该有真空压力
+```
+
+**对每个 Case 求值**，为假就报错并指名道姓：
+
+```
+ERROR 参数不满足 YAML 里的 asserts（跨变量校验），共 1 处：
+  Case 'EXT-T15'（Local 第 F 列）不满足：draft.value <= d_tank.value
+  → 改 Excel 里的取值，或调整 YAML 里的 asserts
+```
+
+写法与 `case_filter` **完全一致**（同一套表达式机制）：
+
+| 想比较什么 | 怎么写 |
+| --- | --- |
+| 数值 | `draft.value <= d_tank.value` —— **必须写 `.value`**；裸变量是组合值（字符串） |
+| 文本 | `kind.value == 'EXT'` 或 `kind == 'EXT'`（无前后缀时两者等价） |
+| 逻辑 | `and` / `or` / `not`、括号 |
+| 参与运算 | `.value` 拿纯值，`min()` / `max()` / `abs()` 等都可用 |
+
+要点：
+
+* 用 `--excel` 跑 `validate` 时会**连值一起查**；不带 `--excel` 只编译表达式（查语法）。
+* `render` / `check` 每次读表都查一遍 —— 与取值约束一样，是"声明了就一定查"。
+* 被 `extends` 进来的文件里的 `asserts` 会**全部保留**（顺序：先被 extends 的在前）。
+* 一个 Case 违反多条会全部列出来，不用改一条跑一次。
 
 ---
 

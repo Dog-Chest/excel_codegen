@@ -43,7 +43,9 @@ from .models import FIRST_CASE_COLUMN, ProjectConfig, RenderResult, load_config
 from .renderer import (
     RenderOutput,
     build_environment,
+    check_asserts,
     collect_variables,
+    compile_asserts,
     export_files,
     render_all,
     validate_template,
@@ -342,6 +344,12 @@ def validate_command(
         environment = build_environment()
         # 派生参数：语法 / 引用范围 / 循环 / 能否翻译成 Excel 公式
         warnings.extend(derived_validate_config(project, env=environment))
+        # 跨变量校验：表达式先编译一遍（语法错误在这里就报，别等渲染）
+        asserts = compile_asserts(project, env=environment)
+        if asserts:
+            console.print(f"  [dim]asserts（跨变量校验）{len(asserts)} 条：[/]")
+            for expression, _ in asserts:
+                console.print(f"      {expression}")
 
         template_table = Table(title="模板清单", header_style="bold cyan")
         template_table.add_column("名称", style="bold")
@@ -453,6 +461,7 @@ def validate_command(
                 workbook.close()
             # 取值约束：这一条会让"表里填错了一个数字"在 validate 阶段就暴露
             check_value_constraints(project, global_values, cases)
+            check_asserts(project, global_values, cases, env=environment)
             excel_table = Table(title="Excel 检查", header_style="bold cyan")
             excel_table.add_column("项目", style="bold")
             excel_table.add_column("内容")
