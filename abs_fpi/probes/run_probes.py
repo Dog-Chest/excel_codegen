@@ -389,6 +389,10 @@ def main() -> int:
     probe_template_sheet()
     probe_gbk()
     probe_cli_writeback()
+
+    banner("探针 G  Tank Data 成员表（第三层作用域）   (0.8.0)")
+    print("  探针 G 需要一本真的 abs_fpi_internal.xlsx，独立运行：")
+    print("      python probe_group_table.py")
     print("\n完成。")
     return 0
 

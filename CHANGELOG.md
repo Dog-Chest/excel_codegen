@@ -35,6 +35,31 @@
 新增 `tests/test_local_direction.py` 17 项（建表 / 读值 / 两种布局对拍 / 公式值对拍 /
 插行加工况 / 约束报错定位）。
 
+### 2. abs_fpi 重做工作表：舱数据改用成员表
+
+0.7.0 加的能力（`variables.group`，指南 §18）在真实项目里落地：
+
+* `abs_fpi_internal.yaml` 的 13 个舱参数从 `local` 挪进 `variables.group`
+  （工作表 `Tank Data`，一行一个舱：WBT6 / WBT7 / COT1）；`local.tank_ref` 变成
+  **指针**（带 `choices` 数据有效性）。
+* `compose.py` 学会合并成员表声明：`sheet` / `key` 必须一致，成员行与变量按名字合并
+  （一本工作簿只有一张成员表）。
+* `fill_cases.py` 改成"逐工况只写 `tank_ref` + 逐工况参数，舱数据写进 Tank Data"。
+* `abs_fpi_external.xlsx` 不受影响；两本内压相关的工作簿**重建**（多了 `Tank Data` 表）。
+
+迁移的正确性证据：
+
+| 断言 | 结果 |
+| --- | --- |
+| 生成的 `.js` 与迁移前**逐字节相同** | ✅ 只有汇总 `.md` 的"出处"一列改了话术 |
+| 改一次 WBT6 的 `l_tank` → 两个 WBT6 工况一起变，WBT7 / COT1 不动 | ✅ `probes/probe_group_table.py` |
+| 改一个 Case 的 `tank_ref` → 整组舱数据换掉 | ✅ 同上 |
+| `tank_ref` 指向不存在的成员 → 明确报错（`choices` 先拦；去掉 `choices` 是成员表查找拦） | ✅ 两种报错都点名成员 + 列可选值 |
+| 公式模式下 Case → 舱 → 变量的两级 `INDEX/MATCH` 链条 | ✅ 工具自带 `check` 会整条算一遍；28 项公式求值 0 失败 |
+
+新增 `abs_fpi/probes/probe_group_table.py`（5 步实测）。`abs_fpi/README.md`、
+`TEMPLATES.md`、`FINDINGS.md` #3(a) 从"尚未迁移的能力边界"改成"已迁移 + 证据"。
+
 ---
 
 ## 0.7.0 — 发布前打磨：校验 / 复用 / 体检 / 第三层作用域（2026-09-27）

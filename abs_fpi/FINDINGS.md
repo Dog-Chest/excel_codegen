@@ -9,7 +9,12 @@
 每条都给了最小复现，`probes/run_probes.py` 可以一次跑完全部探针。
 
 > **修复会话（2026-09-24 ｜ `excel_codegen` 0.2.0）**：本报告的 12 条待修项中 **11 条已修**，
-> 剩下 1 条（#3(a)「第三层作用域」）判定为**能力边界**，已写进 `docs/template_guide.md` 的
+> #3(a)「第三层作用域」当时判定为**能力边界**，0.7.0 补上了能力（`variables.group` 成员表，
+> 指南 §18）、0.8.0 在本项目里落地（`Tank Data` 表，见 `probes/probe_group_table.py`）。
+> 另一条（#3(b) per-template Case 过滤）由 0.6.0 的 `case_filter` 解决。
+> 原文保留在下面，括号里的"已解决"标注是回填的。
+>
+> 当时写下的那句已写进 `docs/template_guide.md` 的
 > 「能力边界与不适用场景」一节。逐条状态与复测证据见文末「修复复测记录」；
 > 下面的报告正文**保持原样**（它是 0.1.0 的快照，不要照它去判断 0.2.0 的行为）。
 >
@@ -35,7 +40,7 @@
 | P1-7 | #3(b) | 模板 × Case 是交叉积，没有 per-template 的 Case 过滤 | `renderer.render_all` + `models.TemplateDef` | 中 |
 | P2-8 | #4 | `{{ x.value }}` 不做整数浮点规范化，与文档承诺不符 | `utils.VarValue` / 文档 | 小 |
 | P2-9 | #6 | YAML 同键重复被静默吞掉 | `models.load_config` | 小 |
-| P2-10 | #3(a) | 没有"第三层作用域"（舱/设备子表） | `models` | 大（能力边界） |
+| P2-10 | #3(a) | 没有"第三层作用域"（舱/设备子表） | `models` | ✅ 0.7.0 加 `variables.group`；0.8.0 在 abs_fpi 落地 |
 | P2-11 | #7 | CLI `init --cases` 只接受整数 | `cli.py:93` | 小 |
 | P2-12 | #8.4 | 隐藏 `Template` 表可编辑但改了没用，表内无提示 | `excel_io._build_template_sheet` | 极小 |
 
@@ -278,6 +283,12 @@ WBT6 被两个工况用到，它的数据就在表里写两遍；改一个舱的
 
 这不是"做错了"，是**能力边界**，但值得写进文档的"不适用场景"里，
 因为它直接决定了移植方案（我这一版就是摊平写的，`tank_ref` 列只作标注）。
+
+> **已解决（0.7.0 加能力，0.8.0 落地）**：`variables.group` 补上了这一层
+> （指南 §18）。`abs_fpi_internal.yaml` / `abs_fpi.yaml` 现在把 13 个舱参数放在
+> `Tank Data` 成员表里一行一个舱，`local.tank_ref` 只是指针。
+> 迁移后生成的 `.js` **逐字节不变**（只有汇总 md 的出处一列改了话术），
+> 证据与实测见 `probes/probe_group_table.py`。
 
 ### (b) 模板 × Case 是交叉积，没有 per-template 的 Case 过滤
 

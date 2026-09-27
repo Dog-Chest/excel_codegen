@@ -1,13 +1,24 @@
-"""把 ``Local Parameter`` 表的 Case 列填成真实工况。
+"""把 ``Local Parameter`` 的 Case 列与 ``Tank Data`` 成员表填成真实工况。
 
 ``excel-codegen init`` 只会把每个变量的 YAML ``default`` 复制到每一列 Case，
 所以"逐工况不同"的取值必须有人填 —— 这个脚本就是那个"人"。
-它只动 ``Local Parameter`` 的 E 列及右侧，不碰 Global 表、不碰模板表。
+它只动参数表（Local 的 E 列及右侧、Tank Data 的 B 列及右侧），不碰 Global 表、不碰模板表。
 
 用法::
 
-    python fill_cases.py external.xlsx
-    python fill_cases.py internal.xlsx
+    python fill_cases.py abs_fpi_external.xlsx
+    python fill_cases.py abs_fpi_internal.xlsx
+    python fill_cases.py ABS_FPI_load_cases.xlsx
+
+舱数据（0.8.0 起）
+------------------
+工具的第三层作用域（``variables.group``，指南 §18）把"舱"从 local 里拆了出来：
+一个舱的参数只写一遍，放在 ``Tank Data`` 表（一行一个舱、B 列起一个变量一列），
+工况用自己的 ``tank_ref`` 指向它。所以这里：
+
+* :data:`TANKS` 是舱的唯一真源；
+* 每个 Case 只写自己的 ``tank_ref`` 和逐工况参数；
+* 两个内压工况用同一个舱（WBT6）时，舱尺寸只出现一次。
 """
 
 from __future__ import annotations
@@ -21,6 +32,7 @@ from openpyxl.utils import get_column_letter
 
 FIRST_CASE_COLUMN = 5  # E 列
 LOCAL_SHEET = "Local Parameter"
+GROUP_SHEET = "Tank Data"
 
 # --------------------------------------------------------------------------- #
 # 外压 ABS FPI 5A-3-2/5.5 -- 3 个工况（取自原手写脚本）
@@ -62,57 +74,61 @@ EXTERNAL: dict[str, dict[str, object]] = {
 }
 
 # --------------------------------------------------------------------------- #
+# 舱数据（第三层作用域：一行一个舱，只写一遍）
+# --------------------------------------------------------------------------- #
+TANKS: dict[str, dict[str, object]] = {
+    "WBT6": {
+        "rho_tank": 1025,
+        "l_tank": 42,
+        "b_tank": 32,
+        "h_tank": 32,
+        "eta_deck": 0,
+        "eta_overflow": 0,
+        "C_dp": 1,
+        "C_ru": 1,
+        "p_vp": 0,
+        "GM_full_in": 0,
+        "k_r_in": 0,
+        "tank_is_ballast": 1,
+        "member_11_17": 0,
+    },
+    "WBT7": {
+        "rho_tank": 1025,
+        "l_tank": 14.5,
+        "b_tank": 10.15,
+        "h_tank": 32,
+        "eta_deck": 0,
+        "eta_overflow": 0,
+        "C_dp": 1,
+        "C_ru": 1,
+        "p_vp": 0,
+        "GM_full_in": 0,
+        "k_r_in": 0,
+        "tank_is_ballast": 1,
+        "member_11_17": 0,
+    },
+    "COT1": {
+        "rho_tank": 900,
+        "l_tank": 42,
+        "b_tank": 32,
+        "h_tank": 32,
+        "eta_deck": 0,
+        "eta_overflow": 0,
+        "C_dp": 1,
+        "C_ru": 1,
+        "p_vp": 0.21,
+        "GM_full_in": 0,
+        "k_r_in": 0,
+        "tank_is_ballast": 0,
+        "member_11_17": 1,
+    },
+}
+
+# --------------------------------------------------------------------------- #
 # 内压 ABS FPI 5A-3-2/5.7 -- 4 个工况
 #
-# 注意：本工具的局部变量只有"每个 Case 一列"一种作用域，没有"舱"这一层，
-# 所以舱的数据只能按工况摊平（同名舱在两个工况里各写一遍）。
-# WBT6 / WBT7 / COT1 三个舱的原始数据见 Rules/gen.js 的 INT_TANKS。
+# WBT6 被两个工况用到（d8 与 d15.059），舱尺寸只在 Tank Data 表里写一遍。
 # --------------------------------------------------------------------------- #
-_WBT6 = {
-    "rho_tank": 1025,
-    "l_tank": 42,
-    "b_tank": 32,
-    "h_tank": 32,
-    "eta_deck": 0,
-    "eta_overflow": 0,
-    "C_dp": 1,
-    "C_ru": 1,
-    "p_vp": 0,
-    "GM_full_in": 0,
-    "k_r_in": 0,
-    "tank_is_ballast": 1,
-    "member_11_17": 0,
-}
-_WBT7 = {
-    "rho_tank": 1025,
-    "l_tank": 14.5,
-    "b_tank": 10.15,
-    "h_tank": 32,
-    "eta_deck": 0,
-    "eta_overflow": 0,
-    "C_dp": 1,
-    "C_ru": 1,
-    "p_vp": 0,
-    "GM_full_in": 0,
-    "k_r_in": 0,
-    "tank_is_ballast": 1,
-    "member_11_17": 0,
-}
-_COT1 = {
-    "rho_tank": 900,
-    "l_tank": 42,
-    "b_tank": 32,
-    "h_tank": 32,
-    "eta_deck": 0,
-    "eta_overflow": 0,
-    "C_dp": 1,
-    "C_ru": 1,
-    "p_vp": 0.21,
-    "GM_full_in": 0,
-    "k_r_in": 0,
-    "tank_is_ballast": 0,
-    "member_11_17": 1,
-}
 _COMMON = {
     "k_u": 1.1,
     "k_esf": 1.1,
@@ -129,19 +145,18 @@ _COMMON = {
 }
 
 
-def _case(tank_ref: str, tank: dict, **over: object) -> dict[str, object]:
+def _case(tank_ref: str, **over: object) -> dict[str, object]:
     row: dict[str, object] = {"tank_ref": tank_ref}
     row.update(_COMMON)
-    row.update(tank)
     row.update(over)
     return row
 
 
 INTERNAL: dict[str, dict[str, object]] = {
-    "WBT6-d8-mu90": _case("WBT6", _WBT6, draft=8, mu_deg=90, k_c=1.0, xi=21),
-    "WBT6-d15.059-mu0": _case("WBT6", _WBT6, draft=15.059, mu_deg=0, k_c=0.4, xi=21),
-    "WBT7-d20.559-mu90": _case("WBT7", _WBT7, draft=20.559, mu_deg=90, k_c=1.0, xi=7.25),
-    "COT1-d20.559-mu60": _case("COT1", _COT1, draft=20.559, mu_deg=60, k_c=0.5, xi=21),
+    "WBT6-d8-mu90": _case("WBT6", draft=8, mu_deg=90, k_c=1.0, xi=21),
+    "WBT6-d15.059-mu0": _case("WBT6", draft=15.059, mu_deg=0, k_c=0.4, xi=21),
+    "WBT7-d20.559-mu90": _case("WBT7", draft=20.559, mu_deg=90, k_c=1.0, xi=7.25),
+    "COT1-d20.559-mu60": _case("COT1", draft=20.559, mu_deg=60, k_c=0.5, xi=21),
 }
 
 BOOKS = {"abs_fpi_external.xlsx": EXTERNAL, "abs_fpi_internal.xlsx": INTERNAL}
@@ -191,22 +206,61 @@ def _write(path: Path, cases: dict[str, dict[str, object]], *, header: bool = Tr
     print(f"{path.name}: 写入 {len(cases)} 个工况 -> " + ", ".join(cases))
 
 
+def _fill_group(path: Path, tanks: dict[str, dict[str, object]]) -> None:
+    """把舱写进成员表（Tank Data）：一行一个舱，B 列起一个变量一列。"""
+    workbook = load_workbook(path)
+    if GROUP_SHEET not in workbook.sheetnames:
+        workbook.close()
+        raise SystemExit(f"{path.name}: 没有 {GROUP_SHEET} 工作表（这份配置没声明 variables.group？）")
+    sheet = workbook[GROUP_SHEET]
+
+    column_of: dict[str, int] = {}
+    for column in range(2, sheet.max_column + 1):
+        name = sheet.cell(row=1, column=column).value
+        if name:
+            column_of[str(name).strip()] = column
+    row_of: dict[str, int] = {}
+    for row in range(2, sheet.max_row + 1):
+        name = sheet.cell(row=row, column=1).value
+        if name:
+            row_of[str(name).strip()] = row
+
+    unknown = sorted({k for values in tanks.values() for k in values} - set(column_of))
+    if unknown:
+        raise SystemExit(f"{path.name}: 这些变量在 {GROUP_SHEET} 里没有列: {', '.join(unknown)}")
+    missing = sorted(set(tanks) - set(row_of))
+    if missing:
+        raise SystemExit(f"{path.name}: {GROUP_SHEET} 里没有这些成员行: {', '.join(missing)}")
+
+    for member, values in tanks.items():
+        for name, value in values.items():
+            sheet.cell(row=row_of[member], column=column_of[name], value=value).alignment = _TOP
+    for column in range(2, sheet.max_column + 1):
+        head = sheet.cell(row=1, column=column)
+        if head.value:
+            sheet.column_dimensions[get_column_letter(column)].width = max(14, min(24, len(str(head.value)) + 8))
+
+    workbook.save(path)
+    print(f"{path.name}: 写入 {len(tanks)} 个舱 -> " + ", ".join(tanks))
+
+
 def fill(path: Path) -> None:
     """规则集工作簿：表头 + 取值都由这里写。"""
-    _write(path, BOOKS[path.name])
+    cases = BOOKS[path.name]
+    _write(path, cases)
+    if any("tank_ref" in values for values in cases.values()):
+        _fill_group(path, TANKS)
 
 
 def fill_project(path: Path) -> None:
     """合成项目工作簿：Case 名已由 --cases 建好，这里只按顺序填取值。"""
     cases: dict[str, dict[str, object]] = {}
-    cases.update(EXTERNAL)
+    for name, values in EXTERNAL.items():
+        cases[name] = dict(values, kind="EXT")
     for name, values in INTERNAL.items():
-        row = {"kind": "INT"}
-        row.update(values)
-        cases[name] = row
-    for name in list(cases):
-        cases[name] = dict(cases[name], kind=cases[name].get("kind", "EXT"))
+        cases[name] = dict(values, kind="INT")
     _write(path, cases, header=False)
+    _fill_group(path, TANKS)
 
 
 def main(argv: list[str]) -> int:

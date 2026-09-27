@@ -33,6 +33,10 @@ GeniE 会对被加载面的**每一个离散点**调用它，所以 x/y/z 是当
 （`genie_ext` 只对 `kind == 'EXT'` 的工况出代码，`genie_int` 只对 `INT`），
 输出表分成 `Code EXT` / `Summary EXT` / `Code INT` / `Summary INT`。
 
+后两本还有一张 **`Tank Data` 成员表**：一行一个舱（WBT6 / WBT7 / COT1），
+B 列起一个变量一列。舱的参数只写一遍，工况用 `tank_ref` 指向它 —— 指南 §18、
+证据 `probes/probe_group_table.py`。
+
 ## 2. 一条命令
 
 ```bash
@@ -56,6 +60,8 @@ python build.py --init     # 骨架不存在时也重建（会清掉你填的参
 |---|---|
 | 插 / 删 **变量行** | ✅ 不用重跑。公式用 `INDEX/MATCH` **按变量名**定位，插行不指错 |
 | 增 / 删 / 移动 **Case 列** | ❌ 必须重跑。公式里的列标是绝对字母，工况一移位就指着别的工况了 |
+| 改 **Tank Data** 里的舱数据 | ✅ 不用重跑。公式按"Case → `tank_ref` → 成员行 → 变量列"两级 `INDEX/MATCH` 定位 |
+| 增 / 删 **Tank Data** 的成员行 | ✅ 不用重跑（同上，按成员名 `MATCH` 找行） |
 
 最后一行的实测证据（`probe_formula_structure.py` N2：在 Local 表插一个 Case 列）：
 
@@ -159,11 +165,12 @@ return Math.max(p_s + p_d, 0 Pa);   // the pressure the function returns
 
 ## 7. 已知边界
 
-- **本项目当前仍把舱数据按工况摊平**：一个舱被 N 个工况用到就写 N 遍，`tank_ref` 只作标注。
-  > 工具 **0.7.0 起支持第三层作用域**（`variables.group` 成员表，见
-  > `docs/template_guide.md` §18）—— 一个舱的参数可以只写一遍、由 Case 指向它。
-  > 本项目**尚未迁移**（迁移意味着重做工作簿布局与 `compose.py` 的输出表改写），
-  > 所以下面是"当前状态"，不是"工具做不到"。见 `FINDINGS.md` #3(a)。
+- ~~舱数据按工况摊平~~ —— **0.8.0 起已迁移**到第三层作用域（`variables.group` 成员表，指南 §18）：
+  舱数据在 `Tank Data` 表里**一行一个舱、只写一遍**，工况用自己的 `tank_ref` 指向它。
+  WBT6 被 `WBT6-d8-mu90` 与 `WBT6-d15.059-mu0` 两个工况用到，舱尺寸只出现一次；
+  改一次 WBT6 的 `l_tank`，两个工况的代码一起变（证据：`probes/probe_group_table.py`）。
+  一个 Case 的 `tank_ref` 只影响它自己 —— 反过来也让"同一个舱、不同工况"成为默认写法，
+  不必再复制粘贴。
 - **`case_filter` 的 Case 必须成块连续**（公式模式横向相对列靠恒定偏移），
   所以项目工作簿里 EXT 的 7 个工况在前、INT 的 4 个在后。
 - **公式的 `TEXT()` 格式串受区域设置影响**：中文/英文区域小数点是 `.`；

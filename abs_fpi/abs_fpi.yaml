@@ -191,70 +191,82 @@ variables:
     type: float
     suffix: ' m'
   - name: tank_ref
-    description: 本列数据来自哪个舱（仅标注；样例 WBT6 / WBT7 / COT1）
+    description: 本 Case 用哪个舱（成员表的行名）
     default: WBT6
     type: string
-  - name: rho_tank
-    description: 舱内液体密度 [kg/m^3]
-    default: 1025
-    type: float
-    suffix: ' kg/m^3'
-  - name: l_tank
-    description: 舱长 [m]（Fig. 11）
-    default: 42
-    type: float
-    suffix: ' m'
-  - name: b_tank
-    description: 舱宽 [m]（Fig. 11）
-    default: 32
-    type: float
-    suffix: ' m'
-  - name: h_tank
-    description: 舱高 [m]（Fig. 11）
-    default: 32
-    type: float
-    suffix: ' m'
-  - name: eta_deck
-    description: 甲板以上高度 [m]
-    default: 0
-    type: float
-    suffix: ' m'
-  - name: eta_overflow
-    description: 溢流管高度 [m]；Fig. 12 要求取 2/3 且不低于 760 mm
-    default: 0
-    type: float
-    suffix: ' m'
-  - name: C_dp
-    description: 舱形系数 [-]（5.7.2(d)）：矩形 1.0，J 形 0.7
-    default: 1
-    type: float
-  - name: C_ru
-    description: 舱形系数 [-]（5.7.2(d)）：矩形 1.0，U 形 0.7
-    default: 1
-    type: float
-  - name: p_vp
-    description: 真空/压力阀整定压力 [N/cm^2]
-    default: 0
-    type: float
-    suffix: ' N/cm^2'
-  - name: GM_full_in
-    description: 完整稳性 GM [m]；填 0 时用规范估算 0.12 B
-    default: 0
-    type: float
-    suffix: ' m'
-  - name: k_r_in
-    description: 横摇惯性半径 [m]；填 0 时用规范估算（0.35 B / 0.45 B）
-    default: 0
-    type: float
-    suffix: ' m'
-  - name: tank_is_ballast
-    description: 压载舱 1 / 货舱 0；决定 k_s 是否取 1
-    default: 1
-    type: int
-  - name: member_11_17
-    description: 构件是否属于 5.7 表 3 的 11..17 项（1 = 是）
-    default: 0
-    type: int
+    choices:
+    - WBT6
+    - WBT7
+    - COT1
+  group:
+    sheet: Tank Data
+    key: tank_ref
+    members:
+    - WBT6
+    - WBT7
+    - COT1
+    variables:
+    - name: rho_tank
+      description: 舱内液体密度 [kg/m^3]
+      default: 1025
+      type: float
+      suffix: ' kg/m^3'
+    - name: l_tank
+      description: 舱长 [m]（Fig. 11）
+      default: 42
+      type: float
+      suffix: ' m'
+    - name: b_tank
+      description: 舱宽 [m]（Fig. 11）
+      default: 32
+      type: float
+      suffix: ' m'
+    - name: h_tank
+      description: 舱高 [m]（Fig. 11）
+      default: 32
+      type: float
+      suffix: ' m'
+    - name: eta_deck
+      description: 甲板以上高度 [m]
+      default: 0
+      type: float
+      suffix: ' m'
+    - name: eta_overflow
+      description: 溢流管高度 [m]；Fig. 12 要求取 2/3 且不低于 760 mm
+      default: 0
+      type: float
+      suffix: ' m'
+    - name: C_dp
+      description: 舱形系数 [-]（5.7.2(d)）：矩形 1.0，J 形 0.7
+      default: 1
+      type: float
+    - name: C_ru
+      description: 舱形系数 [-]（5.7.2(d)）：矩形 1.0，U 形 0.7
+      default: 1
+      type: float
+    - name: p_vp
+      description: 真空/压力阀整定压力 [N/cm^2]
+      default: 0
+      type: float
+      suffix: ' N/cm^2'
+    - name: GM_full_in
+      description: 完整稳性 GM [m]；填 0 时用规范估算 0.12 B
+      default: 0
+      type: float
+      suffix: ' m'
+    - name: k_r_in
+      description: 横摇惯性半径 [m]；填 0 时用规范估算（0.35 B / 0.45 B）
+      default: 0
+      type: float
+      suffix: ' m'
+    - name: tank_is_ballast
+      description: 压载舱 1 / 货舱 0；决定 k_s 是否取 1
+      default: 1
+      type: int
+    - name: member_11_17
+      description: 构件是否属于 5.7 表 3 的 11..17 项（1 = 是）
+      default: 0
+      type: int
 templates:
 - name: genie_ext
   description: ABS FPI 5A-3-2/5.5 外压 -- GeniE 强度函数体

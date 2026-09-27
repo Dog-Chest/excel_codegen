@@ -6,9 +6,9 @@ version: 1
 # 与 abs_fpi_external.yaml 同构，可以单独生成一本工作簿，也可以被 compose.py
 # 合进一本项目工作簿（与内压共用一张 Global 表）。
 #
-# 已知代价（工具能力边界）：本工具只有 global / local 两层作用域，没有"舱"这一层。
-# 一个舱被多个工况引用时，舱数据只能**按工况摊平** —— 同一个舱的参数在每一列各写一遍。
-# 表里的 tank_ref 用来标注"这一列是从哪个舱抄来的"。
+# 舱数据用**第三层作用域**（variables.group 成员表，指南 §18）：
+# 一个舱的参数只写一遍，工况用 local 变量 tank_ref 指向自己用哪个舱。
+# 成员表在独立工作表 "Tank Data" 里：一行一个舱、B 列起一个变量一列。
 # =========================================================================== #
 excel:
   output: "abs_fpi_internal.xlsx"
@@ -167,11 +167,21 @@ variables:
       type: float
       suffix: " m"
 
-    # ---- 舱数据：按工况摊平（同一个舱被几个工况用到就写几遍）----
+    # ---- 指向成员表的"指针"：这个 Case 用哪个舱 ----
+    # 舱本身的 13 个参数不在这里，在下面的 variables.group（工作表 "Tank Data"）
     - name: tank_ref
-      description: "本列数据来自哪个舱（仅标注；样例 WBT6 / WBT7 / COT1）"
+      description: "本 Case 用哪个舱（成员表的行名）"
       default: "WBT6"
       type: string
+      choices: ["WBT6", "WBT7", "COT1"]
+
+  # ------------------------------------------------------------------ 每个舱 --
+  # 一行一个舱，只写一遍：多个工况用同一个舱时不再重复
+  group:
+    sheet: "Tank Data"
+    key: tank_ref
+    members: ["WBT6", "WBT7", "COT1"]
+    variables:
     - name: rho_tank
       description: "舱内液体密度 [kg/m^3]"
       default: 1025

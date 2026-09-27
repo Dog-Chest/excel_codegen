@@ -128,9 +128,10 @@ wrote abs_fpi.yaml: 17 全局 / 35 局部变量, 4 模板 → Code EXT, Summary 
 
 ## 6. 已知边界（工具的，不是模板的）
 
-- **本项目还没用上第三层作用域**：舱数据目前**按工况摊平**（一个舱被 N 个工况用到就写 N 遍）。
-  工具 0.7.0 起支持 `variables.group` 成员表（`docs/template_guide.md` §18），
-  本项目尚未迁移。见 `FINDINGS.md` #3(a)。
+- **舱数据用第三层作用域**（0.8.0 起）：内压规则集在 `variables.group` 里声明
+  `Tank Data` 成员表（一行一个舱），`local.tank_ref` 指向它。所以逐工况的变量里**没有**
+  `l_tank` / `rho_tank` 这些行 —— 找舱数据请去 `Tank Data` 表，不要在 Local 表里找。
+  证据与"改一次舱数据影响哪些工况"的实测见 `probes/probe_group_table.py`。
 - **`case_filter` 下的共享变量语义**：`kind`、`draft` 这类被两套规则共用的变量，
   在合并 YAML 里只有一份定义（`compose.py` 保证一致）。
 - **公式模式的 `TEXT()` 受区域设置影响**：中文/英文区域小数点是 `.`，欧洲区域是 `,`。

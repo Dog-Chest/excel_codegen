@@ -2,7 +2,7 @@
 | --- | --- | --- |
 | case_name | {{ case_name }} | 工况名（Excel 表头） |
 | kind | {{ kind }} | 规则集（多规则集共用一本工作簿时用 case_filter 分流） |
-| tank_ref | {{ tank_ref }} | 舱（本项目当前按工况摊平；工具 0.7.0 起支持成员表） |
+| tank_ref | {{ tank_ref }} | 指向成员表 `Tank Data` 的哪一行（指南 §18） |
 | draft | {{ draft }} | 装载工况 |
 | mu_deg | {{ mu_deg }} | Table 1A D |
 | k_c | {{ k_c }} | Table 1A C |
@@ -16,11 +16,11 @@
 | w_v / w_l / w_t | {{ w_v }} / {{ w_l }} / {{ w_t }} | Table 1A B |
 | xi | {{ xi }} | 5.7.2(b) |
 | delta_b / delta_h | {{ delta_b }} / {{ delta_h }} | 5.7.2(b) |
-| rho_tank | {{ rho_tank }} | 舱数据 |
+| rho_tank | {{ rho_tank }} | 成员表 Tank Data |
 | l_tank / b_tank / h_tank | {{ l_tank }} / {{ b_tank }} / {{ h_tank }} | Fig. 11 |
 | eta_deck / eta_overflow | {{ eta_deck }} / {{ eta_overflow }} | Fig. 12 |
 | C_dp / C_ru | {{ C_dp }} / {{ C_ru }} | 5.7.2(d) |
-| p_vp | {{ p_vp }} | 舱数据 |
+| p_vp | {{ p_vp }} | 成员表 Tank Data |
 | GM_full_in / k_r_in | {{ GM_full_in }} / {{ k_r_in }} | 稳性计算书 |
 | tank_is_ballast / member_11_17 | {{ tank_is_ballast }} / {{ member_11_17 }} | Table 3 |
 | L / B / D / d_f | {{ L }} / {{ B }} / {{ D }} / {{ d_f }} | 3-1-1/3 |

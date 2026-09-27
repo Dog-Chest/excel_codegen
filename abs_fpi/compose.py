@@ -25,7 +25,9 @@
 * 同名变量的 ``prefix`` / ``suffix`` / ``type`` 必须一致 —— 不一致直接报错
   （这三个决定生成出来的文本，不能悄悄让某一个赢）；
 * ``default`` / ``description`` 不一致只**告警**（不同规则集的示例工况本来就不同）；
-* 模板名重复必须内容一致，否则报错。
+* 模板名重复必须内容一致，否则报错；
+* 两个规则集都声明 `variables.group` 成员表（指南 §18）时，`sheet` / `key` 必须一致，
+  成员行与成员变量按名字合并（一本工作簿只有一张成员表）。
 
 用法::
 
@@ -82,6 +84,39 @@ def merge_variables(target: dict, incoming: list[dict], *, scope: str, source: s
                 )
 
 
+def merge_group(
+    existing: dict | None, incoming: dict, *, source: str, warnings: list[str]
+) -> dict:
+    """合并两个规则集的成员表声明（一本工作簿只有一张成员表）。"""
+    if existing is None:
+        existing = dict(incoming)
+        existing["variables"] = [dict(item, _source=source) for item in incoming.get("variables") or []]
+        return existing
+    for field in ("sheet", "key"):
+        if existing.get(field) != incoming.get(field):
+            raise SystemExit(
+                f"两个规则集的 variables.group.{field} 不一致："
+                f"{existing.get(field)!r} vs {incoming.get(field)!r}（{source}）。"
+                "一本工作簿只有一张成员表，必须先统一。"
+            )
+    members = list(existing.get("members") or [])
+    for name in incoming.get("members") or []:
+        if name not in members:
+            members.append(name)
+    existing["members"] = members
+
+    holder = {"group": existing.setdefault("variables", [])}
+    merge_variables(
+        holder,
+        [dict(item, _source=source) for item in incoming.get("variables") or []],
+        scope="group",
+        source=source,
+        warnings=warnings,
+    )
+    existing["variables"] = holder["group"]
+    return existing
+
+
 def compose(manifest_path: Path) -> Path:
     manifest = read_manifest(manifest_path)
     base = manifest_path.parent
@@ -89,6 +124,7 @@ def compose(manifest_path: Path) -> Path:
     merged: dict = {"version": 1, "variables": {"global": [], "local": []}, "templates": []}
     outputs: list[str] = []
     warnings: list[str] = []
+    group: dict | None = None
 
     for entry in manifest["rulesets"]:
         rel = entry["file"]
@@ -105,6 +141,12 @@ def compose(manifest_path: Path) -> Path:
             for item in items:
                 item["_source"] = rel
             merge_variables(merged["variables"], items, scope=scope, source=rel, warnings=warnings)
+
+        # 第三层作用域（成员表，指南 §18）：一本工作簿只有一张成员表，
+        # 两个规则集都声明时必须指同一张、同一个 key，成员变量按名字合并。
+        incoming_group = (raw.get("variables") or {}).get("group")
+        if incoming_group:
+            group = merge_group(group, incoming_group, source=rel, warnings=warnings)
 
         for tpl in raw.get("templates") or []:
             tpl = dict(tpl)
@@ -125,6 +167,10 @@ def compose(manifest_path: Path) -> Path:
     for scope in ("global", "local"):
         for item in merged["variables"][scope]:
             item.pop("_source", None)
+    if group is not None:
+        for item in group.get("variables") or []:
+            item.pop("_source", None)
+        merged["variables"]["group"] = group
 
     project = {
         "version": 1,
@@ -161,9 +207,11 @@ def compose(manifest_path: Path) -> Path:
 
     for w in warnings:
         print(f"  ! {w}")
+    group = project["variables"].get("group")
+    member_note = f", 成员表 {group['sheet']}（{len(group.get('members') or [])} 行 × {len(group['variables'])} 变量）" if group else ""
     print(
         f"wrote {out_path.name}: {len(project['variables']['global'])} 全局 / "
-        f"{len(project['variables']['local'])} 局部变量, {len(project['templates'])} 模板 "
+        f"{len(project['variables']['local'])} 局部变量{member_note}, {len(project['templates'])} 模板 "
         f"→ {', '.join(outputs)}"
     )
     return out_path
