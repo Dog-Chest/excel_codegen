@@ -154,6 +154,14 @@ def test_comparison_and_logical_operators(reader: FakeReader, formula: str, expe
     assert evaluate_formula(formula, reader=reader, config=_Cfg) == expected
 
 
+def test_absolute_row_number_is_a_scalar(reader: FakeReader) -> None:
+    """绝对行号 `$，纵向输入 + 纵向输出时 INDEX 的行号就是这样。
+
+    （曾经这里直接抛"看不懂的记号 punct='$'" —— 只有"输入纵向 + 输出纵向"才会生成它。）
+    """
+    assert evaluate_formula("=INDEX('Local Parameter'!$A:$ZZ,$2,3)", reader=reader, config=_Cfg) == "GPIO"
+
+
 def test_isblank_and_if_fallback(reader: FakeReader) -> None:
     # 空单元格：ISBLANK 为真 → 回落默认值
     assert (
@@ -279,16 +287,23 @@ def test_structural_break_is_detected(formula_workbook) -> None:
     finally:
         workbook.close()
 
+    template = config.templates[0]
+    cases = [case.name for case in render_all(config, path).cases]
+    assert cases == ["Case1", "Case1b", "Case2"]
+
     workbook = load_workbook(path)
     try:
-        # Python 侧现在看到 3 个 Case
-        cases = [case.name for case in render_all(config, path).cases]
-        assert cases == ["Case1", "Case1b", "Case2"]
-        template = config.templates[0]
-        got = evaluate_template_values(workbook, config, template, cases)
+        # 输出表里只有 Case1 / Case2 两列，第 3 个位置的表头写着 Case2 但我们要读 Case1b
+        # —— 求值器会当场报"对不上"，而不是把 Case2 的值当成 Case1b 的（那才是真的坏）
+        with pytest.raises(FormulaEvalError, match="对不上"):
+            evaluate_template_values(workbook, config, template, cases)
+
+        # 表头还对得上的那几个仍然能算：报错是因为"错位"，不是因为整张表废了
+        got = evaluate_template_values(workbook, config, template, ["Case1"])
     finally:
         workbook.close()
 
     fresh = render_all(config, path)
-    # 第 3 个 Case（Case2）的公式仍然指着 F 列 —— 求值结果与 Python 渲染不一致
-    assert got["Case2"] != fresh.results["uart_init"][2].lines
+    assert got["Case1"] == fresh.results["uart_init"][0].lines
+    # Case1b 那一列的公式还指着 F 列（Case2 的参数）—— 重跑 --write-excel 前用不了
+    assert fresh.results["uart_init"][1].lines != fresh.results["uart_init"][2].lines

@@ -39,7 +39,7 @@ uv run excel-codegen render -c examples/example.yaml -x examples/template.xlsx -
 | --- | --- |
 | [`example.yaml`](examples/example.yaml) | 最小闭环：global / local 变量、前缀后缀、快照渲染、导出文件 |
 | [`example_formula.yaml`](examples/example_formula.yaml) | 公式模式：改参数后打开 Excel 就重算，不用再跑脚本 |
-| [`nastran_case_control.yaml`](examples/nastran_case_control.yaml) | **一行一个工况**（`local_direction: vertical`）生成 NASTRAN 工况控制语句：语句留空就不输出，一键拼成整段 case control（指南 §19 / §20） |
+| [`nastran_case_control.yaml`](examples/nastran_case_control.yaml) | **一行一个工况**（`local_direction: vertical`）+ 公式模式生成 NASTRAN 工况控制语句：语句留空就不输出，在 Excel 里改一格 Code 列立刻跟着变（指南 §19 / §20） |
 
 ## 特性
 
@@ -111,7 +111,7 @@ pip install -e ".[dev]"
 ## 开发
 
 ```bash
-uv run pytest --cov          # 306 项用例 + 覆盖率门槛（85%）
+uv run pytest --cov          # 313 项用例 + 覆盖率门槛（85%）
 uv run ruff check .          # lint
 uv run ruff format --check . # 格式
 uv run mypy                  # 类型检查

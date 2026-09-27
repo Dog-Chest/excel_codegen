@@ -1,2 +1,8 @@
 SUBCASE 5
-ANALYSIS = STATICS
+
+
+
+
+
+
+

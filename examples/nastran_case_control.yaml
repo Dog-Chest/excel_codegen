@@ -9,10 +9,21 @@ version: 1
 #   另一个软件）整块拿到的。竖向的 Local 表可以**直接整块粘贴**，不用逐列转置；
 #   而生成的代码仍然横着排（direction: horizontal），方便并排比较。
 #
+# 引擎用 engine: excel（**公式模式**）：Code 表里写的是 Excel 公式，改 Global / Local
+#   里的参数后**打开 Excel 就重算**，不需要跑任何命令 —— 也可以直接把一列参数粘进去。
+#   代价是模板只能用"占位符 + 单行 {% if %}"（指南 §14.1.1）。
+#
 # 每一条语句都是**可选的**：留空就不输出。
-#   模板里用 `{% if x %}` 判断，并且把换行写在 if 的**里面**
-#   （`{% if x %}X = {{ x }}\n{% endif %}`）—— 这样语句不存在时不会留下空行。
+#   模板里用 `{% if x.value %}` 判断（公式模式的条件必须写 .value），一条语句占一行：
+#   条件不成立时那一格是**空的**（Excel 里就没有这条语句的文本），
 #   所以一行只填 subcase_id 也是合法的，输出就只有一条 `SUBCASE n`。
+#
+#   注意：Excel 里"空语句"是一格空单元格（横向布局下这一行是所有工况共用的，
+#   没法为某个工况单独删掉一整行）。把一列粘到文本编辑器后删掉空行即可：
+#       excel-codegen render -c nastran_case_control.yaml --outdir deck
+#       sed '/^$/d' deck/cc_*.inc > deck/case_control.deck
+#   快照模式（engine: snapshot）能用"把换行写进 if 里面"的办法完全不留空行 ——
+#   见指南 §20.2；这里为了"改 Excel 就改输出"选了公式模式。
 #
 # 关于语句本身（MSC / NX Nastran 的 Case Control 段）：
 #   * `SUBCASE n` 开一个子工况；后面的语句作用于它，直到下一个 SUBCASE / SUBCOM；
@@ -41,8 +52,9 @@ excel:
 variables:
   global:
     - name: analysis
-      description: "ANALYSIS 语句的取值（整份模型共用）；留空则这条语句也不输出"
-      default: "STATICS"
+      description: "ANALYSIS 语句的取值（整份模型共用）；留空则这条语句不输出"
+      # 默认留空：清空 Global 表的这一格就等于"不输出 ANALYSIS"（填 STATICS 才会输出）
+      default: ""
       type: string
 
   local:
@@ -92,33 +104,38 @@ asserts:
 
 templates:
   # --------------------------------------------------------------------- 主产物 --
-  # 一个子工况一个 .inc 片段。拼成整段 case control 就是按 seq 顺序连起来：
+  # 一个子工况一个 .inc 片段。拼成整段 case control 就是按 seq 顺序连起来
+  # （空语句在文件里是空行，删掉即可）：
   #     excel-codegen render -c nastran_case_control.yaml --outdir deck
-  #     cat deck/cc_*.inc > deck/case_control.deck
+  #     sed '/^$/d' deck/cc_*.inc > deck/case_control.deck
   - name: case_control
-    description: "NASTRAN Case Control 子工况块（每个子工况一个 .inc 片段）"
+    description: "NASTRAN Case Control 子工况块（每个子工况一列，公式模式）"
     output_sheet: "Case Control"
     start_cell: "B2"
     direction: "horizontal"
     write_case_headers: true
+    engine: "excel"
     filename: "cc_{{ seq }}_{{ case_name }}.inc"
-    code: |-
-      {{ kind }} {{ subcase_id }}{% if label %}
-      LABEL = {{ label }}{% endif %}{% if subtitle %}
-      SUBTITLE = {{ subtitle }}{% endif %}{% if analysis %}
-      ANALYSIS = {{ analysis }}{% endif %}{% if method %}
-      METHOD = {{ method }}{% endif %}{% if load %}
-      LOAD = {{ load }}{% endif %}{% if spc %}
-      SPC = {{ spc }}{% endif %}{% if subseq %}
-      SUBSEQ = {{ subseq }}{% endif %}
+    # 一行一条语句 —— 公式模式下每一行编译成一格公式，
+    # 所以 {% if %} 必须和它管的语句写在同一行里（多行 {% if %} 公式模式表达不了）。
+    code: |
+      {{ kind }} {{ subcase_id }}
+      {% if label.value %}LABEL = {{ label }}{% endif %}
+      {% if subtitle.value %}SUBTITLE = {{ subtitle }}{% endif %}
+      {% if analysis.value %}ANALYSIS = {{ analysis }}{% endif %}
+      {% if method.value %}METHOD = {{ method }}{% endif %}
+      {% if load.value %}LOAD = {{ load }}{% endif %}
+      {% if spc.value %}SPC = {{ spc }}{% endif %}
+      {% if subseq.value %}SUBSEQ = {{ subseq }}{% endif %}
 
   # ----------------------------------------------------------------- 人读的对照表 --
   - name: cc_summary
-    description: "工况控制语句一览（一行一个子工况）"
+    description: "工况控制语句一览（一行一个子工况，公式模式）"
     output_sheet: "Summary"
     start_cell: "B2"
     direction: "vertical"
     write_case_headers: true
+    engine: "excel"
     filename: "cc_summary_{{ seq }}_{{ case_name }}.md"
     code: |-
       {{ kind }} {{ subcase_id }} ｜ SUBTITLE={{ subtitle }} ｜ METHOD={{ method }} ｜ LOAD={{ load }} ｜ SPC={{ spc }} ｜ SUBSEQ={{ subseq }}

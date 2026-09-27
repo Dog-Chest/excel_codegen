@@ -367,10 +367,12 @@ def test_vertical_formula_values_follow_parameter_change(workbook_path: Path, pr
     finally:
         workbook.close()
 
+    template = project.templates[0]
+    # 读回时必须给**这个模板实际渲染的全部 Case、按输出顺序**（给子集会错位）
+    cases = [case.name for case in render_all(project, workbook_path).cases]
     workbook = load_workbook(workbook_path)
     try:
-        template = project.templates[0]
-        got = evaluate_template_values(workbook, project, template, ["Case1", "Case3"])
+        got = evaluate_template_values(workbook, project, template, cases)
     finally:
         workbook.close()
 

@@ -69,22 +69,39 @@
 整块可粘贴），生成 `SUBCASE` / `SUBCOM` 块。语句留空就不输出（`SUBSEQ` 的内容原样输出，
 工具不解释"哪几个子工况、各乘多少"）。
 
+* **两个模板都是 `engine: excel`（公式模式）**：在 Excel 里改一格参数，Code 表里的语句
+  立刻跟着变，不用跑命令 —— 这才是这个用例的意义（快照模式得重跑 `render`）；
 * 每个子工况导出一个 `.inc`，文件名按只用于排序的 `seq` 编号（`cc_01_LC1.inc`），
-  `cat deck/cc_*.inc > case_control.deck` 就是完整的 case control 段；
+  `sed '/^$/d' deck/cc_*.inc > case_control.deck` 就是完整的 case control 段；
 * 用 `asserts` 拦住"填错地方"：`SUBCOM` 必须给 `SUBSEQ`、`SUBSEQ` 不许写在 `SUBCASE` 行上；
-* 指南新增 §20（含"可选行"的写法：**换行必须写在 `{% if %}` 里面**，
-  否则语句被省略时会留下空行 —— 工具没开 `trim_blocks`）。
+* 指南新增 §20：公式模式与快照模式"可选行"的两种写法与取舍
+  （公式模式一行一条语句、空语句=空格子；快照模式把换行写进 `{% if %}` 里面，逐字节干净）。
 
-顺带修掉两个在这次实测里暴露的问题：
+顺带修掉三个在这次实测里暴露的问题：
 
 | 问题 | 修法 |
 | --- | --- |
 | **`filename` 里只能写 `{{ case_name }}` / `{{ template_name }}`** —— 用别的变量（比如只用来排序的 `seq`）会在导出时炸 | `RenderResult` 带上渲染上下文，`export_files` 用它渲染文件名；现在文件名里可以用**这个 Case 的任意参数** |
 | **只写在 `filename` 里的变量被判成"定义了没人用"** | `collect_variables` 也解析 `filename`，于是这个假警告消失，文件名引用到不存在的变量也会在 `validate` 阶段就报出来 |
+| **求值器读不了绝对行号** `INDEX(...!$A:$ZZ,$2,...)` —— 只有"输入纵向 + 输出纵向"才会生成它，`check --values` 直接抛 `看不懂的记号 punct='$'` | `formula_eval.term()` 把 `$<数字>` 当数字 |
 
-新增 `tests/test_nastran_case_control.py` 11 项 + `tests/test_renderer.py` 2 项。
+### 4. 顺手修掉三个"悄悄算错 / 装不上"的问题
+
+| 问题 | 影响 | 修法 |
+| --- | --- | --- |
+| **`evaluate_template_values` 按"第几个 Case"读输出列** | 传 Case 子集时**不报错、直接取到别的工况的值**（对拍测试因此可能假通过 —— 本仓库真有一个测试是这么蒙对的） | 保留"按输出顺序"的位置语义（`case_filter` 会跳工况，位置才是对的），但当表头写着名字时**逐列核对**，对不上就报"输出表与参数对不上（传了子集？表是旧的？请重跑 `--write-excel`）" |
+| **`setup.sh` 的 Python 下限写 3.10**，而 `pyproject.toml` 要求 3.11 | 3.10 的机器上脚本放行，一路装到 `pip` 才报错 | 下限改成 3.11 并由脚本自己拦 |
+| **`setup.sh` 复用已有环境前不验证** | 环境半坏（上次装到一半 / 依赖的 Python 被换掉）时报的是 pip 的 `Errno 13 权限不够`，看不出该干什么 | 复用前先 `python -c ""` 试一下，坏了就明确让 `--recreate`；`pip install` 失败时列出两种常见原因与下一步。另修掉文件系统探测的 `UNKNOWN*` 大小写（`case` 分支永远匹配不上小写的 `unknown`） |
+
+还有一处**测试自身的错误**：`test_shipped_example_matches_the_test_fixture` 把示例工作簿
+的取值写死了，而那个工作簿是**给人改的** —— 一改就红。现在示例相关的测试只钉"形态"
+（纵向 + 公式模式）与"自洽"（形状、公式算出来 == Python 渲染、`.deck` 与工作簿一致），
+不再钉具体数值。
+
+新增 `tests/test_nastran_case_control.py` 17 项 + `tests/test_renderer.py` 2 项 +
+`tests/test_formula_eval.py` 1 项。
 `examples/generated_nastran/` 是示例工作簿的实测产物（含拼好的 `case_control.deck`）。
-**测试 268 → 306 项。**
+**测试 268 → 313 项。**
 
 ---
 

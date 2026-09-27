@@ -405,6 +405,15 @@ class Evaluator:
 
     def term(self):
         kind, text = self._next()
+        if kind == "punct" and text == "$":
+            # 绝对行号当数字用：纵向输入 + 纵向输出时 INDEX 的行号是 `$3`（见 formula.local_cell）。
+            # 单元格引用（`$A$1`）走 reference()，不会落到这里 —— 它前面一定带着表名。
+            if self._peek("$"):
+                self._next()
+            number_kind, number_text = self._next()
+            if number_kind != "number":
+                raise FormulaEvalError(f"$ 后面应该是行号，实际是 {number_text!r}")
+            return float(number_text) if "." in number_text else int(number_text)
         if kind == "string":
             return text[1:-1].replace('""', '"')
         if kind == "number":
@@ -620,17 +629,42 @@ def evaluate_template_values(
     """把某个模板在输出表里的公式逐格算出来：``{case 名: [每行文本]}``。
 
     读的是**工作簿里真实的公式文本**，所以能发现"公式本身写错了"（列标、引用、函数）。
+
+    ``case_names`` 是**这个模板实际渲染出来的 Case，按输出顺序**（``case_filter`` 跳过的
+    不算）—— 与写回时的列/行一一对应。表头行（``write_case_headers``）开着时会**核对**
+    每一列/行是不是这个名字：对不上就报错，而不是悄悄把别的工况的值当成它的
+    （传子集 / 表是旧的都算对不上）。
     """
     from .utils import parse_cell
 
     evaluator = Evaluator(WorkbookReader(workbook), {name: name for name in sheet_names_of(config)})
     worksheet = workbook[template.output_sheet]
     column, row = parse_cell(template.start_cell)
+    horizontal = template.direction == "horizontal"
+    header_at = None
+    if template.write_case_headers:
+        # 与 _write_horizontal / _write_vertical 写表头的位置保持一致
+        if horizontal and row > 1:
+            header_at = ("row", row - 1)
+        elif not horizontal and column > 1:
+            header_at = ("column", column - 1)
+
     blocks: dict[str, list[str]] = {}
 
     for offset, case_name in enumerate(case_names):
+        if header_at is not None:
+            where = (header_at[1], column + offset) if header_at[0] == "row" else (row + offset, header_at[1])
+            actual = worksheet.cell(row=where[0], column=where[1]).value
+            if isinstance(actual, str) and actual.strip() and actual.strip() != case_name:
+                axis = "列" if horizontal else "行"
+                raise FormulaEvalError(
+                    f"模板 {template.name!r} 的第 {offset + 1} 个{axis}表头是 {actual.strip()!r}，"
+                    f"但现在要读的是 {case_name!r} —— 输出表与参数对不上"
+                    "（传的 Case 子集？表是旧的？请重跑 --write-excel）"
+                )
+
         lines: list[str] = []
-        if template.direction == "horizontal":
+        if horizontal:
             current = row
             while True:
                 value = worksheet.cell(row=current, column=column + offset).value

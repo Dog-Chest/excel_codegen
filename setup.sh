@@ -49,10 +49,13 @@ if command -v uv >/dev/null 2>&1; then
   say "[1/5] 找到 uv $("uv" --version 2>/dev/null | awk '{print $2}')  → 走零配置路径（不需要 python3-venv / pip）"
 else
   PYTHON="${PYTHON:-python3}"
-  command -v "$PYTHON" >/dev/null 2>&1 || die "既没有 uv，也没有 $PYTHON。装一个 Python 3.10+，或装 uv（https://docs.astral.sh/uv/）。"
-  "$PYTHON" - <<'PY' || die "Python 版本太低，需要 3.10+。"
+  # 下限必须与 pyproject.toml 的 requires-python 一致，否则这里放行、pip 那边才报错
+  MIN_PY="3.11"
+  command -v "$PYTHON" >/dev/null 2>&1 || die "既没有 uv，也没有 $PYTHON。装一个 Python $MIN_PY+，或装 uv（https://docs.astral.sh/uv/）。"
+  "$PYTHON" - "$MIN_PY" <<'PY' || die "Python 版本太低：本项目要求 $MIN_PY+（与 pyproject.toml 的 requires-python 一致）。"
 import sys
-raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
+need = tuple(int(part) for part in sys.argv[1].split("."))
+raise SystemExit(0 if sys.version_info[: len(need)] >= need else 1)
 PY
   say "[1/5] 没找到 uv，走经典路径：$("$PYTHON" -V 2>&1)（建议装 uv 以便跨平台零配置）"
 fi
@@ -76,7 +79,7 @@ fs_type_of() {
 REPO_FS="$(fs_type_of "$HERE")"
 DEFAULT_VENV="$HERE/.venv"
 case "$REPO_FS" in
-  ntfs*|exfat|vfat|msdos|fuseblk|hfsplus|UNKNOWN*)
+  ntfs*|exfat|vfat|msdos|fuseblk|hfsplus|unknown)
     DEFAULT_VENV="$HOME/.venvs/excel_codegen"
     warn "仓库所在文件系统是 $REPO_FS（非原生 Linux 文件系统）。"
     say  "       环境默认改到 $DEFAULT_VENV —— 上万个碎文件写在 $REPO_FS 上既慢又容易卡。"
@@ -111,6 +114,12 @@ else
     die  "缺少 python3-venv，已停止。"
   fi
   if [ -x "$ENV_DIR/bin/python" ]; then
+    # 复用之前先确认这个环境真的还能跑：venv 建到一半被打断、或它依赖的 Python
+    # 被升级/删掉之后，bin/python 这个链接还在、但一执行就报错。
+    if ! "$ENV_DIR/bin/python" -c "" >/dev/null 2>&1; then
+      warn "已有环境 $ENV_DIR 跑不起来（多半是上次没装完，或它依赖的 Python 被换掉了）。"
+      die  "用 ./setup.sh --recreate 删掉重建（工作簿与代码都在仓库里，删环境不会丢东西）。"
+    fi
     say "[3/5] 复用已有环境（要重建加 --recreate）"
   else
     say "[3/5] 创建 venv ..."
@@ -121,7 +130,13 @@ else
   say "       pip 升级 ..."
   "$VPY" -m pip install --quiet --upgrade pip
   say "       安装 excel_codegen[dev]（可编辑安装）..."
-  "$VPY" -m pip install --quiet -e ".[dev]"
+  if ! "$VPY" -m pip install --quiet -e ".[dev]"; then
+    warn "安装失败。最常见的两种原因："
+    say  "       1) 这个环境是上次装到一半留下的 —— 用 ./setup.sh --recreate 删掉重建；"
+    say  "       2) $ENV_DIR 的权限不对（例如以前用 sudo 建过）—— 换一个位置："
+    say  "          EXCEL_CODEGEN_VENV=~/venvs/excel_codegen ./setup.sh"
+    die  'pip install -e ".[dev]" 失败。'
+  fi
   say "       ✓ 已安装：$("$VPY" -m pip show excel_codegen 2>/dev/null | awk '/^Version:/{print $2}')"
 fi
 
@@ -152,5 +167,5 @@ if [ "$USE_UV" = "1" ]; then
 else
   say "    source \"$ENV_DIR/bin/activate\""
   say "    excel-codegen --version        # 或 python -m excel_codegen"
-  say "    pytest                         # 107 项用例"
+  say "    pytest                         # 全部用例"
 fi

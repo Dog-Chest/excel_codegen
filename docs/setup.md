@@ -67,8 +67,20 @@ uv 侧用依赖组。**改一处记得改另一处。**
 
 ```bash
 ./setup.sh                                       # 自动选位置 + 装依赖 + 跑测试
+./setup.sh --no-test                             # 只装环境
+./setup.sh --recreate                            # 删掉旧环境重建（环境半坏时用这个）
 EXCEL_CODEGEN_VENV=/data/venvs/ecg ./setup.sh    # 也可以自己指定环境位置
 ```
+
+它会做几件事：挑 uv / venv 路径、探测仓库所在文件系统决定环境放哪、装依赖、跑一遍测试，
+最后提示缺哪些可选工具（`node`、同级的 `GeniE/Rules`）。几个刻意的行为：
+
+* **Python 下限与 `pyproject.toml` 的 `requires-python` 保持一致**（3.11）——
+  脚本自己先拦，不然会一路装到 `pip` 才报版本不符；
+* **复用已有环境前先验证它还能跑**：venv 建到一半被打断、或它依赖的 Python 被换掉之后，
+  `bin/python` 还在但一执行就报错；这时会明确让你 `--recreate`，而不是丢一个 pip 的
+  `Errno 13 权限不够`；
+* `pip install` 失败时会指出最常见的两种原因（环境半坏 / 权限不对）与对应的下一步。
 
 ---
 

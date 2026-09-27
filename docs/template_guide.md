@@ -1338,7 +1338,8 @@ excel-codegen render -c project.yaml --write-excel
 ## 20. 用例：NASTRAN 工况控制语句
 
 仓库里的 `examples/nastran_case_control.yaml` 是一个完整可跑的示例，它把 §19 的纵向布局
-用在**工况控制语句**上。要点有三条。
+用在**工况控制语句**上。两个模板都是 `engine: excel`（公式模式）—— 改 Excel 里的参数，
+Code 表里的语句自己就变了，不用跑命令。
 
 ### 20.1 表就是"一行一个子工况"
 
@@ -1347,40 +1348,59 @@ excel-codegen render -c project.yaml --write-excel
 |  | A | B | C | D | E | F | G | H | I | J |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **1** | Case | seq | kind | subcase_id | label | subtitle | method | load | spc | subseq |
-| **2** | LC1 | 01 | SUBCASE | 1 |  | HEAD SEA |  | 101 | 1 |  |
+| **2** | LC1 | 01 | SUBCASE | 1 |  | HEAD SEA |  | 1001 | 1 |  |
 | **3** | COMB4 | 04 | SUBCOM | 4 |  | COMBINED |  |  |  | 1, 1.2, 1.3 |
 | **4** | LC5 | 05 | SUBCASE | 5 |  |  |  |  |  |  |
 
-而生成的代码仍然横着排（`direction: horizontal`）：一行一条语句，一列一个子工况，方便并排看。
+而生成的语句横着排（`direction: horizontal`）：**一行一条语句，一列一个子工况** ——
+这样每一行是哪条语句是固定的，整列复制出去就是一段 deck。
 
-### 20.2 "留空 = 这条语句不存在"
+### 20.2 "留空 = 这条语句不存在"：两种引擎的不同写法
 
-模板里用 `{% if %}` 判断，**换行必须写在 if 的里面**：
-
-```jinja
-{{ kind }} {{ subcase_id }}{% if label %}
-LABEL = {{ label }}{% endif %}{% if load %}
-LOAD = {{ load }}{% endif %}{% if spc %}
-SPC = {{ spc }}{% endif %}
-```
-
-写对了：省略 `label` 时得到 `SUBCASE 1\nLOAD = 101\nSPC = 1`，一句不多一行不少。
-
-写错了（换行留在 if 外面，也就是 `{% if x %}` 自己占一行）：
+**公式模式**（本示例用的，改 Excel 就改输出）—— 模板一行一条语句，条件写在同行里：
 
 ```jinja
-SUBCASE {{ subcase_id }}
-{% if label %}          ← 这行的换行是**无条件**输出的
-LABEL = {{ label }}
-{% endif %}
+{{ kind }} {{ subcase_id }}
+{% if subtitle.value %}SUBTITLE = {{ subtitle }}{% endif %}
+{% if load.value %}LOAD = {{ load }}{% endif %}
+{% if spc.value %}SPC = {{ spc }}{% endif %}
 ```
 
-省略 `label` 时会在 `SUBCASE 1` 后面留下一个**空行**。工具没有开 `trim_blocks`，
-所以"条件行"要按上面的写法自己带上换行。（同一条规则适用于任何"可选行"模板。）
+条件不成立时那一格算出**空串**，所以 Excel 里就是一个**空单元格**（宽度为零的内容，
+不会有人以为那里有条语句）。要点：
 
-* 一行**只填编号**也是合法的：输出就只有 `SUBCASE 5`（再加上全局的 `ANALYSIS`）。
+* 公式模式只支持**单行** `{% if %}`（§14.1.1），所以每条语句必须自己占一行；
+* 条件必须写 `.value`（`{% if load.value %}`，不能裸写 `{% if load %}`）；
+* **横向布局下"行"是所有工况共用的**，所以没法为某一个工况单独删掉一整行 ——
+  "省略"只能表现为"这一格是空的"。把一列粘进文本编辑器后删掉空行即可：
+
+```bash
+excel-codegen render -c examples/nastran_case_control.yaml --outdir deck
+sed '/^$/d' deck/cc_*.inc > deck/case_control.deck
+```
+
+**快照模式**（`engine: snapshot`，输出是文本快照）—— 可以把换行写进 `if` 的**里面**，
+省略的语句连空行都不会留下：
+
+```jinja
+{{ kind }} {{ subcase_id }}{% if subtitle %}
+SUBTITLE = {{ subtitle }}{% endif %}{% if load %}
+LOAD = {{ load }}{% endif %}
+```
+
+写对了：省略 `subtitle` 时得到 `SUBCASE 1\nLOAD = 101`，一句不多一行不少。
+写错了（让 `{% if %}` 自己占一行）会在 `SUBCASE 1` 后面留下一个**空行** ——
+工具没有开 `trim_blocks`，所以"条件行"要按上面的写法自己带上换行。
+
+> 两者的取舍：**公式模式**改 Excel 立刻生效（不用跑命令），代价是空语句=空格子；
+> **快照模式**能给出逐字节干净的文本，代价是改完参数要重跑一次 `render --outdir`。
+> 本项目选公式模式（要的就是"打开 Excel 改一格，这一列就变"）。
+
+* 一行**只填编号**也是合法的：输出就只有 `SUBCASE 5`（再加上全局的 `ANALYSIS`，如果填了）。
 * `SUBSEQ` 的内容**原样输出**：`SUBSEQ = 1, 1.2, 1.3` 里"哪几个子工况、各乘多少"
   由手头版本的参考手册决定，工具不解释它，也就不可能替你改错。
+* **全局的可选语句**（示例里的 `ANALYSIS`）默认值写 `""`：内容真的清空就是"不输出"。
+  若给了非空默认值，清空单元格会**回落默认值**（§15.1），语句照样出现。
 
 ### 20.3 用 `asserts` 拦住"填错地方"
 
@@ -1394,16 +1414,13 @@ asserts:
 
 ### 20.4 拼成整段 case control
 
-一个子工况一个 `.inc` 片段，文件名按 `seq` 排序，连起来就是 case control 段：
-
-```bash
-excel-codegen render -c examples/nastran_case_control.yaml --outdir deck
-cat deck/cc_*.inc > deck/case_control.deck
-```
+一个子工况一个 `.inc` 片段，文件名按 `seq` 排序（`seq` 只出现在 `filename` 里，
+工具同样算它"被用到"），连起来就是 case control 段 —— 见 §20.2 里那条命令。
 
 整份输入文件仍然是 `SOL 101` / `CEND` / `<上面这段>` / `BEGIN BULK` ——
 执行控制段与 BULK 段不属于 case control，一笔手写即可（或者再写一个模板生成它们）。
 
-> 运行记录：`examples/generated_nastran/case_control.deck` 是示例工作簿的实测产物；
-> `tests/test_nastran_case_control.py` 12 项把上面每一条都钉住了
-> （含"省略语句不留空行"与"输出表里不残留上一版的行"）。
+> 运行记录：`examples/generated_nastran/` 是示例工作簿的实测产物；
+> `tests/test_nastran_case_control.py` 17 项把上面每一条都钉住了
+> （含"省略语句不留空行/不留文本"、"改一格参数公式就跟着变"、
+> 以及"Code 表里的公式算出来 == Python 渲染"这条一致性保证）。
