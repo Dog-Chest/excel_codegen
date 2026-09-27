@@ -1,0 +1,30 @@
+# sdist 里该有什么、不该有什么。
+#
+# 为什么需要这个文件：setuptools 默认的文件收集规则**只收 test*.py**，会把
+# tests/conftest.py 漏掉 —— 于是 sdist 里躺着一套跑不起来的测试
+# （解包后 pytest 全是 `fixture 'config_text' not found`）。
+# 要么把测试带全，要么干脆不带；这里选前者，顺带把 examples/ 与 docs/ 带上
+# （README 的「快速开始」指着 examples/example.yaml）。
+
+include LICENSE
+include README.md
+include CHANGELOG.md
+include pyproject.toml
+include uv.lock
+include .python-version
+
+# 测试：必须带上 conftest.py（fixture 全在那儿）
+recursive-include tests *.py
+
+# 示例：YAML + 生成好的工作簿 + 渲染产物（README 的快速开始要用）
+recursive-include examples *.yaml *.xlsx *.c *.md *.csv
+
+# 文档
+recursive-include docs *.md
+
+# 刻意不带：abs_fpi/ 是"拿这个工具干真活"的现场项目（有自己的工作簿与产物，
+# 也在 .gitignore 里排除了中间产物），不属于这个包，没必要塞进 sdist。
+prune abs_fpi
+
+# 中间产物与缓存一律排除
+global-exclude __pycache__ *.py[cod] *.egg-info .DS_Store

@@ -50,3 +50,18 @@ jobs:
 
       - name: CLI 冒烟
         run: uv run --python ${{ matrix.python }} excel-codegen --version
+
+      # 守卫：sdist 必须自包含 —— 解包后能直接跑测试、示例配置能用。
+      # 这条曾经真的坏过：setuptools 默认只收 test*.py，把 tests/conftest.py 漏了，
+      # 于是 sdist 里躺着一套"所有 fixture 都找不到"的测试。
+      - name: 验证 sdist 自包含（解包后跑测试 + 校验示例配置）
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
+        run: |
+          uv build --sdist
+          mkdir -p /tmp/sdist-check
+          tar -xzf dist/*.tar.gz -C /tmp/sdist-check
+          cd /tmp/sdist-check/excel_codegen-*
+          test -f tests/conftest.py || { echo "::error::sdist 里缺少 tests/conftest.py"; exit 1; }
+          test -f examples/example.yaml || { echo "::error::sdist 里缺少 examples/"; exit 1; }
+          uv run --python ${{ matrix.python }} pytest
+          uv run --python ${{ matrix.python }} excel-codegen validate -c examples/example.yaml

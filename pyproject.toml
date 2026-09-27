@@ -57,8 +57,10 @@ dev = [
 excel-codegen = "excel_codegen.cli:app"
 
 [project.urls]
-# 建好远程仓库后把下面这行改成真地址再发 PyPI（占位符会变成一个打不开的链接）：
-# Documentation = "https://github.com/<你的用户名>/excel_codegen#readme"
+Documentation = "https://github.com/Dog-Chest/excel_codegen#readme"
+Repository = "https://github.com/Dog-Chest/excel_codegen"
+Changelog = "https://github.com/Dog-Chest/excel_codegen/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Dog-Chest/excel_codegen/issues"
 
 [tool.setuptools.packages.find]
 include = ["excel_codegen*"]

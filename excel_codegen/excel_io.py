@@ -493,7 +493,11 @@ def write_howto_sheet(
     snapshot_templates = [t for t in config.templates if t.engine != "excel"]
     if formula_templates:
         add("★  部分输出表是公式（engine: excel）：改参数后 Excel 打开即重算，不用跑脚本", _HOWTO_HEAD, None)
-        add("   公式只做「占位符替换」；要生成代码文件（--outdir）或做 CI 检查（check）仍需命令行。", _HOWTO_NOTE, None)
+        add(
+            "   公式支持占位符替换与行内分支（{% if %}）；要生成代码文件（--outdir）或做 CI 检查（check）仍需命令行。",
+            _HOWTO_NOTE,
+            None,
+        )
     if snapshot_templates:
         add("⚠  部分输出表是「快照」，不是活公式", _HOWTO_WARN, None)
         add("   在 Excel 里改了参数、但没跑上面那条命令，输出表里的代码还是上一次的。", _HOWTO_NOTE, None)
