@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, TemplateError, TemplateSyntaxError, UndefinedError, meta
+from jinja2 import Environment, TemplateError, TemplateNotFound, TemplateSyntaxError, UndefinedError, meta
 
 from .excel_io import (
     check_required_sheets,
@@ -39,6 +39,7 @@ __all__ = [
     "pvs",
     "render_all",
     "render_template",
+    "template_environment",
     "validate_template",
     "wrap",
 ]
@@ -64,19 +65,78 @@ def _template_source(template: TemplateDef, base_dir: str | Path | None) -> str:
     return template.source_code
 
 
+def template_environment(
+    template: TemplateDef,
+    base_dir: str | Path | None,
+    env: Environment | None = None,
+) -> Environment:
+    """给某个模板准备 Jinja 环境。
+
+    快照模式的模板可以 ``{% include "片段.j2" %}``，片段按**声明模板的那个文件**所在目录去找
+    （``extends`` 进来的模板带自己的 ``source_dir``）。给了 ``env`` 就照用，不覆盖调用方的设置。
+    """
+    if env is not None:
+        return env
+    base = template.source_dir or base_dir
+    return build_environment(search_path=[base] if base else None)
+
+
+def _include_names(ast: Any) -> list[str]:
+    """模板里 ``{% include %}`` 引用的片段名（动态名字取不到，跳过）。"""
+    return [name for name in (meta.find_referenced_templates(ast) or []) if isinstance(name, str)]
+
+
+def _check_includes(
+    template: TemplateDef,
+    ast: Any,
+    environment: Environment,
+    *,
+    base_dir: str | Path | None,
+    seen: frozenset[str] = frozenset(),
+) -> list[tuple[str, Any]]:
+    """检查 ``{% include %}`` 的片段都存在，并递归返回 ``[(片段名, 语法树), …]``。"""
+    found: list[tuple[str, Any]] = []
+    for name in _include_names(ast):
+        if name in seen:
+            continue
+        if environment.loader is None:
+            raise RenderError(
+                f"模板 {template.name!r} 用了 {{% include {name!r} %}}，但当前 Jinja 环境没有搜索路径。"
+                "（直接用库时请让 renderer 自己建环境：不要传 env，或者给 build_environment 传 search_path）"
+            )
+        try:
+            source, _, _ = environment.loader.get_source(environment, name)
+        except TemplateNotFound as exc:
+            where = template.source_dir or base_dir or Path.cwd()
+            raise RenderError(
+                f"模板 {template.name!r} 的 {{% include {name!r} %}} 找不到片段："
+                f"在 {where} 下没有 {name}（片段路径相对声明模板的那个文件，见指南 §17）"
+            ) from exc
+        try:
+            child = environment.parse(source)
+        except TemplateSyntaxError as exc:
+            raise RenderError(
+                f"片段 {name!r}（被模板 {template.name!r} include）语法错误：第 {exc.lineno} 行: {exc.message}"
+            ) from exc
+        found.append((name, child))
+        found.extend(_check_includes(template, child, environment, base_dir=base_dir, seen=seen | {name}))
+    return found
+
+
 def validate_template(
     template: TemplateDef,
     *,
     env: Environment | None = None,
     base_dir: str | Path | None = None,
 ) -> None:
-    """只做语法检查（解析模板与 ``case_filter``），不做渲染。语法错误抛 :class:`RenderError`。"""
-    environment = env or build_environment()
+    """只做语法检查（解析模板、``{% include %}`` 片段、``case_filter``），不做渲染。"""
+    environment = template_environment(template, base_dir, env)
     source = _template_source(template, base_dir)
     try:
-        environment.parse(source)
+        ast = environment.parse(source)
     except TemplateSyntaxError as exc:
         raise RenderError(f"模板 {template.name!r} 语法错误：第 {exc.lineno} 行: {exc.message}") from exc
+    _check_includes(template, ast, environment, base_dir=base_dir)
     compile_case_filter(template, env=environment)
 
 
@@ -86,12 +146,16 @@ def collect_variables(
     env: Environment | None = None,
     base_dir: str | Path | None = None,
 ) -> set[str]:
-    """收集模板（含 ``case_filter``）中引用到的顶层变量名。"""
-    environment = env or build_environment()
+    """收集模板（含 ``{% include %}`` 片段与 ``case_filter``）中引用到的顶层变量名。"""
+    environment = template_environment(template, base_dir, env)
     names: set[str] = set()
     try:
         ast = environment.parse(_template_source(template, base_dir))
         names |= set(meta.find_undeclared_variables(ast))
+        # 片段里用到的变量也算"被引用" —— 否则 validate 会把它们误报成"定义了没人用"，
+        # 也不会去检查它们有没有定义
+        for _, fragment_ast in _check_includes(template, ast, environment, base_dir=base_dir):
+            names |= set(meta.find_undeclared_variables(fragment_ast))
         if template.case_filter:
             # case_filter 是一段**表达式**，必须包进 {{ }} 才能按表达式解析
             filter_ast = environment.parse("{{ " + template.case_filter + " }}")
@@ -261,7 +325,7 @@ def render_template(
     base_dir: str | Path | None = None,
 ) -> str:
     """渲染单个模板，并把 Jinja2 异常翻译成清晰的中文提示。"""
-    environment = env or build_environment()
+    environment = template_environment(template, base_dir, env)
     source = _template_source(template, base_dir)
     try:
         compiled = environment.from_string(source)
@@ -347,10 +411,16 @@ def render_all(
             raise ExcelError(f"Excel 中不存在这些 Case: {', '.join(missing)}（可用: {', '.join(by_name)}）")
         cases = [by_name[name] for name in wanted]
 
-    environment = env or build_environment()
     results: dict[str, list[RenderResult]] = {}
     skipped: dict[str, list[str]] = {}
+    environment_cache: dict[str, Environment] = {}
     for template in config.templates:
+        # 每个模板用"声明它的那个目录"的环境：{% include %} 的片段相对那里解析
+        base = template.source_dir or config.source_dir
+        key = str(base or "")
+        if key not in environment_cache:
+            environment_cache[key] = template_environment(template, config.source_dir, env)
+        environment = environment_cache[key]
         expression = compile_case_filter(template, env=environment)
         per_case: list[RenderResult] = []
         skipped_cases: list[str] = []

@@ -361,8 +361,9 @@ def validate_command(
         used_by_template: dict[str, set[str]] = {}
         formula_templates: list[str] = []
         for template in project.templates:
-            validate_template(template, env=environment, base_dir=project.source_dir)
-            used = collect_variables(template, env=environment, base_dir=project.source_dir)
+            # 不传 env：让 renderer 按『声明这个模板的目录』建环境（{% include %} 要用）
+            validate_template(template, base_dir=project.source_dir)
+            used = collect_variables(template, base_dir=project.source_dir)
             used_by_template[template.name] = used
             unknown = sorted(name for name in used if name not in project.defined_names)
             if unknown:

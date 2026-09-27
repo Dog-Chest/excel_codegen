@@ -979,7 +979,11 @@ def read_cases(
         rows.append((row, name, prefix, suffix, definition))
 
     if not rows:
-        raise ExcelError(f"工作表 {config.excel.sheets.local!r} 没有定义任何局部变量")
+        raise ExcelError(
+            f"工作表 {config.excel.sheets.local!r} 没有定义任何局部变量 —— "
+            "本工具用「局部变量 × Case 列」定位工况，所以 variables.local 至少要有一个变量"
+            "（哪怕只是个标注用的 kind）"
+        )
 
     cases: list[CaseData] = []
     for column, case_name in columns:

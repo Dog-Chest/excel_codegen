@@ -9,9 +9,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, StrictUndefined, Undefined
+from jinja2 import Environment, FileSystemLoader, StrictUndefined, Undefined
 
 from .utils import to_text
 
@@ -54,15 +56,21 @@ def build_environment(
     trim_blocks: bool = False,
     lstrip_blocks: bool = False,
     keep_trailing_newline: bool = True,
+    search_path: Sequence[str | Path] | None = None,
     **options: Any,
 ) -> Environment:
     """构建带 ``pvs`` / ``wrap`` 过滤器的 Jinja2 环境。
 
     默认使用 ``StrictUndefined``：模板引用了不存在的变量会立刻报错，而不是静默渲染成空串。
     ``finalize`` 负责把数值统一成文本形态（见 :func:`finalize_value`）。
+
+    :param search_path: 给了就装一个 ``FileSystemLoader``，模板里的 ``{% include "片段.j2" %}``
+        会按这些目录去找（相对**声明模板的那个文件**解析，见指南 §17）。
     """
     finalize = options.pop("finalize", finalize_value)
+    loader = FileSystemLoader([str(item) for item in search_path]) if search_path else None
     environment = Environment(
+        loader=loader,
         undefined=StrictUndefined if strict else Undefined,
         trim_blocks=trim_blocks,
         lstrip_blocks=lstrip_blocks,

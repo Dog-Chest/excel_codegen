@@ -81,6 +81,30 @@ asserts:
 
 新增 `tests/test_asserts.py` 15 项（配置期 5、求值 6、与 extends 的关系 1、端到端 3）。
 
+### 5. 模板片段复用：`{% include %}`（快照模式）
+
+`extends` 复用"变量与模板定义"；`{% include %}` 复用"模板里的一段代码"。
+
+```jinja
+// ===== {{ case_name }} =====
+{% include "frag/constants.j2" %}
+```
+
+* 路径**相对声明模板的那个文件**（与 `template_file` 同一套规则）—— `extends` 进来的
+  模板也能找到自己旁边的片段；
+* 可嵌套；循环 include 会被跳过而不是无限递归；
+* 片段里的变量**同样算"被引用"**：`validate` 不再误报"定义了没人用"，也会查它们有没有定义；
+  改了片段 → `check` 会判定过期（片段参与渲染与指纹）；
+* **公式模式明确报错**：片段会让"一个 Case 占几行"不可预测，而公式模式是一行一个单元格。
+
+实现上给 `build_environment` 加了 `search_path`，并新增 `renderer.template_environment()` ——
+每个模板用"声明它的那个目录"的环境（`render_all` 里按目录缓存）。
+
+顺带把"`Local Parameter` 没有定义任何局部变量"的报错说清楚：本工具用「局部变量 × Case 列」
+定位工况，至少要有一个局部变量。
+
+新增 `tests/test_include.py` 10 项；指南新增 §17，§13 的能力边界条目同步更正。
+
 ---
 
 ## 0.6.0 — 取值约束 / `extends` / 行内 `{% if %}` / 质量护栏（2026-09-27）
