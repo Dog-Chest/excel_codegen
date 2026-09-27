@@ -1,6 +1,6 @@
 # 命令参考 / Python 库 / 错误类型
 
-四个命令：`init` → 填写 → `render` → `validate` / `check`。
+五个命令：`init` → 填写 → `render` → `validate` / `check`；另有 `doctor` 体检。
 全局选项：`excel-codegen --version`。
 
 ---
@@ -120,3 +120,30 @@ print(input_fingerprint(output.global_values, output.cases))
 > **控制台兼容**：CLI 只用 ASCII 标记（`OK` / `ERROR` / `!`），并在启动时把 stdout/stderr 的
 > 错误处理设为 `backslashreplace`。中文 Windows（GBK 控制台）下**不会**再出现
 > "活干完了、最后一行字打不出来、退出码 1" 的情况。
+
+---
+
+## `excel-codegen doctor`
+
+体检**环境 / 配置 / 工作簿**三层，把常见坑一次说清。**有 ERROR 时退出码 1**（没 ERROR 时
+只有 `!` 提示也算通过）。
+
+| 选项 | 说明 |
+| --- | --- |
+| `-c, --config PATH` | YAML 配置文件（必填） |
+| `-x, --excel PATH` | 顺带体检这个工作簿（默认取配置中的 `excel.output`） |
+
+三层各看什么：
+
+| 层 | 检查项 |
+| --- | --- |
+| 环境 | Python 版本是否 ≥ `requires-python`、六个运行时依赖在不在、有没有 uv / git、是不是在虚拟环境里跑 |
+| 配置 | YAML 能否加载（含 `extends`）、模板/变量规模、模板语法与 `{% include %}` 片段、派生参数、`asserts` 语法、**有没有一条约束都没有**、有没有定义了却没人用的变量 |
+| 工作簿 | 工作表是否齐全、Case 列、取值约束与 `asserts` 是否满足、**整列都空的 Case**、渲染记录（指纹是否一致）、一键脚本在不在 |
+
+```bash
+excel-codegen doctor -c project.yaml
+```
+
+典型用途：**新同事拿到仓库的第一条命令**（"我这儿跑不起来"）、发布前自检、
+以及定期确认"这本工作簿还受哪些约束管着"。

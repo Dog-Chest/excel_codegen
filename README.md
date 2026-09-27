@@ -74,7 +74,7 @@ uv run excel-codegen render -c examples/example.yaml -x examples/template.xlsx -
 | 文档 | 内容 |
 | --- | --- |
 | [`docs/template_guide.md`](docs/template_guide.md) | **模板库扩展指南**：YAML 字段、Prefix/Suffix、Jinja2 速查、Excel 表结构、`case_filter`、排错、FAQ、能力边界、公式模式与派生参数 |
-| [`docs/cli.md`](docs/cli.md) | 命令参考（四个命令的全部选项）、作为 Python 库使用、错误类型 |
+| [`docs/cli.md`](docs/cli.md) | 命令参考（五个命令的全部选项）、作为 Python 库使用、错误类型 |
 | [`docs/setup.md`](docs/setup.md) | 安装与跨平台环境：uv 零配置、venv + pip、Ubuntu 与外置盘的坑、Python 版本策略 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本变更历史 |
 | [`abs_fpi/README.md`](abs_fpi/README.md) | 现场项目：怎么用、边界、四层校验链 |

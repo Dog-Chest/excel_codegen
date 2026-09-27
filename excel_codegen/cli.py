@@ -833,3 +833,269 @@ def _print_check_json(
         "problems": list(problems),
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+# --------------------------------------------------------------------------- #
+# doctor：一条命令体检环境 / 配置 / 工作簿
+# --------------------------------------------------------------------------- #
+#: doctor 的一行结论：级别（OK / ! / ERROR）、项目、说明
+_Finding = tuple[str, str, str]
+
+#: 支持的 Python 下限（与 pyproject.toml 的 requires-python 对应）
+_MIN_PYTHON = (3, 11)
+
+#: 运行时依赖（与 pyproject.toml 的 [project.dependencies] 对应）
+_RUNTIME_DEPS = ("openpyxl", "jinja2", "yaml", "pydantic", "typer", "rich")
+
+
+def _doctor_environment() -> list[_Finding]:
+    """环境这一层：Python 版本、依赖、可选工具、装法。"""
+    import importlib.metadata as md
+    import shutil
+
+    findings: list[_Finding] = []
+
+    version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    # 与 pyproject.toml 的 requires-python 保持一致。写成变量是故意的：
+    # doctor 的职责就是"报告环境"，不能让 linter 把这个检查当成恒真优化掉。
+    minimum = _MIN_PYTHON
+    if sys.version_info[:2] >= minimum:
+        findings.append(("OK", "Python", f"{version}（本项目要求 >={minimum[0]}.{minimum[1]}）"))
+    else:
+        findings.append(("ERROR", "Python", f"{version} 低于要求的 {minimum[0]}.{minimum[1]} —— 请升级解释器"))
+
+    missing: list[str] = []
+    versions: list[str] = []
+    for name in _RUNTIME_DEPS:
+        try:
+            dist = "pyyaml" if name == "yaml" else name
+            versions.append(f"{name} {md.version(dist)}")
+        except md.PackageNotFoundError:
+            missing.append(name)
+    if missing:
+        findings.append(("ERROR", "依赖", f"缺这些包：{', '.join(missing)}（跑一次 uv sync 或 pip install -e .）"))
+    else:
+        findings.append(("OK", "依赖", "、".join(versions)))
+
+    if shutil.which("uv"):
+        findings.append(("OK", "uv", "在（推荐用 uv run …，环境自洽）"))
+    else:
+        findings.append(("!", "uv", "没找到 —— 用 uv 可以免去 venv / pip 的差异（见 docs/setup.md）"))
+
+    if shutil.which("git"):
+        findings.append(("OK", "git", "在"))
+    else:
+        findings.append(("!", "git", "没找到 —— 建议用版本管理管住 YAML 与工作簿"))
+
+    if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
+        findings.append(("OK", "运行环境", f"虚拟环境（{sys.prefix}）"))
+    else:
+        findings.append(("!", "运行环境", "用的是系统 Python —— 建议装在 venv / uv 环境里"))
+    return findings
+
+
+def _doctor_config(project: ProjectConfig, excel_path: Path | None) -> tuple[list[_Finding], list[str]]:
+    """配置这一层：结构统计 + 模板/派生/断言检查。返回 (结论, 错误列表)。"""
+    findings: list[_Finding] = []
+    errors: list[str] = []
+
+    origin = f"extends {len(project.extends)} 个文件" if project.extends else "单文件"
+    findings.append(("OK", "YAML", f"加载成功（{origin}）"))
+    formula = [t.name for t in project.templates if t.engine == "excel"]
+    snapshot = [t.name for t in project.templates if t.engine != "excel"]
+    findings.append(
+        (
+            "OK",
+            "规模",
+            f"{len(project.templates)} 个模板（公式 {len(formula)} / 快照 {len(snapshot)}）、"
+            f"{len(project.global_variables)} 个全局变量、{len(project.local_variables)} 个局部变量",
+        )
+    )
+
+    constrained = [v.name for v in (*project.global_variables, *project.local_variables) if v.has_constraints]
+    if constrained or project.asserts:
+        findings.append(
+            (
+                "OK",
+                "校验规则",
+                f"{len(constrained)} 个变量带取值约束、{len(project.asserts)} 条跨变量 asserts",
+            )
+        )
+    else:
+        findings.append(("!", "校验规则", "一条约束都没有 —— 填错值不会被拦住（指南 §3.5 / §3.6）"))
+
+    environment = build_environment()
+    used_all: set[str] = set()
+    for template in project.templates:
+        try:
+            validate_template(template, base_dir=project.source_dir)
+            used_all |= collect_variables(template, base_dir=project.source_dir)
+        except CodeGenError as exc:
+            errors.append(str(exc))
+            findings.append(("ERROR", f"模板 {template.name}", str(exc)))
+            continue
+        if template.engine == "excel":
+            try:
+                compiled = compile_formulas(
+                    template,
+                    project,
+                    case_columns=[FIRST_CASE_COLUMN],
+                    source=template_source(template, project.source_dir),
+                )
+                longest = max((len(line) for case in compiled for line in case), default=0)
+                if longest > LONG_FORMULA_WARN:
+                    findings.append(
+                        (
+                            "!",
+                            f"模板 {template.name}",
+                            f"最长公式 {longest} 字符（>{LONG_FORMULA_WARN}）—— 一行占位符太多，考虑拆行",
+                        )
+                    )
+            except CodeGenError as exc:
+                errors.append(str(exc))
+                findings.append(("ERROR", f"模板 {template.name}", str(exc)))
+
+    try:
+        warnings = derived_validate_config(project, env=environment)
+        findings.append(
+            ("!" if warnings else "OK", "派生参数", "；".join(warnings) if warnings else "没有派生参数问题")
+        )
+    except CodeGenError as exc:
+        errors.append(str(exc))
+        findings.append(("ERROR", "派生参数", str(exc)))
+
+    try:
+        compile_asserts(project, env=environment)
+    except CodeGenError as exc:
+        errors.append(str(exc))
+        findings.append(("ERROR", "asserts", str(exc)))
+
+    # 只看 YAML 里真的定义了的变量：defined_names 含保留名（case_name / template_name），
+    # 那是"模板里可以引用的名字"，不是"定义了没人用"
+    declared = [*project.global_names, *project.local_names]
+    unused = sorted(name for name in declared if name not in used_all)
+    if unused:
+        findings.append(("!", "未使用的变量", f"{', '.join(unused)} —— 定义了但没有模板引用（拼写错误？）"))
+    else:
+        findings.append(("OK", "变量使用", "YAML 里定义的变量都被模板用到了"))
+    return findings, errors
+
+
+def _doctor_workbook(project: ProjectConfig, excel_path: Path) -> tuple[list[_Finding], list[str]]:
+    """工作簿这一层：结构、取值、指纹。返回 (结论, 错误列表)。"""
+    findings: list[_Finding] = []
+    errors: list[str] = []
+    if not excel_path.exists():
+        findings.append(("!", "工作簿", f"{excel_path} 不存在 —— 先跑 init 生成骨架"))
+        return findings, errors
+
+    workbook = load_workbook_file(excel_path)
+    try:
+        check_required_sheets(workbook, project)
+        findings.append(("OK", "工作表", "、".join(workbook.sheetnames)))
+        global_values = read_global_values(workbook, project)
+        cases = read_cases(workbook, project, global_values=global_values)
+        findings.append(("OK", "Case 列", f"{len(cases)} 个：{', '.join(case.name for case in cases)}"))
+        empty = [case.name for case in cases if not case.explicit_values]
+        if empty:
+            findings.append(
+                (
+                    "!",
+                    "空 Case 列",
+                    f"{', '.join(empty)} 整列都是空的 —— 所有变量都会回落 default，"
+                    "可能悄悄落进某个 case_filter（指南 §9.2）",
+                )
+            )
+
+        for label, checker in (("取值约束", check_value_constraints), ("asserts", check_asserts)):
+            try:
+                checker(project, global_values, cases)
+                findings.append(("OK", label, "全部满足"))
+            except CodeGenError as exc:
+                errors.append(str(exc))
+                findings.append(("ERROR", label, str(exc).splitlines()[0]))
+
+        recorded = read_metadata(workbook, project)
+        now_input = input_fingerprint(global_values, cases)
+        try:
+            now_output = output_fingerprint(render_all(project, excel_path).results)
+        except CodeGenError as exc:
+            # 参数本身有问题（约束 / asserts）时渲染不出来 —— 那已经在上面报过了
+            errors.append(str(exc))
+            now_output = ""
+    finally:
+        workbook.close()
+
+    if not recorded:
+        findings.append(("!", "渲染记录", "没有 —— 还没跑过 render --write-excel"))
+    elif not now_output:
+        findings.append(("!", "渲染记录", "参数不满足校验规则，渲染不出来（先修上面的 ERROR）"))
+    else:
+        same_input = recorded.get("参数指纹") == now_input
+        same_output = recorded.get("输出指纹") == now_output
+        if same_input and same_output:
+            findings.append(("OK", "渲染记录", f"与当前一致（参数指纹 {now_input}）"))
+        elif same_input:
+            findings.append(("!", "渲染记录", "参数没变但输出指纹不同 —— 模板或代码改过，重跑一次"))
+        else:
+            findings.append(("!", "渲染记录", "参数改过了 —— 快照模板需要重跑（公式模板会自动重算）"))
+
+    scripts = excel_path.parent / f"{excel_path.stem}_render.sh"
+    findings.append(
+        ("OK" if scripts.exists() else "!", "一键脚本", f"{scripts.name} {'在' if scripts.exists() else '不在'}")
+    )
+    return findings, errors
+
+
+@app.command("doctor")
+def doctor_command(
+    config: Path = typer.Option(
+        ..., "--config", "-c", exists=True, dir_okay=False, readable=True, help="YAML 配置文件路径"
+    ),
+    excel: Path | None = typer.Option(None, "--excel", "-x", help="顺带体检这个工作簿（默认取配置中的 excel.output）"),
+) -> None:
+    """体检环境 / 配置 / 工作簿，把常见坑一次说清。有 ERROR 时退出码 1。"""
+    findings: list[_Finding] = []
+    errors: list[str] = []
+
+    findings.extend(_doctor_environment())
+
+    try:
+        project = _load_project(config)
+    except CodeGenError as exc:
+        findings.append(("ERROR", "YAML", str(exc).splitlines()[0]))
+        _render_doctor(findings)
+        raise typer.Exit(code=1) from exc
+
+    excel_path = Path(excel or project.excel.output)
+    config_findings, config_errors = _doctor_config(project, excel_path)
+    workbook_findings, workbook_errors = _doctor_workbook(project, excel_path)
+    findings.extend(config_findings)
+    findings.extend(workbook_findings)
+    errors.extend(config_errors)
+    errors.extend(workbook_errors)
+
+    for warning in project.load_warnings:
+        findings.append(("!", "extends", warning))
+
+    _render_doctor(findings)
+    for problem in errors:
+        error_console.print(f"    {problem}")
+    if errors:
+        raise typer.Exit(code=1)
+    notes = sum(1 for level, _, _ in findings if level == "!")
+    console.print(
+        f"[bold green]OK[/] 体检完成：{sum(1 for level, _, _ in findings if level == 'OK')} 项通过"
+        + (f"，{notes} 项值得留意" if notes else "，没有需要留意的")
+    )
+
+
+def _render_doctor(findings: Sequence[_Finding]) -> None:
+    table = Table(title="体检报告", header_style="bold cyan")
+    table.add_column("", width=6)
+    table.add_column("项目", style="bold")
+    table.add_column("结论")
+    for level, name, detail in findings:
+        mark = {"OK": "[green]OK[/]", "!": "[yellow]![/]"}.get(level, "[red]ERROR[/]")
+        table.add_row(mark, name, detail)
+    console.print(table)
