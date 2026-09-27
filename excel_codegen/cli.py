@@ -8,6 +8,7 @@ stdout/stderr 加上 ``errors="backslashreplace"`` 兜底 —— 成功路径绝
 
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Sequence
 from contextlib import suppress
@@ -562,17 +563,42 @@ def _first_difference(
     labels: Sequence[str] | None = None,
     what: str = "内容",
 ) -> str:
+    differences = _differences(actual, expected, labels=labels, what=what, limit=1)
+    return differences[0] if differences else f"{what}不同"
+
+
+def _differences(
+    actual: list[str],
+    expected: list[str],
+    *,
+    labels: Sequence[str] | None = None,
+    what: str = "内容",
+    limit: int = 5,
+) -> list[str]:
+    """列出**所有**不同的行（最多 ``limit`` 条，其余折成一句"还有 N 行"）。
+
+    只报第一处差异在 CI 里很难定位 —— 用户想知道"一共差多少、都差在哪"。
+    """
+    found: list[str] = []
     for index in range(min(len(actual), len(expected))):
-        if actual[index] != expected[index]:
+        if actual[index] == expected[index]:
+            continue
+        if len(found) < limit:
             if labels is not None:
-                return (
+                found.append(
                     f"第 {index + 1} 行不同{_describe_line(index, labels)}；"
                     f"表里 {_clip(actual[index])}，应为 {_clip(expected[index])}"
                 )
-            return f"第 {index + 1} 行不同：表里 {actual[index]!r}，应为 {expected[index]!r}"
-    if len(actual) != len(expected):
-        return f"行数不同：表里 {len(actual)} 行，应为 {len(expected)} 行"
-    return f"{what}不同"
+            else:
+                found.append(f"第 {index + 1} 行不同：表里 {actual[index]!r}，应为 {expected[index]!r}")
+    hidden = sum(1 for index in range(min(len(actual), len(expected))) if actual[index] != expected[index]) - len(found)
+    if hidden > 0:
+        found.append(f"……还有 {hidden} 行不同（只列了前 {limit} 行）")
+    if not found and len(actual) != len(expected):
+        found.append(f"行数不同：表里 {len(actual)} 行，应为 {len(expected)} 行")
+    if not found:
+        found.append(f"{what}不同")
+    return found
 
 
 def _clip(text: str, limit: int = 80) -> str:
@@ -642,10 +668,12 @@ def _output_differences(
             want = expected[result.case_name]
             formulas_match = actual == want
             if not formulas_match:
-                detail = _first_difference(
-                    actual,
-                    want,
-                    labels=labels.get(result.case_name) if labels else None,
+                detail = "；".join(
+                    _differences(
+                        actual,
+                        want,
+                        labels=labels.get(result.case_name) if labels else None,
+                    )
                 )
                 if template.engine == "excel":
                     detail += "（公式模式：比的是公式，重跑 --write-excel 刷新）"
@@ -656,8 +684,8 @@ def _output_differences(
                 if got != result.lines:
                     problems.append(
                         f"{label}：`公式算出来的文本`与 Python 渲染不一致 → "
-                        f"{_first_difference(got, result.lines)}"
-                        "（参数表结构改动过？插/删过 Case 列？请重跑 --write-excel）"
+                        + "；".join(_differences(got, result.lines))
+                        + "（参数表结构改动过？插/删过 Case 列？请重跑 --write-excel）"
                     )
     return problems, notes
 
@@ -678,6 +706,11 @@ def check_command(
         True,
         "--values/--no-values",
         help="公式模式：把 Output 表的公式在 Python 里算一遍，与 Python 渲染比对（推荐开）",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="把结果打成 JSON 输出（给 CI / 看板消费），不打表格",
     ),
 ) -> None:
     """检查 Excel 里的输出表是否与当前参数一致；过期则退出码 1（可放进 CI）。"""
@@ -714,6 +747,21 @@ def check_command(
             "   ← 参数改过了（快照模板需要重跑）" if snapshot_names else "   ← 参数改过了；公式模板会自动重算，无需重跑"
         )
 
+    if json_output:
+        # --json：stdout 上只留 JSON，方便直接喂给 jq / CI 看板
+        _print_check_json(
+            config=config,
+            excel_path=excel_path,
+            recorded=recorded,
+            now_input=now_input,
+            now_output=now_output,
+            warnings=[*fresh.warnings, *notes],
+            problems=problems,
+        )
+        if problems:
+            raise typer.Exit(code=1)
+        return
+
     table = Table(title="过期检查", header_style="bold cyan")
     table.add_column("项目", style="bold")
     table.add_column("内容")
@@ -744,3 +792,34 @@ def check_command(
         error_console.print(f"    → 跑一次 `excel-codegen render -c {config} -x {excel_path} --write-excel` 刷新")
         raise typer.Exit(code=1)
     console.print("[bold green]OK[/] 输出表与当前参数一致")
+
+
+def _print_check_json(
+    *,
+    config: Path,
+    excel_path: Path,
+    recorded: dict[str, str],
+    now_input: str,
+    now_output: str,
+    warnings: Sequence[str],
+    problems: Sequence[str],
+) -> None:
+    """``check --json``：给 CI / 看板消费的机读结果。
+
+    退出码与表格模式一致（过期 = 1），所以两种模式可以互换。
+    """
+    payload = {
+        "ok": not problems,
+        "config": str(config),
+        "excel": str(excel_path),
+        "recorded": {
+            "time": recorded.get("时间", ""),
+            "input_fingerprint": recorded.get("参数指纹", ""),
+            "output_fingerprint": recorded.get("输出指纹", ""),
+        },
+        "current": {"input_fingerprint": now_input, "output_fingerprint": now_output},
+        "drift": bool(recorded.get("参数指纹")) and recorded.get("参数指纹") != now_input,
+        "warnings": list(warnings),
+        "problems": list(problems),
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2))

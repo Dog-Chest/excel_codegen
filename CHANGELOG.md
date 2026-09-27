@@ -50,6 +50,17 @@
 新增 `tests/test_run_scripts.py` 8 项 —— 其中两项**真的执行**生成的 `.sh`（用桩程序
 冒充 `excel-codegen`），确认 cd、参数转发与退出码都对。
 
+### 4. `check` 报全部差异 + `--json`
+
+* 差异原来每个 Case 只报**第一处**；现在**按行列出**（每个 Case 最多 5 行，其余折成
+  一句"还有 N 行不同"）。CI 里定位问题不用再"改一处、跑一次"。
+* 新增 `--json`：stdout 上**只有** JSON（表格与提示都跳过），结构是
+  `ok` / `config` / `excel` / `recorded` / `current` / `drift` / `warnings` / `problems`，
+  退出码与表格模式一致。适合 `jq` 与看板消费。
+
+新增 `tests/test_check_report.py` 9 项（差异汇总的 4 种形态 + CLI 表格模式 + `--json` 的
+新鲜 / 过期 / 参数漂移 / 无渲染记录）。
+
 ---
 
 ## 0.6.0 — 取值约束 / `extends` / 行内 `{% if %}` / 质量护栏（2026-09-27）

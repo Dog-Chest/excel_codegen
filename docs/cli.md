@@ -56,12 +56,20 @@
 | `-c, --config PATH` | YAML 配置文件（必填） |
 | `-x, --excel PATH` | 要检查的 Excel（默认取配置中的 `excel.output`） |
 | `--values / --no-values` | 公式模式：把 Output 表的公式**在 Python 里算一遍**再与 Python 渲染比对（默认开） |
+| `--json` | 把结果打成 **JSON**（stdout 上只有 JSON，方便 `jq` / CI 看板消费）；退出码与表格模式一致 |
 
 * 快照模式：拿当前参数重新渲染，与表内内容逐行比对（含 Case 表头）。
 * 公式模式：① 比公式文本（与当前 YAML 是否一致）；② 把公式求值，与 Python 渲染比对
   —— 后者能抓到"列标指错 / 空单元格处理错"这类**公式本身**的问题，以及"插删过 Case 列"这种结构变化。
-* **一致 → 退出码 0；过期 → 退出码 1**，并列出第一处差异（公式模式会指出是**模板第几行**）。
-  适合放进 CI 断言"提交的工作簿与代码是同步的"。
+* **一致 → 退出码 0；过期 → 退出码 1**。差异**按行列出**（每个 Case 最多 5 行，其余折成
+  一句"还有 N 行不同"），公式模式还会指出是**模板第几行**。适合放进 CI 断言
+  "提交的工作簿与代码是同步的"。
+* `--json` 输出的结构：`ok` / `config` / `excel` / `recorded{time,input_fingerprint,output_fingerprint}`
+  / `current{...}` / `drift` / `warnings` / `problems`。例如：
+
+  ```bash
+  excel-codegen check -c project.yaml --json | jq -r '.problems[]'
+  ```
 * `render` 与 `check` 都会先校验取值约束（指南 §3.5），越界时以退出码 1 结束 ——
   所以"参数填错"与"输出过期"是两类不同的失败，报错信息里能直接分辨。
 
