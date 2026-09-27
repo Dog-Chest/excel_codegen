@@ -2,12 +2,13 @@
 
 本项目遵循"每个版本对应一次真实测试驱动"的节奏：0.1.0 落地 → 0.2.0 修实测报告 →
 0.3.0 加公式模式 → 0.4.0 补齐公式模式的验证链 → 0.5.0 派生参数 → 0.5.x 跨平台与文档 →
-0.6.0 取值约束 / `extends` / 行内 `{% if %}` / 质量护栏。逐条实测证据见
+0.6.0 取值约束 / `extends` / 行内 `{% if %}` / 质量护栏 → 0.7.0 校验与复用补齐 →
+0.8.0 行列风格 / 成员表落地 / NASTRAN 工况控制。逐条实测证据见
 [`abs_fpi/FINDINGS.md`](abs_fpi/FINDINGS.md)。
 
 ---
 
-## 0.8.0 — 行列风格 + NASTRAN 工况控制（开发中）
+## 0.8.0 — 行列风格 + NASTRAN 工况控制（2026-09-27）
 
 ### 1. 行列风格：`excel.local_direction`
 
@@ -32,8 +33,8 @@
 * `check` / `doctor` 的提示语跟着变"Case 列"或"Case 行"；`check_required_sheets` 按布局校验表头。
 * 指南新增 §19。
 
-新增 `tests/test_local_direction.py` 17 项（建表 / 读值 / 两种布局对拍 / 公式值对拍 /
-插行加工况 / 约束报错定位）。
+新增 `tests/test_local_direction.py` 16 项（建表 / 读值 / 两种布局对拍 / 公式值对拍 /
+插行加工况 / 约束报错定位）。**测试 268 → 284 项。**
 
 ### 2. abs_fpi 重做工作表：舱数据改用成员表
 
@@ -59,6 +60,29 @@
 
 新增 `abs_fpi/probes/probe_group_table.py`（5 步实测）。`abs_fpi/README.md`、
 `TEMPLATES.md`、`FINDINGS.md` #3(a) 从"尚未迁移的能力边界"改成"已迁移 + 证据"。
+
+### 3. 生成测试：NASTRAN 工况控制语句
+
+`examples/nastran_case_control.yaml` —— 用 §19 的纵向布局填工况控制语句（一个子工况一行，
+整块可粘贴），生成 `SUBCASE` / `SUBCOM` 块。语句留空就不输出（`SUBSEQ` 的内容原样输出，
+工具不解释"哪几个子工况、各乘多少"）。
+
+* 每个子工况导出一个 `.inc`，文件名按只用于排序的 `seq` 编号（`cc_01_LC1.inc`），
+  `cat deck/cc_*.inc > case_control.deck` 就是完整的 case control 段；
+* 用 `asserts` 拦住"填错地方"：`SUBCOM` 必须给 `SUBSEQ`、`SUBSEQ` 不许写在 `SUBCASE` 行上；
+* 指南新增 §20（含"可选行"的写法：**换行必须写在 `{% if %}` 里面**，
+  否则语句被省略时会留下空行 —— 工具没开 `trim_blocks`）。
+
+顺带修掉两个在这次实测里暴露的问题：
+
+| 问题 | 修法 |
+| --- | --- |
+| **`filename` 里只能写 `{{ case_name }}` / `{{ template_name }}`** —— 用别的变量（比如只用来排序的 `seq`）会在导出时炸 | `RenderResult` 带上渲染上下文，`export_files` 用它渲染文件名；现在文件名里可以用**这个 Case 的任意参数** |
+| **只写在 `filename` 里的变量被判成"定义了没人用"** | `collect_variables` 也解析 `filename`，于是这个假警告消失，文件名引用到不存在的变量也会在 `validate` 阶段就报出来 |
+
+新增 `tests/test_nastran_case_control.py` 11 项 + `tests/test_renderer.py` 2 项。
+`examples/generated_nastran/` 是示例工作簿的实测产物（含拼好的 `case_control.deck`）。
+**测试 284 → 297 项。**
 
 ---
 

@@ -148,7 +148,7 @@ def collect_variables(
     env: Environment | None = None,
     base_dir: str | Path | None = None,
 ) -> set[str]:
-    """收集模板（含 ``{% include %}`` 片段与 ``case_filter``）中引用到的顶层变量名。"""
+    """收集模板（含 ``{% include %}`` 片段、``case_filter`` 与 ``filename``）里引用到的顶层变量名。"""
     environment = template_environment(template, base_dir, env)
     names: set[str] = set()
     try:
@@ -162,6 +162,11 @@ def collect_variables(
             # case_filter 是一段**表达式**，必须包进 {{ }} 才能按表达式解析
             filter_ast = environment.parse("{{ " + template.case_filter + " }}")
             names |= set(meta.find_undeclared_variables(filter_ast))
+        if template.filename:
+            # filename 本身就是一小段**模板**（`cc_{{ seq }}_{{ case_name }}.inc`），直接解析。
+            # 只写在文件名里的变量同样是"被用到"（否则 validate 会把 seq 误报成"定义了没人用"），
+            # 而且它引用到不存在的变量时应该在 validate 阶段就报出来，而不是等到导出文件时。
+            names |= set(meta.find_undeclared_variables(environment.parse(template.filename)))
     except TemplateSyntaxError as exc:
         raise RenderError(f"模板 {template.name!r} 语法错误：第 {exc.lineno} 行: {exc.message}") from exc
     return names
@@ -273,7 +278,7 @@ def check_asserts(
                     "（数值比较请写 x.value，例如 draft.value <= d_tank.value）"
                 ) from exc
             if not passed:
-                problems.append(f"  Case '{case.name}'（Local 表 {case.where}）不满足：{expression}")
+                problems.append(f"  Case '{case.name}'（Local 表{case.where}）不满足：{expression}")
     if problems:
         raise ExcelError(
             f"参数不满足 YAML 里的 asserts（跨变量校验），共 {len(problems)} 处：\n"
@@ -464,7 +469,7 @@ def render_all(
                 skipped_cases.append(case.name)
                 continue
             text = render_template(template, context, env=environment, base_dir=config.source_dir)
-            per_case.append(RenderResult(template.name, case.name, text))
+            per_case.append(RenderResult(template.name, case.name, text, dict(context)))
         results[template.name] = per_case
         if skipped_cases:
             skipped[template.name] = skipped_cases
@@ -512,8 +517,12 @@ def export_files(
 ) -> list[Path]:
     """把渲染结果导出为代码文件。
 
-    文件名由 ``template.filename`` 决定（支持 Jinja2，可用 ``{{ case_name }}`` /
-    ``{{ template_name }}``）；未配置时默认 ``<模板名>_<Case名><extension>``。
+    文件名由 ``template.filename`` 决定（支持 Jinja2）：``{{ case_name }}`` /
+    ``{{ template_name }}`` / **这个 Case 的任意变量**（例如只用来排序的 ``seq``）；
+    未配置时默认 ``<模板名>_<Case名><extension>``。
+
+    变量来自 :attr:`RenderResult.context` —— 手工构造 ``RenderResult`` 时不给它，
+    文件名里就只能用 ``case_name`` / ``template_name``。
     """
     environment = env or build_environment()
     directory = Path(outdir)
@@ -526,11 +535,11 @@ def export_files(
             continue
         pattern = template.filename or (template.name + "_{{ case_name }}" + template.extension)
         for result in per_case:
+            data = dict(result.context)
+            data["case_name"] = result.case_name
+            data["template_name"] = template.name
             try:
-                raw_name = environment.from_string(pattern).render(
-                    case_name=result.case_name,
-                    template_name=template.name,
-                )
+                raw_name = environment.from_string(pattern).render(**data)
             except TemplateError as exc:
                 raise RenderError(f"模板 {template.name!r} 的 filename 渲染失败: {exc}") from exc
             file_name = safe_filename(raw_name)

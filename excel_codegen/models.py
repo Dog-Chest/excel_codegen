@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -987,6 +988,9 @@ class RenderResult:
     template_name: str
     case_name: str
     text: str
+    #: 渲染这一份结果时用的上下文（变量 -> :class:`VarValue`）。
+    #: 导出文件名（``template.filename``）里可以用到任意参数，比如只用来排序的 ``seq``。
+    context: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def lines(self) -> list[str]:

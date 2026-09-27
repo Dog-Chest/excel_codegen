@@ -1,0 +1,124 @@
+version: 1
+
+# =========================================================================== #
+# 示例：生成 NASTRAN 工况控制语句（Case Control）
+#
+# 为什么要用 local_direction: vertical（指南 §19）：
+#   工况控制语句在工程实践里就是"一行一个子工况、一列一条语句"的形态
+#   （SUBCASE / SUBTITLE / LOAD / SPC / SUBSEQ …），通常是从别处（表格、文本、
+#   另一个软件）整块拿到的。竖向的 Local 表可以**直接整块粘贴**，不用逐列转置；
+#   而生成的代码仍然横着排（direction: horizontal），方便并排比较。
+#
+# 每一条语句都是**可选的**：留空就不输出。
+#   模板里用 `{% if x %}` 判断，并且把换行写在 if 的**里面**
+#   （`{% if x %}X = {{ x }}\n{% endif %}`）—— 这样语句不存在时不会留下空行。
+#   所以一行只填 subcase_id 也是合法的，输出就只有一条 `SUBCASE n`。
+#
+# 关于语句本身（MSC / NX Nastran 的 Case Control 段）：
+#   * `SUBCASE n` 开一个子工况；后面的语句作用于它，直到下一个 SUBCASE / SUBCOM；
+#   * `SUBCOM n` 开一个**组合**子工况：它不重新定义载荷，而是用 `SUBSEQ` 把已经
+#     定义过的子工况按比例线性组合起来（`SUBSEQ = 1, 1.2, 1.3` 表示子工况
+#     1 / 2 / 3 分别按 1.0 / 1.2 / 1.3 加权 —— 具体写法以手头版本的参考手册为准，
+#     所以这里把它当成一段**原样输出的文本**，工具不解释它）；
+#   * `SUBTITLE` / `LABEL` / `METHOD` / `LOAD` / `SPC` / `ANALYSIS` 都是子工况级语句。
+#
+# 本示例只生成"子工况块"这一部分。整份输入文件仍然是：
+#     SOL 101 / CEND / <本示例生成的各子工况块> / BEGIN BULK
+# 前面的执行控制段与后面的 BULK 段不属于 case control，一笔手写即可。
+# =========================================================================== #
+
+excel:
+  output: "nastran_case_control.xlsx"
+  template_sheet: "Template"
+  howto_sheet: "HOWTO"
+  # 一个子工况一行（A 列写 Case 名，第 1 行 B 列起写语句名）
+  local_direction: "vertical"
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Case Control", "Summary"]
+
+variables:
+  global:
+    - name: analysis
+      description: "ANALYSIS 语句的取值（整份模型共用）；留空则这条语句也不输出"
+      default: "STATICS"
+      type: string
+
+  local:
+    - name: seq
+      description: "排序号：只用来给导出文件排序（建议 01 / 02 …），不进入生成的语句"
+      default: "01"
+      type: string
+    - name: kind
+      description: "这一行的类型：SUBCASE（普通子工况）/ SUBCOM（组合子工况）"
+      default: "SUBCASE"
+      type: string
+      choices: ["SUBCASE", "SUBCOM"]
+    - name: subcase_id
+      description: "子工况编号 [i]（SUBCASE / SUBCOM 后面的整数）"
+      default: 1
+      type: int
+      min: 1
+    - name: label
+      description: "LABEL 语句；留空不输出"
+      default: ""
+      type: string
+    - name: subtitle
+      description: "SUBTITLE 语句；留空不输出"
+      default: ""
+      type: string
+    - name: method
+      description: "METHOD 语句（实特征值提取方法集号）；留空不输出"
+      default: ""
+      type: string
+    - name: load
+      description: "LOAD 语句（静力载荷集号）；留空不输出"
+      default: ""
+      type: string
+    - name: spc
+      description: "SPC 语句（单点约束集号）；留空不输出"
+      default: ""
+      type: string
+    - name: subseq
+      description: "SUBSEQ 语句的内容，原样输出（如 1, 1.2, 1.3）；留空不输出。只有 SUBCOM 用"
+      default: ""
+      type: string
+
+# 组合校验（指南 §3.6）：留空的语义是"不输出"，所以填错地方不会报错、只会悄悄少一条语句
+asserts:
+  - "kind.value != 'SUBCOM' or subseq.value != ''"  # 组合子工况必须给 SUBSEQ，否则这一行没有组合信息
+  - "kind.value != 'SUBCASE' or subseq.value == ''"  # SUBSEQ 只对 SUBCOM 有意义，写在 SUBCASE 行上是笔误
+
+templates:
+  # --------------------------------------------------------------------- 主产物 --
+  # 一个子工况一个 .inc 片段。拼成整段 case control 就是按 seq 顺序连起来：
+  #     excel-codegen render -c nastran_case_control.yaml --outdir deck
+  #     cat deck/cc_*.inc > deck/case_control.deck
+  - name: case_control
+    description: "NASTRAN Case Control 子工况块（每个子工况一个 .inc 片段）"
+    output_sheet: "Case Control"
+    start_cell: "B2"
+    direction: "horizontal"
+    write_case_headers: true
+    filename: "cc_{{ seq }}_{{ case_name }}.inc"
+    code: |-
+      {{ kind }} {{ subcase_id }}{% if label %}
+      LABEL = {{ label }}{% endif %}{% if subtitle %}
+      SUBTITLE = {{ subtitle }}{% endif %}{% if analysis %}
+      ANALYSIS = {{ analysis }}{% endif %}{% if method %}
+      METHOD = {{ method }}{% endif %}{% if load %}
+      LOAD = {{ load }}{% endif %}{% if spc %}
+      SPC = {{ spc }}{% endif %}{% if subseq %}
+      SUBSEQ = {{ subseq }}{% endif %}
+
+  # ----------------------------------------------------------------- 人读的对照表 --
+  - name: cc_summary
+    description: "工况控制语句一览（一行一个子工况）"
+    output_sheet: "Summary"
+    start_cell: "B2"
+    direction: "vertical"
+    write_case_headers: true
+    filename: "cc_summary_{{ seq }}_{{ case_name }}.md"
+    code: |-
+      {{ kind }} {{ subcase_id }} ｜ SUBTITLE={{ subtitle }} ｜ METHOD={{ method }} ｜ LOAD={{ load }} ｜ SPC={{ spc }} ｜ SUBSEQ={{ subseq }}

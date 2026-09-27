@@ -208,6 +208,28 @@ def test_export_files_uses_filename_pattern(tmp_path: Path, project: ProjectConf
     assert (tmp_path / "generated" / "uart_init_Case1.c").read_text(encoding="utf-8").startswith("// Case: Case1")
 
 
+def test_export_files_filename_can_use_case_variables(tmp_path: Path, config_text: str) -> None:
+    """filename 里可以用**这个 Case 的任意参数**（不只是 case_name），用得着排序号之类。"""
+    config_path = tmp_path / "c.yaml"
+    config_path.write_text(config_text, encoding="utf-8")
+    config = load_config(config_path)
+    config.templates[0].filename = "{{ port.value }}_{{ case_name }}.c"
+
+    output = render_all(config, create_template(config, tmp_path / "t.xlsx", cases=["Case1"]))
+    written = export_files(config, output.results, tmp_path / "gen")
+    # port 的默认值是 A
+    assert sorted(path.name for path in written if path.suffix == ".c") == ["A_Case1.c"]
+
+
+def test_render_result_carries_context(tmp_path: Path, project: ProjectConfig, workbook_path: Path) -> None:
+    """RenderResult 带上渲染上下文 —— 导出文件名靠它，手工构造时可以为空。"""
+    output = render_all(project, workbook_path, only_cases=["Case1"])
+    result = output.results[project.templates[0].name][0]
+    assert result.context["case_name"] == "Case1"
+    assert result.context["baud"].text == "115200"
+    assert RenderResult("t", "c", "x").context == {}  # 老写法照常能构造
+
+
 def test_export_files_default_naming_and_overwrite_guard(tmp_path: Path, config_text: str) -> None:
     config_path = tmp_path / "c.yaml"
     config_path.write_text(config_text, encoding="utf-8")

@@ -13,7 +13,7 @@
 | --- | --- | --- |
 | `-c, --config PATH` | YAML 配置文件（必填，必须存在） | — |
 | `-o, --output PATH` | 生成的 Excel 路径 | 配置中的 `excel.output` |
-| `--cases VALUE` | 初始 Case 列：数量（`3`）**或逗号分隔的名字**（`EXT-T20.559,INT-T15`） | `2` |
+| `--cases VALUE` | 初始工况：数量（`3`）**或逗号分隔的名字**（`EXT-T20.559,INT-T15`）——横向布局是列、纵向是行（`excel.local_direction`） | `2` |
 | `-f, --force` | 目标文件已存在时覆盖 | 否 |
 | `--template-sheet / --no-template-sheet` | 是否生成隐藏的 `Template` 表（保存模板原文与元信息） | 生成 |
 | `--howto / --no-howto` | 是否生成 `HOWTO` 说明表（放在第一张） | 生成 |
@@ -115,7 +115,7 @@ print(input_fingerprint(output.global_values, output.cases))
 | 异常 | 触发场景 | 提示示例 |
 | --- | --- | --- |
 | `ConfigError` | YAML 语法错误、同一映射里键重复、字段非法、重名、`output_sheet` 未声明 | `YAML 键重复: 'variables'（第 20 行）…` |
-| `ExcelError` | 文件不存在、工作表缺失、表头不对、无 Case 列、变量名重复 | `Excel 缺少工作表: 'Local Parameter'。当前工作表: ...` |
+| `ExcelError` | 文件不存在、工作表缺失、表头不对、没有工况、变量名重复 | `Excel 缺少工作表: 'Local Parameter'。当前工作表: ...` |
 | `RenderError` | 模板 / `case_filter` 语法错误、变量缺失、导出文件名非法 | `模板 'uart_init' 语法错误：第 3 行: Unexpected end of template ...` |
 
 > **控制台兼容**：CLI 只用 ASCII 标记（`OK` / `ERROR` / `!`），并在启动时把 stdout/stderr 的
@@ -140,7 +140,7 @@ print(input_fingerprint(output.global_values, output.cases))
 | --- | --- |
 | 环境 | Python 版本是否 ≥ `requires-python`、六个运行时依赖在不在、有没有 uv / git、是不是在虚拟环境里跑 |
 | 配置 | YAML 能否加载（含 `extends`）、模板/变量规模、模板语法与 `{% include %}` 片段、派生参数、`asserts` 语法、**有没有一条约束都没有**、有没有定义了却没人用的变量 |
-| 工作簿 | 工作表是否齐全、Case 列、取值约束与 `asserts` 是否满足、**整列都空的 Case**、渲染记录（指纹是否一致）、一键脚本在不在 |
+| 工作簿 | 工作表是否齐全、Case 列 / 行、取值约束与 `asserts` 是否满足、**整行/整列都空的 Case**、渲染记录（指纹是否一致）、一键脚本在不在 |
 
 ```bash
 excel-codegen doctor -c project.yaml

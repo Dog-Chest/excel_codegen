@@ -94,7 +94,7 @@ Jinja2 语法速查、Excel 表结构与填写规则、输出布局、导出代�
 | `start_cell` | str | `B2` | 结果起始单元格，如 `B2`、`A1`、`H5` |
 | `direction` | `horizontal` \| `vertical` | `horizontal` | 输出布局，见第 6 节 |
 | `write_case_headers` | bool | `true` | 是否写出 Case 名表头（横向写在上一行，纵向写在左一列） |
-| `filename` | str \| null | `null` | 导出文件名，支持 Jinja2（可用 `{{ case_name }}` / `{{ template_name }}`） |
+| `filename` | str \| null | `null` | 导出文件名，支持 Jinja2：`{{ case_name }}` / `{{ template_name }}` / **这个 Case 的任意变量**（如只用来排序的 `seq`） |
 | `extension` | str | `.txt` | 未配置 `filename` 时的默认扩展名（自动补 `.`） |
 | `code` | str | — | 内联模板源码（与 `template_file` 二选一） |
 | `template_file` | str | — | 外部模板文件路径，相对 YAML 所在目录解析 |
@@ -223,7 +223,7 @@ asserts:
 
 ```
 ERROR 参数不满足 YAML 里的 asserts（跨变量校验），共 1 处：
-  Case 'EXT-T15'（Local 第 F 列）不满足：draft.value <= d_tank.value
+  Case 'EXT-T15'（Local 表第 F 列）不满足：draft.value <= d_tank.value
   → 改 Excel 里的取值，或调整 YAML 里的 asserts
 ```
 
@@ -570,7 +570,7 @@ direction: "vertical"
 excel-codegen render --config examples/example.yaml --excel examples/template.xlsx --outdir generated/
 ```
 
-- 文件名优先级：`template.filename`（Jinja2 渲染，可用 `{{ case_name }}`、`{{ template_name }}`）→ 否则 `<模板名>_<Case名><extension>`。
+- 文件名优先级：`template.filename`（Jinja2 渲染，可用 `{{ case_name }}`、`{{ template_name }}`、这个 Case 的任意变量）→ 否则 `<模板名>_<Case名><extension>`。
 - 文件名中的 `<>:"/\|?*` 与控制字符会被替换为 `_`（Windows 兼容）。**注意这意味着文件名里不能带目录**：
   `+`、`.`、`-`、空格、中文都是安全的（工况名可以直接当文件名用），要分目录请用不同的 `--outdir`。
 - 文件内容以 UTF-8 写入，并保证以换行符结尾。
@@ -769,6 +769,7 @@ Prefix/Suffix 是按变量（不是按 Case）生效的。见 4.4：再加一个
 | 0.5.2 | **多平台零配置**：新增跨平台锁文件 `uv.lock` 与 `.python-version`，`pyproject.toml` 加 `[dependency-groups] dev`（PEP 735）—— 装上 uv 之后 `uv run pytest` / `uv run excel-codegen …` 在 Windows / macOS / Linux 完全一致，不需要 venv、pip、apt。`setup.sh` 同步支持 uv 路径。**支持下限 3.10 → 3.11**（3.10 于 2026-10 结束支持），CI 改为测「底线 3.11 + 3.13」。**工具行为无变化** |
 | **0.6.0** | **取值约束**（`min`/`max`/`choices`/`pattern`：越界在 render/validate 报错，Excel 里变下拉与数值范围，见 §3.5）；**跨文件复用 `extends`**（见 §16）；**公式模式支持行内 `{% if %}`**（编译成 `IF()`，见 §14.1.1）；**质量护栏**（ruff + mypy + 覆盖率门槛进 CI）。另修掉两个真 bug：`and`/`or` 在派生表达式里从未生效；`excel_io` 用了未导入的 `DerivedError` |
 | **0.7.0** | **跨变量校验 `asserts`**（§3.6）、**模板片段 `{% include %}`**（§17）、**第三层作用域成员表**（§18）、取值约束补齐到成员表、`check --json` + 报全部差异、Excel 批注（含 `unit`）、`init` 生成一键刷新脚本、`excel-codegen doctor` 体检、质量护栏补 sdist 自包含检查 |
+| **0.8.0** | **行列风格 `excel.local_direction`**：Local 表可切成“一行一个工况”（见 §19）；公式模式与求值器支持二维 `INDEX` / 行区间 `MATCH`；**`filename` 里可用任意参数**；abs_fpi 舱数据改用成员表；新增 NASTRAN 工况控制用例（§20） |
 
 ---
 
@@ -1331,3 +1332,78 @@ excel-codegen render -c project.yaml --write-excel
 ```
 
 `check` 与 `doctor` 里的提示会跟着说"Case 列"或"Case 行"，看到"Case 行"就说明当前是纵向布局。
+
+---
+
+## 20. 用例：NASTRAN 工况控制语句
+
+仓库里的 `examples/nastran_case_control.yaml` 是一个完整可跑的示例，它把 §19 的纵向布局
+用在**工况控制语句**上。要点有三条。
+
+### 20.1 表就是"一行一个子工况"
+
+工况控制语句在实践里天然是行的形态，所以 `excel.local_direction: vertical` 之后可以整块粘贴：
+
+|  | A | B | C | D | E | F | G | H | I | J |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **1** | Case | seq | kind | subcase_id | label | subtitle | method | load | spc | subseq |
+| **2** | LC1 | 01 | SUBCASE | 1 |  | HEAD SEA |  | 101 | 1 |  |
+| **3** | COMB4 | 04 | SUBCOM | 4 |  | COMBINED |  |  |  | 1, 1.2, 1.3 |
+| **4** | LC5 | 05 | SUBCASE | 5 |  |  |  |  |  |  |
+
+而生成的代码仍然横着排（`direction: horizontal`）：一行一条语句，一列一个子工况，方便并排看。
+
+### 20.2 "留空 = 这条语句不存在"
+
+模板里用 `{% if %}` 判断，**换行必须写在 if 的里面**：
+
+```jinja
+{{ kind }} {{ subcase_id }}{% if label %}
+LABEL = {{ label }}{% endif %}{% if load %}
+LOAD = {{ load }}{% endif %}{% if spc %}
+SPC = {{ spc }}{% endif %}
+```
+
+写对了：省略 `label` 时得到 `SUBCASE 1\nLOAD = 101\nSPC = 1`，一句不多一行不少。
+
+写错了（换行留在 if 外面，也就是 `{% if x %}` 自己占一行）：
+
+```jinja
+SUBCASE {{ subcase_id }}
+{% if label %}          ← 这行的换行是**无条件**输出的
+LABEL = {{ label }}
+{% endif %}
+```
+
+省略 `label` 时会在 `SUBCASE 1` 后面留下一个**空行**。工具没有开 `trim_blocks`，
+所以"条件行"要按上面的写法自己带上换行。（同一条规则适用于任何"可选行"模板。）
+
+* 一行**只填编号**也是合法的：输出就只有 `SUBCASE 5`（再加上全局的 `ANALYSIS`）。
+* `SUBSEQ` 的内容**原样输出**：`SUBSEQ = 1, 1.2, 1.3` 里"哪几个子工况、各乘多少"
+  由手头版本的参考手册决定，工具不解释它，也就不可能替你改错。
+
+### 20.3 用 `asserts` 拦住"填错地方"
+
+留空的语义是"不输出"，所以填错位置**不会**报错、只会悄悄少一条语句。根级 `asserts` 正好补这个缺口：
+
+```yaml
+asserts:
+  - "kind.value != 'SUBCOM' or subseq.value != ''"  # 组合子工况必须给 SUBSEQ
+  - "kind.value != 'SUBCASE' or subseq.value == ''" # SUBSEQ 写在 SUBCASE 行上是笔误
+```
+
+### 20.4 拼成整段 case control
+
+一个子工况一个 `.inc` 片段，文件名按 `seq` 排序，连起来就是 case control 段：
+
+```bash
+excel-codegen render -c examples/nastran_case_control.yaml --outdir deck
+cat deck/cc_*.inc > deck/case_control.deck
+```
+
+整份输入文件仍然是 `SOL 101` / `CEND` / `<上面这段>` / `BEGIN BULK` ——
+执行控制段与 BULK 段不属于 case control，一笔手写即可（或者再写一个模板生成它们）。
+
+> 运行记录：`examples/generated_nastran/case_control.deck` 是示例工作簿的实测产物；
+> `tests/test_nastran_case_control.py` 12 项把上面每一条都钉住了
+> （含"省略语句不留空行"与"输出表里不残留上一版的行"）。

@@ -33,6 +33,14 @@ uv run excel-codegen render -c examples/example.yaml -x examples/template.xlsx -
 
 没装 uv 就去掉 `uv run`，先按下面「安装」把环境准备好。
 
+`examples/` 里还有两个可直接跑的：
+
+| 示例 | 演示什么 |
+| --- | --- |
+| [`example.yaml`](examples/example.yaml) | 最小闭环：global / local 变量、前缀后缀、快照渲染、导出文件 |
+| [`example_formula.yaml`](examples/example_formula.yaml) | 公式模式：改参数后打开 Excel 就重算，不用再跑脚本 |
+| [`nastran_case_control.yaml`](examples/nastran_case_control.yaml) | **一行一个工况**（`local_direction: vertical`）生成 NASTRAN 工况控制语句：语句留空就不输出，一键拼成整段 case control（指南 §19 / §20） |
+
 ## 特性
 
 | | |
@@ -46,7 +54,7 @@ uv run excel-codegen render -c examples/example.yaml -x examples/template.xlsx -
 | **一本工作簿放多套规则** | `case_filter: "kind == 'EXT'"` 让模板只作用于匹配的工况，共用一张 Global 表 |
 | **跨文件复用** | `extends: [rules/a.yaml, rules/b.yaml]` 把几套规范合并进一份项目配置 —— 变量与模板不用手抄，`template_file` 相对各自文件解析 |
 | **三层作用域** | 船（global）→ 工况（local）→ **舱 / 设备（成员表）**：被多个工况引用的舱参数只写一遍，改一处就够 |
-| **可导出代码文件** | 文件名支持 Jinja2（`uart_init_{{ case_name }}.c`），一次生成多份 |
+| **可导出代码文件** | 文件名支持 Jinja2，**参数也能用**（`cc_{{ seq }}_{{ case_name }}.inc`），一次生成多份 |
 | **自带说明与指纹** | 工作簿里有 `HOWTO` 表与生成指纹；`excel-codegen check` 判定"表里的代码是否已过期"，**CI 可用** |
 
 ## 现场用例：ABS FPI 内外压 → GeniE
@@ -103,7 +111,7 @@ pip install -e ".[dev]"
 ## 开发
 
 ```bash
-uv run pytest --cov          # 194 项用例 + 覆盖率门槛（85%）
+uv run pytest --cov          # 297 项用例 + 覆盖率门槛（85%）
 uv run ruff check .          # lint
 uv run ruff format --check . # 格式
 uv run mypy                  # 类型检查

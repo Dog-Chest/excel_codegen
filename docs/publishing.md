@@ -109,8 +109,8 @@ uv lock
 # 3) 本地过一遍质量闸
 uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov
 # 4) 提交、打 tag、推
-git commit -am "0.7.0：……"
-git tag v0.7.0
+git commit -am "0.8.0：……"
+git tag v0.8.0
 git push origin main --tags
 ```
 
