@@ -616,7 +616,8 @@ class _Compiler:
                 raise FormulaError(
                     f"模板 {self.template_name!r} 的 {{{{ if }}}} 没有闭合（这一行少了 "
                     f"{{% endif %}}）。公式模式**每行对应一个单元格**，所以 {{% if %}} 必须"
-                    f"写在同一行内；行内容：{line.strip()!r}"
+                    f"写在同一行内 —— 要写跨行的 {{{{ if }}}} 就给这个模板加 engine: snapshot；"
+                    f"行内容：{line.strip()!r}"
                 )
             return join(parts)
 

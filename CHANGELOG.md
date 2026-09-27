@@ -8,7 +8,29 @@
 
 ---
 
-## 0.8.0 — 行列风格 + NASTRAN 工况控制（2026-09-27）
+## 0.8.0 — 默认公式模式 + 行列风格 + NASTRAN 工况控制（2026-09-27）
+
+### 0. **默认引擎改成公式模式**（`engine: excel`）
+
+本工具的用法是"**写一个 YAML → 生成一本 Excel → 之后就在 Excel 里干活，YAML 攒成模板库**"。
+按这个用法，工作簿必须**独立可用**：改一格参数输出自己就变，不需要再跑命令。于是：
+
+* `TemplateDef.engine` 的默认值 **`snapshot` → `excel`**；不写 `engine` 就是公式模式；
+* `snapshot` 仍然保留，但必须**显式**声明 —— 只在两种情况需要：模板里有
+  `{% for %}` / 过滤器 / 多行 `{% if %}` / `{% include %}`（公式模式表达不了），
+  或者你要的是"导出的代码文件跟着参数走"；
+* 报错信息补齐：公式模式表达不了的写法，一律在消息里给出"加 `engine: snapshot`"
+  （`{% for %}` / `{% include %}` / 过滤器原本就有，这次补上**跨行 `{% if %}`**）；
+* **建表时就拦住**：`create_template` 现在会预检每个模板（语法、`{% include %}` 片段、
+  公式能否编译）。以前是等你把参数填完、跑 `render` 才炸 —— 而这个用法下工作簿只建一次，
+  越早报错越好。报错时**不会**生成那个 .xlsx。
+
+仓库内随之显式标注：`examples/example.yaml`（演示过滤器 + 循环）、
+9 个 `abs_fpi/probes/probe_*.yaml`（记录的是快照模式下的行为）、若干测试夹具。
+`examples/example_formula.yaml` 那两行 `engine: "excel"` 现在只是"写出来更清楚"。
+
+新增 `tests/test_engine_default.py` 10 项（默认值 / 默认写公式 / 显式 snapshot /
+建表期报错 / 报错里给出路 / 示例与默认值一致）。
 
 ### 1. 行列风格：`excel.local_direction`
 
@@ -101,7 +123,7 @@
 新增 `tests/test_nastran_case_control.py` 17 项 + `tests/test_renderer.py` 2 项 +
 `tests/test_formula_eval.py` 1 项。
 `examples/generated_nastran/` 是示例工作簿的实测产物（含拼好的 `case_control.deck`）。
-**测试 268 → 313 项。**
+**测试 268 → 323 项。**
 
 ---
 

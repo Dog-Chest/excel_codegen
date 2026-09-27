@@ -54,10 +54,13 @@ variables:
       suffix: ""
 
 templates:
+  # 这个 fixture 演示的是"快照模式 + 过滤器"，所以显式声明 engine: snapshot
+  # （默认已经是公式模式 excel，见 tests/test_engine_default.py）
   - name: uart_init
     output_sheet: "Output"
     start_cell: "B2"
     direction: "horizontal"
+    engine: "snapshot"
     filename: "uart_init_{{ case_name }}.c"
     code: |
       // Case: {{ case_name }}
@@ -70,6 +73,7 @@ templates:
     output_sheet: "Output Vertical"
     start_cell: "B2"
     direction: "vertical"
+    engine: "snapshot"
     filename: "uart_summary_{{ case_name }}.md"
     code: |
       | {{ case_name }} | {{ baud }} | {{ port }} | {{ mode }} |

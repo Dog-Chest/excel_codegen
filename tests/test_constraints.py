@@ -42,8 +42,11 @@ __GLOBALS__
 __LOCALS__
 
 templates:
+  # 这里引用了只写在 Excel 表里、没进 variables 的 kind（快照模式允许），
+  # 所以显式声明 engine: snapshot（项目默认为公式模式 excel，它要求变量都定义过）
   - name: demo
     output_sheet: "Output"
+    engine: "snapshot"
     code: |
       // {{ kind }} L={{ draft }}
 """

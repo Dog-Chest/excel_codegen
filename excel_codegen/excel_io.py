@@ -173,6 +173,8 @@ def create_template(
 
     # 派生参数先过一遍配置期检查（语法 / 引用范围 / 循环），别等到渲染才炸
     derived_validate_config(config)
+    # 模板也先过一遍：语法 / 片段 / **公式模式能不能表达**
+    _preflight_templates(config, base_dir=base_dir or config.source_dir)
 
     case_names = _normalise_case_names(cases)
     config.scripts_enabled = include_scripts
@@ -231,6 +233,30 @@ def create_template(
         # 放在工作簿旁边：改完参数双击就能刷新，不用记命令
         write_run_scripts(config, target)
     return target
+
+
+def _preflight_templates(config: ProjectConfig, *, base_dir: str | Path | None) -> None:
+    """建表之前先把每个模板过一遍：语法、``{% include %}`` 片段、公式模式能否表达。
+
+    为什么要在这里做：**公式模式是默认引擎**，而它只支持"占位符 + 单行 ``{% if %}``"。
+    如果等到 ``render`` 才发现模板用了过滤器，那时工作簿已经生成、参数也填了一半 ——
+    而这个工具的正常用法是"建一次工作簿，之后就在 Excel 里干活"，越早报错越好。
+    报错里会明确说"请把该模板改回 engine: snapshot"。
+    """
+    from .formula import compile_formulas  # 本模块已导入，这里只是让依赖显式
+    from .renderer import validate_template  # 延迟导入：renderer 依赖本模块
+
+    for template in config.templates:
+        validate_template(template, base_dir=base_dir)
+        if template.engine != "excel":
+            continue
+        # 轴取哪个都行 —— 这里只关心"这一行能不能编译成公式"（与 validate 命令同一套检查）
+        compile_formulas(
+            template,
+            config,
+            case_axes=[FIRST_CASE_COLUMN],
+            source=_template_source(template, base_dir),
+        )
 
 
 def _normalise_case_names(cases: int | Sequence[str]) -> list[str]:
@@ -1647,8 +1673,8 @@ def write_results(
 
     * ``direction: horizontal`` —— 每个 Case 一列（结果行向下展开）
     * ``direction: vertical``   —— 每个 Case 一行（结果行向右展开）
-    * ``engine: snapshot``      —— 写**文本快照**（默认）
-    * ``engine: excel``         —— 写 **Excel 公式**：改参数后由 Excel 自己重算，不用重跑脚本
+    * ``engine: excel``         —— 写 **Excel 公式**（默认）：改参数后由 Excel 自己重算，不用重跑脚本
+    * ``engine: snapshot``      —— 写**文本快照**：改参数必须重跑命令（要用循环 / 过滤器时才选它）
 
     写入前会清理旧的输出区域（按**表内原有的真实边界**算，而不是按本次行数），
     因此"改短模板 / 减少 Case 之后重渲染"不会残留上一次的内容。

@@ -26,10 +26,10 @@ htmlcov/
 abs_fpi/probes/*.xlsx
 abs_fpi/probes/_out/
 
-# abs_fpi 的一键刷新脚本：由 init / build.py --init 就地生成，每次内容一样
+# abs_fpi 的一键刷新脚本：由 init / build.py --init / 跑探针时就地生成，每次内容一样
 # （examples/ 下那两个是刻意保留下来当样板的）
-abs_fpi/*_render.sh
-abs_fpi/*_render.bat
+abs_fpi/**/*_render.sh
+abs_fpi/**/*_render.bat
 
 # --------------------------------------------------------------------------- #
 # 密钥与凭据 —— 本仓库是**公开**的，下面这些东西永远不要提交。

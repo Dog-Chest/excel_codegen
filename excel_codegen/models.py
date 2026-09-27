@@ -65,8 +65,10 @@ FIRST_CASE_COLUMN: int = 5
 
 Direction = Literal["horizontal", "vertical"]
 VarType = Literal["auto", "string", "int", "float", "bool", "raw"]
-#: ``snapshot`` = 脚本渲染后把**文本**写进输出表（默认）；
-#: ``excel``    = 把模板编译成**Excel 公式**写进输出表，改参数由 Excel 自己重算。
+#: ``excel``    = 把模板编译成**Excel 公式**写进输出表（**默认**）：改参数由 Excel 自己重算，
+#:               工作簿脱离命令行也独立可用；
+#: ``snapshot`` = 脚本渲染后把**文本**写进输出表，改参数必须重跑命令。
+#:                模板要用 ``{% for %}`` / 过滤器 / 多行 ``{% if %}`` / ``{% include %}`` 时才需要。
 Engine = Literal["snapshot", "excel"]
 
 #: 渲染上下文里由程序注入、不允许作为变量名使用的保留名。
@@ -511,10 +513,14 @@ class TemplateDef(BaseModel):
     extension: str = ".txt"
     code: str | None = None
     template_file: str | None = None
-    #: 输出引擎：``snapshot``（默认，写文本快照）或 ``excel``（写公式，改参数不用重跑脚本）。
-    #: ``excel`` 只支持"纯替换"子集：{{ x }} / {{ x.value }} / {{ x.prefix }} / {{ x.suffix }} /
-    #: {{ case_name }} / {{ template_name }}；含控制流或过滤器会报错。
-    engine: Engine = "snapshot"
+    #: 输出引擎。**默认 ``excel``（写公式）** —— 本工具的用法是"生成一次工作簿，之后就用
+    #: Excel 干活"：公式模式下改参数由 Excel 自己重算，不用再跑命令，工作簿**独立可用**。
+    #: ``snapshot``（写文本快照）只在下面这些情况才需要，且必须**显式**声明：
+    #:
+    #: * 模板里有 ``{% for %}`` / 过滤器 / 多行 ``{% if %}`` / ``{% include %}``（公式模式表达不了）；
+    #: * 想让导出的代码文件"改完参数自动同步"（公式模式的值只活在 Excel 里，
+    #:   ``--outdir`` 仍然要走命令行）。
+    engine: Engine = "excel"
     #: 可选：Jinja2 表达式，对每个 Case 的上下文求值；为假则该模板跳过这个 Case。
     #: 例如 ``case_filter: "kind == 'EXT'"``。用于"一本工作簿放两套规则"的场景。
     case_filter: str | None = None

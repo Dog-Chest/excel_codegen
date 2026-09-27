@@ -30,6 +30,7 @@ variables:
 
 templates:
   - name: ext_code
+    engine: "snapshot"
     description: "只应生成给 kind=EXT 的 Case"
     output_sheet: "Code EXT"
     start_cell: "B2"
@@ -41,6 +42,7 @@ templates:
       var draft = {{ draft }};
 
   - name: int_code
+    engine: "snapshot"
     description: "只应生成给 kind=INT 的 Case"
     output_sheet: "Code INT"
     start_cell: "B2"

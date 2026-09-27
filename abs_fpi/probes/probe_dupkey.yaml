@@ -24,6 +24,7 @@ variables:
 
 templates:
   - name: probe_dupkey
+    engine: "snapshot"
     output_sheet: "Output"
     start_cell: "B2"
     code: |

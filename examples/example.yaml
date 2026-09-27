@@ -60,12 +60,18 @@ variables:
 # --------------------------------------------------------------------------- #
 templates:
   # 横向布局：每个 Case 占 Output 表的一列，结果行向下展开
+  #
+  # ⚠ 这里**显式**写 engine: snapshot（默认是 excel / 公式模式）。
+  #   因为下面用了过滤器（{{ port.value | pvs(...) }}），而公式模式表达不了过滤器。
+  #   想体验"改 Excel 就改输出"请看 examples/example_formula.yaml 与
+  #   examples/nastran_case_control.yaml —— 那两个都是默认的公式模式。
   - name: uart_init
-    description: "UART 初始化代码"
+    description: "UART 初始化代码（快照模式）"
     output_sheet: "Output"
     start_cell: "B2"
     direction: "horizontal"
     write_case_headers: true
+    engine: "snapshot"
     filename: "uart_init_{{ case_name }}.c"
     code: |
       // Case: {{ case_name }}
@@ -77,11 +83,12 @@ templates:
 
   # 纵向布局：每个 Case 占一行，结果行向右展开
   - name: uart_summary
-    description: "UART 配置汇总表（Markdown）"
+    description: "UART 配置汇总表（Markdown，快照模式）"
     output_sheet: "Output Vertical"
     start_cell: "B2"
     direction: "vertical"
     write_case_headers: true
+    engine: "snapshot"
     filename: "uart_summary_{{ case_name }}.md"
     code: |
       | case_name | baud | port | mode |

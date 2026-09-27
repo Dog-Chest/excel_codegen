@@ -27,6 +27,7 @@ variables:
 
 templates:
   - name: probe_suffix
+    engine: "snapshot"
     output_sheet: "Output"
     start_cell: "B2"
     direction: "horizontal"

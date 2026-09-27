@@ -330,10 +330,12 @@ variables:
       type: string
 
 templates:
+  # 这里要看写回单元格的**文本**，所以显式用快照模式（项目默认为公式模式 excel）
   - name: ext_code
     output_sheet: "Code EXT"
     start_cell: "B2"
     direction: "horizontal"
+    engine: "snapshot"
     case_filter: "kind == 'EXT'"
     code: |
       // EXT {{ case_name }} (L={{ L }})
@@ -341,6 +343,7 @@ templates:
     output_sheet: "Code INT"
     start_cell: "B2"
     direction: "horizontal"
+    engine: "snapshot"
     case_filter: "kind == 'INT'"
     code: |
       // INT {{ case_name }} (L={{ L }})

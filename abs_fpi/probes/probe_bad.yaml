@@ -16,6 +16,7 @@ variables:
 
 templates:
   - name: probe_bad
+    engine: "snapshot"
     output_sheet: "NotDeclared"
     start_cell: "2B"
     code: |

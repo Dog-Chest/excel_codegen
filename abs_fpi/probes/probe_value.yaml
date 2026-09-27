@@ -35,6 +35,7 @@ variables:
 
 templates:
   - name: probe_value
+    engine: "snapshot"
     output_sheet: "Output"
     start_cell: "B2"
     direction: "horizontal"

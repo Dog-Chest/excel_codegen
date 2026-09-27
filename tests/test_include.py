@@ -55,7 +55,13 @@ def write(path: Path, text: str) -> Path:
     return path
 
 
-def project(tmp_path: Path, code_body: str, *, engine: str | None = None) -> Path:
+def project(tmp_path: Path, code_body: str, *, engine: str | None = "snapshot") -> Path:
+    """写一份只有一个模板的配置。
+
+    ``{% include %}`` 只有快照模式支持，所以这里**默认 snapshot**
+    （不传 engine 时的项目默认值已经是公式模式 excel；要测"公式模式拒绝 include"
+    就显式传 ``engine="excel"``，见 test_formula_mode_rejects_include）。
+    """
     engine_line = f"    engine: {engine}\n" if engine else ""
     return write(
         tmp_path / "p.yaml",
@@ -117,7 +123,8 @@ def test_fragment_resolves_relative_to_declaring_file(tmp_path: Path) -> None:
     write(
         tmp_path / "rules" / "rule.yaml",
         "version: 1\nvariables:\n  global:\n    - name: L\n      type: float\n      default: 300\n  local: []\n"
-        'templates:\n  - name: from_rule\n    output_sheet: "Output"\n    code: |\n'
+        'templates:\n  - name: from_rule\n    output_sheet: "Output"\n'
+        '    engine: "snapshot"\n    code: |\n'
         '      {% include "frag/body.j2" %}\n',
     )
     write(

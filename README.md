@@ -10,26 +10,36 @@
 > 人工负责提需求、定方向与验收。
 
 工程师最熟悉的填参数界面是 Excel，最该被评审和版本管理的生成规则却常常散在一次性脚本里。
-这个工具把两头接起来：**变量与模板写在 YAML**（进 Git、可 diff、可评审），
-**参数在 Excel 里填**（可右拉、可分享），一条命令渲染出代码。
+这个工具把两头接起来：**变量与模板写在 YAML**（进 Git、可 diff、可评审、可攒成模板库），
+**生成一本 Excel 之后就脱离命令行干活** —— 参数在 Excel 里填，输出表里的代码由 Excel 自己算，
+改一格就变，不需要再跑任何命令。
 
 ```
-example.yaml ──init──► template.xlsx ──(人工填参数)──► render ──► Output 表 / 代码文件
-     ▲                                                              │
-     └──────────────── Jinja2 模板（Prefix + Value + Suffix）◄───────┘
+   YAML 模板库                     一本独立可用的工作簿
+┌──────────────────┐        ┌───────────────────────────────────────┐
+│ variables        │        │ Global / Local Parameter：填参数       │
+│ templates(Jinja2)│──init─►│ Output：**Excel 公式**，改参数自己重算  │
+└──────────────────┘        └───────────────────────────────────────┘
+         │                                  │
+         │ 下次复用 / 微调再改 YAML          │ 要把代码导成文件时才用命令行
+         └──────────────────────────────────┴──► render --outdir
 ```
 
 ## 快速开始
 
 ```bash
-# 1) 生成 Excel 表单
-uv run excel-codegen init   -c examples/example.yaml -o examples/template.xlsx --cases 2
+# 1) 生成 Excel 表单（模板不写 engine 时默认就是公式模式）
+uv run excel-codegen init -c examples/example_formula.yaml -o examples/template_formula.xlsx --cases 2
 
-# 2) 在 Excel 里填：Global Parameter 的 B 列、Local Parameter 的 E/F 列（要更多工况就整块右拉）
+# 2) 打开 Excel 填参数：Global Parameter 的 B 列、Local Parameter 的 E/F 列
+#    Output 表里是公式 —— 改完参数**它自己就重算了**，不需要第 3 步
 
-# 3) 渲染回 Excel 的 Output 表
-uv run excel-codegen render -c examples/example.yaml -x examples/template.xlsx --write-excel
+# 3) 只有「要把代码导成文件」时才需要命令行
+uv run excel-codegen render -c examples/example_formula.yaml -x examples/template_formula.xlsx \
+    --outdir examples/generated_formula
 ```
+
+想核对「Excel 里算出来的」与「Python 渲染的」是否一致（CI 里很有用）：`excel-codegen check`。
 
 没装 uv 就去掉 `uv run`，先按下面「安装」把环境准备好。
 
@@ -37,8 +47,8 @@ uv run excel-codegen render -c examples/example.yaml -x examples/template.xlsx -
 
 | 示例 | 演示什么 |
 | --- | --- |
-| [`example.yaml`](examples/example.yaml) | 最小闭环：global / local 变量、前缀后缀、快照渲染、导出文件 |
-| [`example_formula.yaml`](examples/example_formula.yaml) | 公式模式：改参数后打开 Excel 就重算，不用再跑脚本 |
+| [`example.yaml`](examples/example.yaml) | 显式 `engine: snapshot` 的对照示例：过滤器 / 循环 / 导出文件（快照模式只在需要这些时才用） |
+| [`example_formula.yaml`](examples/example_formula.yaml) | **默认的公式模式**：改参数后打开 Excel 就重算，不用再跑脚本 |
 | [`nastran_case_control.yaml`](examples/nastran_case_control.yaml) | **一行一个工况**（`local_direction: vertical`）+ 公式模式生成 NASTRAN 工况控制语句：语句留空就不输出，在 Excel 里改一格 Code 列立刻跟着变（指南 §19 / §20） |
 
 ## 特性
@@ -48,13 +58,14 @@ uv run excel-codegen render -c examples/example.yaml -x examples/template.xlsx -
 | **一个 YAML 描述一切** | 全局变量、局部变量、多个输出模板（内联 `code` 或外部 `template_file`） |
 | **Excel 就是表单** | 一行一个全局变量；局部参数默认一个工况一列（右拉即增列），也可切成**一行一个工况**（`local_direction: vertical`，下拉即增行）—— 输入与输出布局各自独立 |
 | **Prefix + Value + Suffix** | `{{ port }}` → `GPIOA_PORT`，`{{ port.value }}` → `A`；空格有意义（`suffix: " m"` 就是 `" m"`） |
-| **两种输出引擎** | `snapshot` 写文本快照；`excel` 写 **Excel 公式** —— 改参数后打开 Excel 即重算，**不用再跑脚本**。公式模式支持**行内 `{% if %}`**（编译成 `IF()`） |
+| **默认就是公式模式** | 输出表里写 **Excel 公式**：改参数后打开 Excel 即重算，**不用再跑脚本**，工作簿脱离命令行也独立可用。支持**行内 `{% if %}`**（编译成 `IF()`）；模板要用 `{% for %}` / 过滤器 / `{% include %}` 时才显式写 `engine: snapshot` |
 | **派生参数** | `derived: "rho * g"` 让参数引用参数（同工况的 local + global），参数表里是活公式 |
 | **取值约束** | `min` / `max` / `choices` / `pattern` 声明合法取值：Excel 里变下拉列表与数值范围，`render` / `validate` / `check` 每次读表都再查一遍 —— 挡住"手滑把 20.559 打成 205.59 却照样生成代码" |
 | **一本工作簿放多套规则** | `case_filter: "kind == 'EXT'"` 让模板只作用于匹配的工况，共用一张 Global 表 |
 | **跨文件复用** | `extends: [rules/a.yaml, rules/b.yaml]` 把几套规范合并进一份项目配置 —— 变量与模板不用手抄，`template_file` 相对各自文件解析 |
 | **三层作用域** | 船（global）→ 工况（local）→ **舱 / 设备（成员表）**：被多个工况引用的舱参数只写一遍，改一处就够 |
 | **可导出代码文件** | 文件名支持 Jinja2，**参数也能用**（`cc_{{ seq }}_{{ case_name }}.inc`），一次生成多份 |
+| **建表时就把错误拦住** | 模板语法、`{% include %}` 片段、以及公式模式表达不了的写法（过滤器 / 循环 / 跨行 `{% if %}`）在 `init` 就报，并告诉你怎么改 |
 | **自带说明与指纹** | 工作簿里有 `HOWTO` 表与生成指纹；`excel-codegen check` 判定"表里的代码是否已过期"，**CI 可用** |
 
 ## 现场用例：ABS FPI 内外压 → GeniE
@@ -111,7 +122,7 @@ pip install -e ".[dev]"
 ## 开发
 
 ```bash
-uv run pytest --cov          # 313 项用例 + 覆盖率门槛（85%）
+uv run pytest --cov          # 323 项用例 + 覆盖率门槛（85%）
 uv run ruff check .          # lint
 uv run ruff format --check . # 格式
 uv run mypy                  # 类型检查
