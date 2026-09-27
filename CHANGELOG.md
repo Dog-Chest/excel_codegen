@@ -6,6 +6,26 @@
 
 ---
 
+## 未发布（Unreleased）
+
+**文档重构：README 变回落地页，细节拆进 `docs/`。**（纯文档改动，不动代码，不改版本号）
+
+README 从 686 行压到 ~150 行 —— 它现在只回答"这是什么 / 怎么跑起来 / 去哪看细节"。
+被移出的内容没有删，只是搬到了更合适的位置：
+
+| 新位置 | 收了什么 |
+| --- | --- |
+| `docs/cli.md` | 四个命令的全部选项表、作为 Python 库使用、错误类型表 |
+| `docs/setup.md` | 安装（uv / venv+pip / `setup.sh`）、Ubuntu 与外置 NTFS 盘的坑、Python 版本策略、验证链的外部依赖 |
+| `docs/publishing.md` | 发布到 GitHub / PyPI、密钥扫描、push protection、noreply 邮箱 |
+
+同时：
+* README 顶部注明**本项目由 DeepSeek 自动生成**，并加上 CI / Python / License 徽章。
+* 删掉了 README 里与 `CHANGELOG.md`、`docs/template_guide.md` 重复的版本变更史与语法细节。
+* 新增「现场用例：ABS FPI 内外压 → GeniE」一节，并注明里面的舱容与工况是**示意数值**。
+
+---
+
 ## 0.5.2 — 多平台零配置：uv（2026-09-27）
 
 **需求**：Windows 上开发、Ubuntu 上干活，两边各装一次依赖太麻烦 —— 希望"换机器 / 换系统
