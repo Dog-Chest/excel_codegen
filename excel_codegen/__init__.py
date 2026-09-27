@@ -39,6 +39,7 @@ from .excel_io import (
     read_metadata,
     write_howto_sheet,
     write_results,
+    write_run_scripts,
 )
 from .formula import (
     FormulaError,
@@ -92,25 +93,19 @@ from .utils import (
 __version__ = "0.6.0"
 
 __all__ = [
-    # models
     "FIRST_CASE_COLUMN",
     "CaseData",
-    # utils
     "CodeGenError",
     "ConfigError",
-    # derived（派生参数）
     "DerivedError",
     "DerivedNotTranslatable",
     "ExcelConfig",
     "ExcelError",
     "ExcelSheets",
-    # formula
     "FormulaError",
-    # formula eval
     "FormulaEvalError",
     "ProjectConfig",
     "RenderError",
-    # renderer
     "RenderOutput",
     "RenderResult",
     "TemplateDef",
@@ -121,7 +116,6 @@ __all__ = [
     "build_context",
     "build_environment",
     "case_matches",
-    # excel io
     "check_required_sheets",
     "check_value_constraints",
     "collect_variables",
@@ -157,4 +151,5 @@ __all__ = [
     "validate_template",
     "write_howto_sheet",
     "write_results",
+    "write_run_scripts",
 ]

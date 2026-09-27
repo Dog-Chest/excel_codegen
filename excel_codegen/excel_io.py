@@ -76,6 +76,7 @@ __all__ = [
     "read_metadata",
     "template_source",
     "write_results",
+    "write_run_scripts",
 ]
 
 GLOBAL_HEADERS: tuple[str, ...] = ("Variable", "Value", "Description", "Prefix", "Suffix")
@@ -136,6 +137,7 @@ def create_template(
     include_template_sheet: bool | None = None,
     include_howto_sheet: bool | None = None,
     include_comments: bool = True,
+    include_scripts: bool = True,
     base_dir: str | Path | None = None,
 ) -> Path:
     """按配置生成 Excel 模板文件。
@@ -145,6 +147,7 @@ def create_template(
     :param include_template_sheet: ``None`` 时遵循配置；``True/False`` 强制生成/不生成隐藏 Template 表。
     :param include_howto_sheet: ``None`` 时遵循配置；``True/False`` 强制生成/不生成 HOWTO 说明表。
     :param include_comments: 是否给"变量名"那一格加批注（描述 / 单位 / 约束 / 前缀后缀 / 派生表达式）。
+    :param include_scripts: 是否在工作簿旁边生成 ``*_render.bat`` / ``*_render.sh`` 一键刷新脚本。
     :param base_dir: 解析 ``template_file`` 相对路径的基准目录，默认使用 ``config.source_dir``。
     """
     target = Path(path)
@@ -157,6 +160,7 @@ def create_template(
     derived_validate_config(config)
 
     case_names = _normalise_case_names(cases)
+    config.scripts_enabled = include_scripts
 
     workbook = Workbook()
     default_sheet = workbook.active
@@ -203,6 +207,10 @@ def create_template(
         raise ExcelError(f"无法写入 Excel 模板 {target}: {exc}（文件被 Excel 占用？）") from exc
     finally:
         workbook.close()
+
+    if include_scripts:
+        # 放在工作簿旁边：改完参数双击就能刷新，不用记命令
+        write_run_scripts(config, target)
     return target
 
 
@@ -313,6 +321,100 @@ def _attach_comment(cell, variable: VariableDef, *, where: str) -> None:
     comment.width = 340
     comment.height = 190
     cell.comment = comment
+
+
+def _relative_to(path: Path, base: Path, *, windows: bool) -> str:
+    """把 ``path`` 表示成相对 ``base`` 的路径，并按目标平台换算分隔符。"""
+    import os
+
+    try:
+        text = os.path.relpath(path, base)
+    except ValueError:  # 跨盘符（Windows）时 relpath 会失败，退回绝对路径
+        text = str(path)
+    if windows:
+        return text.replace("/", "\\")
+    return text.replace("\\", "/")
+
+
+def _render_command(config: ProjectConfig, target: Path, *, windows: bool) -> str:
+    """生成那条 render 命令（用 uv 优先，没装 uv 就退回 PATH 里的 excel-codegen）。"""
+    x_flag = target.name if target.parent else str(target)
+    if config.config_path is not None:
+        c_flag = _relative_to(config.config_path, target.parent or Path("."), windows=windows)
+    else:  # 直接调库、没经过 load_config 时拿不到 YAML 路径：交给用户自己改
+        c_flag = "<你的配置>.yaml"
+    return f'render -c "{c_flag}" -x "{x_flag}" --write-excel'
+
+
+def write_run_scripts(config: ProjectConfig, target: Path) -> list[Path]:
+    """在**工作簿旁边**生成 ``<工作簿名>_render.bat`` 与 ``<工作簿名>_render.sh``。
+
+    为什么要它：目标用户是工程师，不是终端爱好者。HOWTO 表里写了命令，但还得自己开终端敲；
+    双击脚本就能"改完参数 → 刷新 Output 表"，而把 uv / venv 的差异封在脚本里。
+
+    两个平台都生成（不是只生成当前的）：一本工作簿常常在 Windows 和 Linux 之间传来传去。
+    """
+    directory = target.parent or Path(".")
+    stem = target.stem
+    command = _render_command(config, target, windows=False)
+
+    bat = f"""@echo off
+REM ===========================================================================
+REM  由 excel_codegen 生成 —— 改完参数双击本文件即可把结果写回 Output 表。
+REM  重新生成工作簿（init）时会一并覆盖本文件。
+REM ===========================================================================
+cd /d "%~dp0"
+
+where uv >nul 2>nul
+if %errorlevel%==0 (
+  uv run excel-codegen {_render_command(config, target, windows=True)}
+) else (
+  excel-codegen {_render_command(config, target, windows=True)}
+)
+
+echo.
+if errorlevel 1 (
+  echo [失败] 上面有报错信息。常见原因：依赖没装（跑一次 setup.sh / uv sync）、
+  echo        或者 Excel 正开着这个文件（先关掉再试）。
+) else (
+  echo [完成] 回到 Excel 打开「Output」表看结果。
+)
+pause
+"""
+
+    sh = f"""#!/usr/bin/env bash
+# ===========================================================================
+#  由 excel_codegen 生成 —— 改完参数跑一次本文件即可把结果写回 Output 表。
+#  重新生成工作簿（init）时会一并覆盖本文件。
+# ===========================================================================
+set -uo pipefail
+cd "$(dirname "$0")"
+
+if command -v uv >/dev/null 2>&1; then
+  uv run excel-codegen {command}
+else
+  excel-codegen {command}
+fi
+status=$?
+
+echo
+if [ "$status" -ne 0 ]; then
+  echo "[失败] 上面有报错信息。常见原因：依赖没装（跑一次 ./setup.sh 或 uv sync）、"
+  echo "       或者 Excel / WPS 正开着这个文件（先关掉再试）。"
+else
+  echo "[完成] 回到 Excel 打开「Output」表看结果。"
+fi
+exit "$status"
+"""
+
+    written: list[Path] = []
+    for name, text in ((f"{stem}_render.bat", bat), (f"{stem}_render.sh", sh)):
+        path = directory / name
+        path.write_text(text, encoding="utf-8", newline="\r\n" if name.endswith(".bat") else "\n")
+        if name.endswith(".sh"):
+            path.chmod(path.stat().st_mode | 0o111)  # 让 Linux/macOS 上可以直接 ./ 跑
+        written.append(path)
+    return written
 
 
 def _add_value_validation(worksheet: Worksheet, variable: VariableDef, cells: Sequence[str]) -> None:
@@ -536,6 +638,14 @@ def write_howto_sheet(
         _HOWTO_FILL,
     )
     add("      只想导出代码文件就换成 --outdir <目录>；只预览不写回则什么参数都不加。", _HOWTO_NOTE, None)
+    if config.scripts_enabled:
+        stem = Path(config.excel.output).stem
+        add(
+            f"      ★ 懒得开终端就双击本文件旁边的 {stem}_render.bat（Windows）"
+            f"或跑 {stem}_render.sh（Linux / macOS）。",
+            _HOWTO_NOTE,
+            None,
+        )
     add("      想确认表里的代码是不是已经过期：excel-codegen check -c <配置>.yaml", _HOWTO_NOTE, None)
     add("", _HOWTO_NOTE, None)
     formula_templates = [t for t in config.templates if t.engine == "excel"]
@@ -1262,6 +1372,9 @@ def write_results(
         ):
             formula_written = True
 
+        # 脚本是否还在工作簿旁边要现查：config 可能是刚从 YAML 重新加载的，
+        # 那个标记会回落成默认的 False（HOWTO 表据此决定要不要提「双击」）
+        config.scripts_enabled = (target.parent / f"{target.stem}_render.sh").exists()
         _record_metadata(workbook, config, metadata, command=command, update_howto=update_howto)
         workbook.save(target)
     except OSError as exc:

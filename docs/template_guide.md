@@ -443,11 +443,38 @@ A25: cases         B25: Case1
 
 - 三步怎么用（Global 填 B 列 / Local 从 E 列起填 Case / 改完回命令行跑哪条命令）；
 - 那句命令本身，以及"只想导出文件换成 `--outdir`"、"想查过期用 `check`"；
+- **懒得开终端就双击旁边的一键脚本**（见 §6.6）；
 - ⚠ 输出表是**快照**不是活公式，以及"不带 `--write-excel` 的 render 不会改这个文件"；
 - 每个模板的输出位置（表 + 起始单元格 + 布局 + `case_filter`）；
 - **本次生成**：时间 / 参数指纹 / 输出指纹 / case 列表 / 实际执行的命令。
 
 > 这张表是给人看的，所以内容随每次写回重生成 —— 不要在里面写你自己的笔记。
+
+### 6.6 一键刷新脚本（`<工作簿名>_render.bat` / `.sh`）
+
+`init` 会在**工作簿旁边**生成两个脚本（`--no-scripts` 可关）：
+
+```text
+examples/
+├── template.xlsx
+├── template_render.bat     ← Windows 双击
+└── template_render.sh      ← Linux / macOS 执行
+```
+
+双击（或 `./template_render.sh`）就等于跑那条 `render --write-excel`：
+**改完参数 → 双击 → 回 Excel 看 Output 表**，不用记命令。
+
+脚本里做了三件事：
+
+1. `cd` 到自己的工作簿所在目录，所以工作簿/配置在哪儿都行；
+2. 优先用 `uv run excel-codegen`，**没装 uv 就退回** PATH 里的 `excel-codegen`
+   （venv 已激活的情形）；
+3. 出错时把常见原因打出来（依赖没装 / Excel 正开着文件）并**以非 0 退出**，
+   所以在批处理或 CI 里也能用。
+
+两个平台都生成，不是只生成当前的 —— 一本工作簿常常在 Windows 与 Linux 之间传来传去。
+脚本每次 `init` 都会被覆盖，所以**不要在里面手写自己的逻辑**（要改就改 YAML 重新 init，
+或者另写一个脚本调 `excel-codegen`）。
 
 ---
 

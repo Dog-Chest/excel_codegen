@@ -33,6 +33,23 @@
 
 新增 `tests/test_comments.py` 7 项。
 
+### 1. 一键刷新脚本：`<工作簿名>_render.bat` / `.sh`
+
+`init` 在**工作簿旁边**生成两个脚本（`--no-scripts` 可关）：
+
+* `cd` 到脚本自己所在目录，所以工作簿/配置放在哪儿都行；
+* 优先 `uv run excel-codegen`，**没装 uv 就退回** PATH 里的 `excel-codegen`；
+* 出错时打印常见原因（依赖没装 / Excel 正开着文件）并**以非 0 退出**，批处理与 CI 里也能用。
+
+两个平台都生成（一本工作簿常在 Windows 与 Linux 之间传），`.bat` 用 CRLF + 反斜杠，
+`.sh` 带可执行位 + 正斜杠。HOWTO 表会指过去（"懒得开终端就双击…"）。
+
+`ProjectConfig` 顺带记住 `config_path`（脚本要算相对路径）；`write_results` 刷新 HOWTO
+时会**现查**脚本是否还在旁边，所以重新加载配置后那句话不会凭空消失。
+
+新增 `tests/test_run_scripts.py` 8 项 —— 其中两项**真的执行**生成的 `.sh`（用桩程序
+冒充 `excel-codegen`），确认 cd、参数转发与退出码都对。
+
 ---
 
 ## 0.6.0 — 取值约束 / `extends` / 行内 `{% if %}` / 质量护栏（2026-09-27）

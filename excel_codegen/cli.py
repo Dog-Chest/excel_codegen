@@ -183,6 +183,11 @@ def init_command(
         "--comments/--no-comments",
         help="是否给变量名那格加 Excel 批注（描述 / 单位 / 约束 / 前缀后缀 / 派生表达式）",
     ),
+    scripts: bool = typer.Option(
+        True,
+        "--scripts/--no-scripts",
+        help="是否在工作簿旁边生成一键刷新脚本（<工作簿名>_render.bat / .sh）",
+    ),
 ) -> None:
     """根据 YAML 生成 Excel 参数填写模板。"""
     try:
@@ -196,6 +201,7 @@ def init_command(
             include_template_sheet=template_sheet,
             include_howto_sheet=howto_sheet,
             include_comments=comments,
+            include_scripts=scripts,
         )
     except CodeGenError as exc:
         raise _fail(exc) from exc

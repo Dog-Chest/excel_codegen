@@ -481,11 +481,16 @@ class ProjectConfig(BaseModel):
 
     #: 配置文件所在目录（加载时自动填充，用于解析相对路径的 template_file）。
     source_dir: Path | None = Field(default=None, exclude=True)
+    #: 配置文件本身的绝对路径（加载时自动填充）。生成的运行脚本与 HOWTO 表要用它。
+    config_path: Path | None = Field(default=None, exclude=True)
     #: ``extends`` 指向的其他 YAML（相对本文件解析）。加载时会先合并它们，见 §16。
     #: 加载后这里保留的是**本文件写的原始列表**，方便调用方知道配置由哪些文件组成。
     extends: list[str] = Field(default_factory=list, exclude=True)
     #: 合并 ``extends`` 时的告警（例如同名变量的 ``default`` 不一致），由 CLI 打印出来。
     load_warnings: list[str] = Field(default_factory=list, exclude=True)
+    #: 工作簿旁边**是否真的有一键刷新脚本**（由 create_template / write_results 填）。
+    #: HOWTO 表据此决定要不要写「懒得开终端就双击那个脚本」。
+    scripts_enabled: bool = Field(default=False, exclude=True)
 
     @model_validator(mode="after")
     def _validate_config(self) -> ProjectConfig:
@@ -765,6 +770,7 @@ def load_config(path: str | Path) -> ProjectConfig:
         raise ConfigError(f"配置校验失败 {config_path}:\n{format_validation_error(exc)}") from exc
 
     config.source_dir = config_path.resolve().parent
+    config.config_path = config_path.resolve()
     config.load_warnings = warnings
     config.extends = [str(item) for item in (probe.get("extends") or [])]
     # 每个模板记住"声明它的那个文件在哪"，这样 extends 进来的 template_file 相对路径仍然解析得对
