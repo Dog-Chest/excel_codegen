@@ -161,13 +161,13 @@ def test_read_cases_per_column(workbook_path: Path, project: ProjectConfig) -> N
         workbook.close()
 
 
-def test_read_cases_without_case_column_raises(workbook_path: Path, project: ProjectConfig) -> None:
+def test_read_cases_without_case_anchor_raises(workbook_path: Path, project: ProjectConfig) -> None:
     workbook = load_workbook(workbook_path)
     try:
         sheet = workbook["Local Parameter"]
         for column in range(FIRST_CASE_COLUMN, sheet.max_column + 1):
             sheet.cell(row=1, column=column).value = None
-        with pytest.raises(ExcelError, match="没有 Case 列"):
+        with pytest.raises(ExcelError, match="没有工况"):
             read_cases(workbook, project)
     finally:
         workbook.close()

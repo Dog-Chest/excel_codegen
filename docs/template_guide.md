@@ -14,9 +14,9 @@ Jinja2 语法速查、Excel 表结构与填写规则、输出布局、导出代�
 ```
         YAML（模板与变量定义，进 Git）                        Excel（参数填写，给人用）
 ┌────────────────────────────────────────┐        ┌───────────────────────────────────┐
-│ variables: global / local              │        │ Global Parameter : 全局变量取值    │
-│ templates: code + output_sheet + 布局  │  init  │ Local  Parameter : 每个 Case 一列  │
-│            engine: snapshot | excel    │        │                                   │
+│ variables: global / local / group      │        │ Global Parameter : 全局变量取值    │
+│ templates: code + output_sheet + 布局  │  init  │ Local  Parameter : 一列/一行一工况 │
+│            engine: snapshot | excel    │        │ 成员表（可选）：一行一个舱/设备    │
 └────────────────────────────────────────┘ ─────► └───────────────────────────────────┘
                      │                                         │ 人工填写
                      │                                         ▼
@@ -30,8 +30,9 @@ Jinja2 语法速查、Excel 表结构与填写规则、输出布局、导出代�
 
 三条不变式：
 
-1. **变量只有两种作用域**：`global`（所有 Case 共用一份取值）、`local`（每个 Case 一列取值）。
-2. **渲染上下文 = global + local + `case_name`**，其中 local 覆盖同名 global。
+1. **变量有三种作用域**：`global`（所有 Case 共用一份取值）、`local`（每个 Case 取值，一行或一列一个工况，§19）、
+   `group`（成员表，一行一个舱/设备，§18）。
+2. **渲染上下文 = group + global + local + `case_name`**，后面的覆盖前面的（同名的 local 覆盖 global）。
 3. **模板只在渲染时求值**：模板里引用但上下文没有的变量会直接报错（`StrictUndefined`），不会静默变空串。
 
 ---
@@ -60,6 +61,7 @@ Jinja2 语法速查、Excel 表结构与填写规则、输出布局、导出代�
 | `sheets.global` | str | `Global Parameter` | 全局表名（≤31 字符，不含 `[]:*?/\`） |
 | `sheets.local` | str | `Local Parameter` | 局部表名 |
 | `sheets.outputs` | list[str] | `["Output"]` | 所有输出表名；模板的 `output_sheet` 必须在此声明 |
+| `local_direction` | `horizontal` \| `vertical` | `horizontal` | **输入**侧 Local 表的工况排布（§19）；与模板自己的 `direction`（输出）无关 |
 
 `template_sheet` / `howto_sheet` 不能与 Global / Local / Output 表名冲突（配置阶段就会报错）。
 
@@ -424,6 +426,8 @@ line {{ i }}
 
 ### 6.2 Local Parameter
 
+**默认（`excel.local_direction: horizontal`）一个工况一列**：
+
 |  | A | B | C | D | E | F | G |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | **1** | Variable | Description | Prefix | Suffix | **Case1** | **Case2** | **Case3** |
@@ -434,6 +438,12 @@ line {{ i }}
 - **右拉增加 Case**：选中 `E1:F3`（含表头的整块区域）→ 拖动右下角填充柄向右 → 把新表头改成 `Case3`，或写成 `UART1`、`BoardB` 等任意名字。
 - Case 列必须**连续**：解析时从 E 列开始，遇到第一个空表头即停止。中间不要留空列。
 - Case 表头不可重复。
+
+也可以把工况**横过来**（`excel.local_direction: vertical`，详见 §19）：一行一个工况，
+变量名在第 1 行，Case 名在 A 列 —— 适合"一次性把一列参数粘进表里"。
+
+> ⚠ 注意区分两个 `direction`：`excel.local_direction` 说的是**输入**（Local 表）怎么排，
+> 模板自己的 `direction` 说的是**输出**（Output 表）怎么排，两者互相独立（§7、§19）。
 
 ### 6.3 Output 表
 
@@ -1246,3 +1256,78 @@ INDEX('Tank Data'!$B:$B, MATCH(<这个 Case 的 tank_ref>, 'Tank Data'!$A:$A, 0)
 | 参数确实**每个工况都不一样**（比如工况特定的系数） | ❌ 放 local |
 | 所有工况都一样的船体主尺度 | ❌ 放 global |
 | 需要**两层以上**的引用（舱里再分部件） | ⚠ 表达不了，把最下层摊到成员表里 |
+
+---
+
+## 19. 行列风格：输入竖着填、输出横着写
+
+### 19.1 两个 `direction` 是两件事
+
+| 配置项 | 管什么 | 取值 |
+| --- | --- | --- |
+| `excel.local_direction` | **输入**：`Local Parameter` 表里工况怎么排 | `horizontal`（默认，一列一个工况）/ `vertical`（一行一个工况） |
+| `template.direction` | **输出**：结果写到 `Output` 表的哪一行/列 | `horizontal` / `vertical`（§7） |
+
+互不影响：`excel.local_direction: vertical` + `direction: horizontal` 是最常用的组合 ——
+参数按行填（方便从别处整块粘贴），生成的代码按列排（方便并排比较）。
+
+### 19.2 `vertical` 的 Local 表长什么样
+
+```yaml
+excel:
+  local_direction: "vertical"
+```
+
+|  | A | B | C | D |
+| --- | --- | --- | --- | --- |
+| **1** | Case | port | mode | width |
+| **2** | **Case1** | `A` | `TX_RX` | `8`（公式） |
+| **3** | **Case2** | `C` | `RX` | `8`（公式） |
+
+- **A2 起每行非空的 A 列就是一行 Case**，名字直接成为 `{{ case_name }}`。
+- **下拉增加 Case**：选中 `A2:D2` → 填充柄下拉 → 把新的 A 列值改成 `Case3` / `T20` / `LC1` 等。
+- 行必须**连续**：解析时从第 2 行开始，遇到第一个空 A 格即停止，中间不要留空行。
+- Case 名不可重复，变量名（第 1 行）也不可重复。
+- **没有 Prefix / Suffix 列**：纵向布局第 1 行整行都是变量名。前后缀仍来自 YAML，
+  点变量名那格的批注就能看到它们是什么。要按工况改前后缀，请用 `horizontal` 或把它拆成独立变量。
+
+### 19.3 为什么需要它
+
+有些软件里，工况控制语句就是**按行给的**（一行一个工况，每列一个字段），
+比如 NASTRAN 的 `SUBCASE` / `SUBCOM`：
+
+```
+SUBCASE  1    SUBTITLE=LC1    LOAD=101    SPC=1
+SUBCASE  2    SUBTITLE=LC2    LOAD=102
+SUBCOM   3    SUBTITLE=LC3    SUBSEQ=1, 1.2, 1.3
+```
+
+这类数据从别处（表格、文本、另一个软件）拿到时天然是"行"的形态，
+`local_direction: vertical` 就能**整块复制 → 粘贴**进 `Local Parameter`，不用逐列转置。
+
+### 19.4 公式模式下的引用形态
+
+两种布局生成的公式不一样，但语义相同（都先按**变量名**定位，再按工况轴取值）：
+
+| 布局 | 引用 |
+| --- | --- |
+| `horizontal` | `INDEX('Local Parameter'!$E:$E,MATCH("port",'Local Parameter'!$A:$A,0))` |
+| `vertical` | `INDEX('Local Parameter'!$A:$ZZ,$2,MATCH("port",'Local Parameter'!$1:$1,0))` |
+
+右侧拖拽 / 下方拖拽的语义也不同：**横向**布局向右拖公式会跟着换 Case（相对列），
+**纵向**布局向右拖是"同一 Case 的下一行"，所以 Case 行号是锁死的。
+
+### 19.5 切换布局要重跑
+
+`local_direction` 改变的是**表的形状**，工具读不回旧形状的数据。
+把已有的工作簿从一种布局切到另一种，等同于**重做工作表**：
+
+```bash
+# 1) 备份旧工作簿里的参数（或直接照抄）
+# 2) 换布局重新生成
+excel-codegen init -c project.yaml --force
+# 3) 重新填参数 → 重跑
+excel-codegen render -c project.yaml --write-excel
+```
+
+`check` 与 `doctor` 里的提示会跟着说"Case 列"或"Case 行"，看到"Case 行"就说明当前是纵向布局。

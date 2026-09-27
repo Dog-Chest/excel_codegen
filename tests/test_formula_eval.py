@@ -95,6 +95,9 @@ class FakeReader:
         except KeyError as exc:
             raise FormulaEvalError(f"{sheet} 表里没有变量 {variable!r}") from exc
 
+    def name_column(self, sheet: str, variable: str) -> int:
+        raise FormulaEvalError(f"{sheet} 表第 1 行里没有变量 {variable!r}")
+
 
 class _Cfg:
     """只给 sheet_names_of 用。"""

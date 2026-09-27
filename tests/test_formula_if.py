@@ -62,7 +62,7 @@ def compile_code(config: ProjectConfig, code: str | None = None) -> list[str]:
     template = config.templates[0]
     if code is not None:
         template = template.model_copy(update={"code": code})
-    return compile_formulas(template, config, case_columns=[5])[0]
+    return compile_formulas(template, config, case_axes=[5])[0]
 
 
 # --------------------------------------------------------------------------- #

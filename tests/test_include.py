@@ -158,7 +158,7 @@ def test_formula_mode_rejects_include(tmp_path: Path) -> None:
     path = project(tmp_path, '{% include "frag.j2" %}', engine="excel")
     config = load_config(path)
     with pytest.raises(FormulaError) as excinfo:
-        compile_formulas(config.templates[0], config, case_columns=[5])
+        compile_formulas(config.templates[0], config, case_axes=[5])
     message = str(excinfo.value)
     assert "include" in message
     assert "engine: snapshot" in message

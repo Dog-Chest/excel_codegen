@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -36,6 +36,7 @@ from pydantic import (
 from .utils import (
     ConfigError,
     VarValue,
+    column_index_to_letter,
     is_identifier,
     parse_cell,
     split_lines,
@@ -470,6 +471,10 @@ class ExcelConfig(BaseModel):
     howto_sheet: str | None = "HOWTO"
     # pydantic 的 default_factory 接受类本身；mypy 对它的签名判断过严，这里显式放行
     sheets: ExcelSheets = Field(default_factory=ExcelSheets)  # type: ignore[arg-type]
+    #: **Local 表的工况排布**：``horizontal``（默认）= 一个工况一列；``vertical`` = 一个工况一行。
+    #: 与每个模板自己的 ``direction``（**输出**排布）**互相独立** —— 输入竖着填、输出横着写都可以。
+    #: 一行一个工况方便"整块粘贴"：有些软件里工况控制语句就是按行给的（见指南 §19）。
+    local_direction: Direction = "horizontal"
 
     @field_validator("output")
     @classmethod
@@ -783,18 +788,18 @@ def _merge_variable(
     existing: dict, incoming: dict, *, scope: str, origin: Path, first_seen: Path, warnings: list[str]
 ) -> None:
     name = incoming.get("name")
-    for field in EXTENDS_STRICT_FIELDS:
-        before, after = existing.get(field), incoming.get(field)
+    for key in EXTENDS_STRICT_FIELDS:
+        before, after = existing.get(key), incoming.get(key)
         if before != after:
             raise ConfigError(
-                f"变量 {name!r} 在 {scope} 里被 {first_seen} 与 {origin} 定义成不同的 {field}："
+                f"变量 {name!r} 在 {scope} 里被 {first_seen} 与 {origin} 定义成不同的 {key}："
                 f"{before!r} vs {after!r}。这些字段决定生成出来的文本，必须先统一。"
             )
-    for field in EXTENDS_LOOSE_FIELDS:
-        if existing.get(field) != incoming.get(field):
+    for key in EXTENDS_LOOSE_FIELDS:
+        if existing.get(key) != incoming.get(key):
             warnings.append(
-                f"变量 {name!r}（{scope}）的 {field} 在两处不一致：保留 {first_seen} 的 "
-                f"{existing.get(field)!r}，忽略 {origin} 的 {incoming.get(field)!r}"
+                f"变量 {name!r}（{scope}）的 {key} 在两处不一致：保留 {first_seen} 的 "
+                f"{existing.get(key)!r}，忽略 {origin} 的 {incoming.get(key)!r}"
             )
 
 
@@ -942,19 +947,37 @@ def load_config(path: str | Path) -> ProjectConfig:
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
 class CaseData:
-    """Local Parameter 表中一列 Case 的取值。"""
+    """Local Parameter 表里一个 Case 的取值。
+
+    位置二选一：``horizontal`` 布局一个工况占**一列**（``column``），
+    ``vertical`` 布局一个工况占**一行**（``row``）。
+    """
 
     name: str
-    column: int
-    values: dict[str, VarValue]
-    #: 这一列在表里是否**至少填过一个**局部变量的值；
-    #: 全空时所有变量都会回落 YAML ``default``（新插的空列就此"悄悄"落进某个规则集）。
+    #: 横向布局：这个 Case 的列号。
+    column: int | None = None
+    values: dict[str, VarValue] = field(default_factory=dict)
+    #: 这一列/行在表里是否**至少填过一个**局部变量的值；
+    #: 全空时所有变量都会回落 YAML ``default``（新插的空列/空行就此"悄悄"落进某个规则集）。
     explicit_values: bool = True
+    #: 纵向布局：这个 Case 的行号。
+    row: int | None = None
 
     @property
     def index(self) -> int:
         """Case 序号（Case1 -> 1）。"""
+        if self.row is not None:
+            return self.row - 1
+        assert self.column is not None
         return self.column - FIRST_CASE_COLUMN + 1
+
+    @property
+    def where(self) -> str:
+        """给人看的定位（横向说"第几列"，纵向说"第几行"）。"""
+        if self.row is not None:
+            return f"第 {self.row} 行"
+        assert self.column is not None
+        return f"第 {column_index_to_letter(self.column)} 列"
 
 
 @dataclass(frozen=True)

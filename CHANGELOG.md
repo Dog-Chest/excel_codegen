@@ -7,6 +7,36 @@
 
 ---
 
+## 0.8.0 — 行列风格 + NASTRAN 工况控制（开发中）
+
+### 1. 行列风格：`excel.local_direction`
+
+原先 Local Parameter 表**只能**一个工况一列（E 列起）。有些软件里工况控制语句是按**行**
+给的（NASTRAN 的 `SUBCASE` / `SUBCOM` 就是典型），从别处拿到这种数据只能手工转置。
+
+新增 `excel.local_direction: horizontal | vertical`（默认 `horizontal`，老行为不变）：
+
+* `vertical`：**一行一个工况** —— A 列写 Case 名（A2 起）、第 1 行 B 列起写变量名；
+  下拉复制行即可加工况，遇到第一个空 A 格就停。
+* 纵向布局**没有** Prefix / Suffix 列（第 1 行整行都是变量名），前后缀仍来自 YAML，
+  点表头格的批注能看到。
+* 与模板自己的 `direction`（**输出**排布）**完全独立**：输入竖着填、输出横着写是最常用的组合。
+
+配套改动：
+
+* `CaseData` 的 `column` / `row` 二选一，新增 `where`（"第 N 列" / "第 N 行"）——
+  所有面向人的报错不再假设"工况是列"。
+* 公式模式纵向引用：`INDEX('Local Parameter'!$A:$ZZ,$2,MATCH("port",'Local Parameter'!$1:$1,0))`；
+  公式求值器跟着支持**二维 `INDEX`**、**行区间 `MATCH`**（`'sheet'!$1:$1`）与
+  `A2` 这种"列标+行号挤在一个词法 token 里"的引用形态（原来的横向布局只生成 `E$1`，没暴露这个洞）。
+* `check` / `doctor` 的提示语跟着变"Case 列"或"Case 行"；`check_required_sheets` 按布局校验表头。
+* 指南新增 §19。
+
+新增 `tests/test_local_direction.py` 17 项（建表 / 读值 / 两种布局对拍 / 公式值对拍 /
+插行加工况 / 约束报错定位）。
+
+---
+
 ## 0.7.0 — 发布前打磨：校验 / 复用 / 体检 / 第三层作用域（2026-09-27）
 
 发布 PyPI 之前的一轮打磨，8 个提交（0 必修 → ③ 批注 → ① 脚本 → ④ check 报告 →

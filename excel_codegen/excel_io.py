@@ -42,7 +42,13 @@ from .derived import (
     to_excel,
 )
 from .derived import validate_config as derived_validate_config
-from .formula import LONG_FORMULA_WARN, compile_formulas, guarded_lookup
+from .formula import (
+    LONG_FORMULA_WARN,
+    compile_formulas,
+    guard_default,
+    guarded_lookup,
+    local_cell,
+)
 from .models import (
     FIRST_CASE_COLUMN,
     CaseData,
@@ -63,9 +69,10 @@ from .utils import (
 __all__ = [
     "GLOBAL_HEADERS",
     "GROUP_HEADER",
+    "LOCAL_CASE_HEADER",
     "LOCAL_HEADERS",
     "META_MARKER",
-    "case_column_map",
+    "case_anchor_map",
     "check_required_sheets",
     "create_template",
     "get_sheet",
@@ -83,6 +90,8 @@ __all__ = [
 
 GLOBAL_HEADERS: tuple[str, ...] = ("Variable", "Value", "Description", "Prefix", "Suffix")
 LOCAL_HEADERS: tuple[str, ...] = ("Variable", "Description", "Prefix", "Suffix")
+#: 纵向 Local 表 A1 的表头（那一列写 Case 名）。
+LOCAL_CASE_HEADER = "Case"
 
 #: 隐藏 Template 表里"机器可读元信息块"的起始标记。
 META_MARKER = "## excel-codegen-meta"
@@ -269,6 +278,28 @@ def _build_local_sheet(
     *,
     comments: bool = True,
 ) -> None:
+    """搭 Local Parameter 表：布局由 ``excel.local_direction`` 决定。
+
+    * ``horizontal``（默认）：变量做行，一个工况一列（E1 起写 Case 名）；
+    * ``vertical``：变量做列，一个工况一行（A2 起写 Case 名）。
+
+    两种布局都**没有**给 Prefix / Suffix 留列吗？不是 —— 横向布局保留 C/D 两列
+    （老行为，可在表里覆盖 YAML 的前后缀）；纵向布局第 1 行整行都是变量名，
+    所以前后缀只来自 YAML，表头格的批注里写着它们是什么。
+    """
+    if config.excel.local_direction == "vertical":
+        _build_local_sheet_vertical(worksheet, config, case_names, comments=comments)
+    else:
+        _build_local_sheet_horizontal(worksheet, config, case_names, comments=comments)
+
+
+def _build_local_sheet_horizontal(
+    worksheet: Worksheet,
+    config: ProjectConfig,
+    case_names: Sequence[str],
+    *,
+    comments: bool,
+) -> None:
     _write_headers(worksheet, list(LOCAL_HEADERS) + list(case_names))
     for row, variable in enumerate(config.local_variables, start=2):
         name_cell = worksheet.cell(row=row, column=_LOCAL_COL["name"], value=variable.name)
@@ -282,7 +313,7 @@ def _build_local_sheet(
             column = FIRST_CASE_COLUMN + offset
             cell = worksheet.cell(row=row, column=column)
             if variable.is_derived:
-                _write_derived_cell(cell, variable, resolve=_local_resolver(config, column))
+                _write_derived_cell(cell, variable, resolve=_local_resolver(config, CaseData(name="", column=column)))
             else:
                 cell.value = variable.default
                 cell.fill = _INPUT_FILL
@@ -295,6 +326,49 @@ def _build_local_sheet(
         column = FIRST_CASE_COLUMN + offset
         worksheet.column_dimensions[column_index_to_letter(column)].width = max(16, min(36, len(name) + 14))
     worksheet.freeze_panes = "E2"
+
+
+def _build_local_sheet_vertical(
+    worksheet: Worksheet,
+    config: ProjectConfig,
+    case_names: Sequence[str],
+    *,
+    comments: bool,
+) -> None:
+    """纵向 Local 表：一行一个工况（第 1 行是变量名），方便整块粘贴参数。"""
+    worksheet.cell(row=1, column=_LOCAL_COL["name"], value=LOCAL_CASE_HEADER).font = _HEADER_FONT
+    worksheet.cell(row=1, column=_LOCAL_COL["name"]).fill = _CASE_HEADER_FILL
+    for offset, variable in enumerate(config.local_variables):
+        column = _GROUP_FIRST_VAR_COLUMN + offset
+        header = worksheet.cell(row=1, column=column, value=variable.name)
+        if comments:
+            _attach_comment(header, variable, where=f"Local 表 {column_index_to_letter(column)} 列（一个 Case 一行）")
+        worksheet.column_dimensions[column_index_to_letter(column)].width = max(16, min(36, len(variable.name) + 14))
+    for offset in range(len(case_names)):
+        row = 2 + offset
+        case_cell = worksheet.cell(row=row, column=_LOCAL_COL["name"], value=case_names[offset])
+        case_cell.fill = _CASE_HEADER_FILL
+        case_cell.font = _HEADER_FONT
+    last_row = 1 + len(case_names)
+
+    for offset, variable in enumerate(config.local_variables):
+        column = _GROUP_FIRST_VAR_COLUMN + offset
+        input_cells: list[str] = []
+        for index in range(len(case_names)):
+            row = 2 + index
+            cell = worksheet.cell(row=row, column=column)
+            if variable.is_derived:
+                _write_derived_cell(cell, variable, resolve=_local_resolver(config, CaseData(name="", row=row)))
+            else:
+                cell.value = variable.default
+                cell.fill = _INPUT_FILL
+                cell.alignment = _TOP_ALIGN
+                input_cells.append(cell.coordinate)
+        if input_cells:
+            letter = column_index_to_letter(column)
+            _add_value_validation(worksheet, variable, [f"{letter}2:{letter}{last_row}"])
+    worksheet.column_dimensions[column_index_to_letter(_LOCAL_COL["name"])].width = 22
+    worksheet.freeze_panes = "B2"
 
 
 def _variable_comment(variable: VariableDef, *, where: str) -> str:
@@ -556,17 +630,25 @@ def _global_resolver(config: ProjectConfig):
     return resolve
 
 
-def _local_resolver(config: ProjectConfig, case_column: int):
-    """派生表达式里的变量名 -> Excel 引用（本 Case 列 / Global 取值列）。"""
+def _local_resolver(config: ProjectConfig, case: CaseData):
+    """派生表达式里的变量名 -> Excel 引用（本 Case 的那一格 / Global 取值列）。"""
     local_sheet = config.excel.sheets.local
     global_sheet = config.excel.sheets.global_
     locals_by_name = {item.name: item for item in config.local_variables}
     globals_by_name = {item.name: item for item in config.global_variables}
+    horizontal = config.excel.local_direction == "horizontal"
 
     def resolve(name: str) -> str:
         if name in locals_by_name:
-            # 派生格里没有"右拉"语义：列标锁死（表格由工具维护）
-            return guarded_lookup(local_sheet, name, case_column, locals_by_name[name].default, absolute=True)
+            definition = locals_by_name[name]
+            # 派生格里没有"拖动"语义：坐标锁死（参数表由工具维护）
+            if horizontal:
+                assert case.column is not None
+                expr = local_cell(local_sheet, name, column=case.column, absolute=True)
+            else:
+                assert case.row is not None
+                expr = local_cell(local_sheet, name, row=case.row, absolute=True)
+            return guard_default(expr, definition.default)
         if name in globals_by_name:
             return guarded_lookup(
                 global_sheet, name, _GLOBAL_COL["value"], globals_by_name[name].default, absolute=True
@@ -680,7 +762,10 @@ def write_howto_sheet(
     add("", _HOWTO_NOTE, None)
     add("这个工作簿怎么用", _HOWTO_HEAD, None)
     add(f"  1.  {config.excel.sheets.global_} 的 B 列：全局变量取值（所有 Case 共用）。", _HOWTO_NOTE, None)
-    add(f"  2.  {config.excel.sheets.local} 从 E 列起：每个 Case 一列，右拉复制即可增加。", _HOWTO_NOTE, None)
+    if config.excel.local_direction == "horizontal":
+        add(f"  2.  {config.excel.sheets.local} 从 E 列起：每个 Case 一列，右拉复制即可增加。", _HOWTO_NOTE, None)
+    else:
+        add(f"  2.  {config.excel.sheets.local} 从第 2 行起：每个 Case 一行，下拉复制即可增加。", _HOWTO_NOTE, None)
     add("  3.  改完参数后回到命令行执行：", _HOWTO_NOTE, None)
     add(
         f"          excel-codegen render -c <配置>.yaml -x {config.excel.output} --write-excel",
@@ -843,7 +928,12 @@ def check_required_sheets(workbook: Workbook, config: ProjectConfig) -> None:
             + "（可重新运行 `excel-codegen init --force` 生成模板）"
         )
     _check_header(workbook[config.excel.sheets.global_], GLOBAL_HEADERS, config.excel.sheets.global_)
-    _check_header(workbook[config.excel.sheets.local], LOCAL_HEADERS, config.excel.sheets.local, strict=False)
+    local_sheet = workbook[config.excel.sheets.local]
+    if config.excel.local_direction == "horizontal":
+        _check_header(local_sheet, LOCAL_HEADERS, config.excel.sheets.local, strict=False)
+    else:
+        # 纵向布局第 1 行整行都是变量名，只有 A1 是固定的
+        _check_header(local_sheet, (LOCAL_CASE_HEADER,), config.excel.sheets.local, strict=False)
 
 
 def _check_header(
@@ -944,14 +1034,14 @@ def _resolve_derived_globals(
             item.name: "global 的派生参数不能引用 local 变量（那时还没有当前 Case）" for item in config.local_variables
         },
     )
-    _warn_hand_edited_derived(worksheet, derived, _GLOBAL_COL["value"], raw_values, warnings, label="Global 表")
+    _warn_hand_edited_derived_global(worksheet, derived, _GLOBAL_COL["value"], raw_values, warnings, label="Global 表")
     for definition in derived:
         current = values.get(definition.name, VarValue(""))
         computed = _coerce(raw_values[definition.name], definition.type, definition.name)
         values[definition.name] = VarValue(computed, current.prefix, current.suffix)
 
 
-def _warn_hand_edited_derived(
+def _warn_hand_edited_derived_global(
     worksheet: Worksheet,
     derived: Sequence[VariableDef],
     value_column: int,
@@ -960,15 +1050,51 @@ def _warn_hand_edited_derived(
     *,
     label: str,
 ) -> None:
-    """派生格是公式（或工具写的值）—— 如果用户手工改成了别的值，提醒他会被忽略。"""
+    """Global 表专用：变量永远在行上，派生格固定在 ``value_column`` 列。"""
     if warnings is None:
         return
-    rows = {to_text(worksheet.cell(row=row, column=1).value).strip(): row for row in range(2, worksheet.max_row + 1)}
+    rows = {
+        to_text(worksheet.cell(row=row, column=_GLOBAL_COL["name"]).value).strip(): row
+        for row in range(2, worksheet.max_row + 1)
+    }
     for definition in derived:
         row = rows.get(definition.name)
         if row is None:
             continue
         raw = worksheet.cell(row=row, column=value_column).value
+        if isinstance(raw, str) and raw.startswith("="):
+            continue  # 正常的公式格
+        if is_translatable(definition):
+            warnings.append(
+                f"{label} 的派生参数 {definition.name!r} 的格子被手工改成了 {raw!r}，"
+                "工具会忽略它（该格由表达式算出来；重跑 --write-excel 会把它改回公式）"
+            )
+        elif definition.name in raw_values and to_text(raw_values[definition.name]) != to_text(raw):
+            warnings.append(
+                f"{label} 的派生参数 {definition.name!r} 表里是 {raw!r}，当前算式应为 "
+                f"{to_text(raw_values[definition.name])!r} —— 请重跑 --write-excel 刷新"
+            )
+
+
+def _warn_hand_edited_derived(
+    worksheet: Worksheet,
+    config: ProjectConfig,
+    derived: Sequence[VariableDef],
+    case: CaseData,
+    raw_values: Mapping[str, Any],
+    warnings: list[str] | None,
+    *,
+    label: str,
+) -> None:
+    """派生格是公式（或工具写的值）—— 如果用户手工改成了别的值，提醒他会被忽略。"""
+    if warnings is None:
+        return
+    slots = {slot.name: slot for slot in _local_slots(worksheet, config)}
+    for definition in derived:
+        slot = slots.get(definition.name)
+        if slot is None:
+            continue
+        raw = _case_cell(worksheet, config, slot, case).value
         if isinstance(raw, str) and raw.startswith("="):
             continue  # 正常的公式格
         if is_translatable(definition):
@@ -990,68 +1116,56 @@ def read_cases(
     global_values: Mapping[str, VarValue] | None = None,
     warnings: list[str] | None = None,
 ) -> list[CaseData]:
-    """读取 Local Parameter 表：从 E 列开始每个 Case 一列；**派生参数按 Case 算出来**。
+    """读取 Local Parameter 表里的工况；**派生参数按 Case 算出来**。
 
-    :param global_values: 已读好的全局参数（派生表达式要用）；不给就自己读一遍。
+    两种布局由 ``excel.local_direction`` 决定：
+
+    * ``horizontal``（默认）：一个工况**一列**（E1 起写 Case 名），变量在行上；
+    * ``vertical``：一个工况**一行**（A2 起写 Case 名），变量在列上。
+
+    两种布局都是"遇到空表头就停"，所以右拉 / 下拉就能加工况。
     """
     worksheet = get_sheet(workbook, config.excel.sheets.local)
-    definitions = {item.name: item for item in config.local_variables}
+    sheet_name = config.excel.sheets.local
     if global_values is None:
         global_values = read_global_values(workbook, config, warnings=warnings)
     global_raw = {name: value.value for name, value in global_values.items()}
 
-    columns = _case_columns(worksheet, config.excel.sheets.local)
-    if not columns:
-        raise ExcelError(
-            f"工作表 {config.excel.sheets.local!r} 从 E1 开始没有 Case 列。"
+    horizontal = config.excel.local_direction == "horizontal"
+    anchors = _case_anchors(worksheet, config)
+    if not anchors:
+        hint = (
             "请在 E1 填写 Case1、F1 填写 Case2 …（可右拉复制列）"
+            if horizontal
+            else "请在 A2 填写 Case1、A3 填写 Case2 …（可下拉复制行）"
         )
+        raise ExcelError(f"工作表 {sheet_name!r} 里没有工况。{hint}")
 
-    # 行：变量名 / 前缀 / 后缀
-    rows: list[tuple[int, str, str, str, VariableDef | None]] = []
-    seen: set[str] = set()
-    for row in range(2, worksheet.max_row + 1):
-        name = to_text(worksheet.cell(row=row, column=_LOCAL_COL["name"]).value).strip()
-        if not name:
-            continue
-        if name in seen:
-            raise ExcelError(f"工作表 {config.excel.sheets.local!r} 第 {row} 行变量名 {name!r} 重复")
-        seen.add(name)
-        definition = definitions.get(name)
-        prefix = _text_or(
-            worksheet.cell(row=row, column=_LOCAL_COL["prefix"]).value,
-            definition.prefix if definition else "",
-        )
-        suffix = _text_or(
-            worksheet.cell(row=row, column=_LOCAL_COL["suffix"]).value,
-            definition.suffix if definition else "",
-        )
-        rows.append((row, name, prefix, suffix, definition))
-
-    if not rows:
+    slots = _local_slots(worksheet, config)
+    if not slots:
         raise ExcelError(
-            f"工作表 {config.excel.sheets.local!r} 没有定义任何局部变量 —— "
-            "本工具用「局部变量 × Case 列」定位工况，所以 variables.local 至少要有一个变量"
+            f"工作表 {sheet_name!r} 没有定义任何局部变量 —— "
+            "本工具用「局部变量 × 工况」定位计算，所以 variables.local 至少要有一个变量"
             "（哪怕只是个标注用的 kind）"
         )
 
     cases: list[CaseData] = []
-    for column, case_name in columns:
+    for anchor in anchors:
         values: dict[str, VarValue] = {}
         raw_values: dict[str, Any] = dict(global_raw)  # 局部派生可以引用全局
         explicit = False
-        for row, name, prefix, suffix, definition in rows:
-            if definition is not None and definition.is_derived:
-                values[name] = VarValue("", prefix, suffix)
+        for slot in slots:
+            if slot.definition is not None and slot.definition.is_derived:
+                values[slot.name] = VarValue("", slot.prefix, slot.suffix)
                 continue
-            raw_cell = worksheet.cell(row=row, column=column).value
-            if raw_cell is not None and not (isinstance(raw_cell, str) and raw_cell.strip() == ""):
+            cell = _case_cell(worksheet, config, slot, anchor)
+            if cell.value is not None and not (isinstance(cell.value, str) and cell.value.strip() == ""):
                 explicit = True
-            raw_value = _cell_or(raw_cell, definition.default if definition else "")
-            kind = definition.type if definition else "auto"
-            coerced = _coerce(raw_value, kind, f"{case_name}.{name}")
-            raw_values[name] = coerced
-            values[name] = VarValue(coerced, prefix, suffix)
+            raw_value = _cell_or(cell.value, slot.definition.default if slot.definition else "")
+            kind = slot.definition.type if slot.definition else "auto"
+            coerced = _coerce(raw_value, kind, f"{anchor.name}.{slot.name}")
+            raw_values[slot.name] = coerced
+            values[slot.name] = VarValue(coerced, slot.prefix, slot.suffix)
 
         # YAML 中定义但表里缺少的局部变量，用默认值补齐（派生参数稍后算）
         for definition in config.local_variables:
@@ -1061,16 +1175,23 @@ def read_cases(
             if not definition.is_derived:
                 raw_values[definition.name] = _coerce(definition.default, definition.type, definition.name)
 
-        _resolve_derived_locals(worksheet, config, column, case_name, values, raw_values, warnings)
-        cases.append(CaseData(name=case_name, column=column, values=values, explicit_values=explicit))
+        _resolve_derived_locals(worksheet, config, anchor, values, raw_values, warnings)
+        cases.append(
+            CaseData(
+                name=anchor.name,
+                column=anchor.column,
+                row=anchor.row,
+                values=values,
+                explicit_values=explicit,
+            )
+        )
     return cases
 
 
 def _resolve_derived_locals(
     worksheet: Worksheet,
     config: ProjectConfig,
-    column: int,
-    case_name: str,
+    case: CaseData,
     values: dict[str, VarValue],
     raw_values: dict[str, Any],
     warnings: list[str] | None,
@@ -1081,15 +1202,16 @@ def _resolve_derived_locals(
     evaluate_derived(
         config.local_variables,
         raw_values,
-        scope=f"Case {case_name!r} 的 local 派生参数",
+        scope=f"Case {case.name!r} 的 local 派生参数",
     )
     _warn_hand_edited_derived(
         worksheet,
+        config,
         derived,
-        column,
+        case,
         raw_values,
         warnings,
-        label=f"Local 表 Case {case_name!r}",
+        label=f"Local 表 Case {case.name!r}",
     )
     for definition in derived:
         current = values.get(definition.name, VarValue(""))
@@ -1155,21 +1277,110 @@ def read_group_members(
     return members
 
 
-def _case_columns(worksheet: Worksheet, sheet_name: str) -> list[tuple[int, str]]:
-    columns: list[tuple[int, str]] = []
+@dataclass(frozen=True)
+class _VarSlot:
+    """Local 表里一个局部变量的位置。
+
+    ``axis`` 的含义随布局而变：横向布局是**行号**（名字在 A 列），纵向布局是**列号**（名字在第 1 行）。
+    """
+
+    name: str
+    definition: VariableDef | None
+    prefix: str
+    suffix: str
+    axis: int
+
+
+def _local_slots(worksheet: Worksheet, config: ProjectConfig) -> list[_VarSlot]:
+    """扫出 Local 表里的变量槽。
+
+    横向布局：A 列从第 2 行起写变量名，C/D 列可覆盖 Prefix/Suffix（与 YAML 一致的老行为）。
+    纵向布局：第 1 行从 B 列起写变量名（A1 是 "Case"），**没有** Prefix/Suffix 列 ——
+    它们只来自 YAML（表头格有批注写着）。
+    """
+    sheet_name = config.excel.sheets.local
+    definitions = {item.name: item for item in config.local_variables}
+    slots: list[_VarSlot] = []
     seen: set[str] = set()
-    upper = max(worksheet.max_column, FIRST_CASE_COLUMN)
-    for column in range(FIRST_CASE_COLUMN, upper + 1):
-        name = to_text(worksheet.cell(row=1, column=column).value).strip()
+
+    if config.excel.local_direction == "horizontal":
+        candidates = [(row, _LOCAL_COL["name"]) for row in range(2, worksheet.max_row + 1)]
+    else:
+        candidates = [(1, column) for column in range(_GROUP_FIRST_VAR_COLUMN, worksheet.max_column + 1)]
+
+    for row, column in candidates:
+        name = to_text(worksheet.cell(row=row, column=column).value).strip()
         if not name:
-            if columns:  # 遇到空列说明 Case 列已经结束
-                break
             continue
         if name in seen:
-            raise ExcelError(f"工作表 {sheet_name!r} 的 Case 列名重复: {name!r}")
+            where = f"第 {row} 行" if config.excel.local_direction == "horizontal" else f"第 {column} 列"
+            raise ExcelError(f"工作表 {sheet_name!r} {where}变量名 {name!r} 重复")
         seen.add(name)
-        columns.append((column, name))
-    return columns
+        definition = definitions.get(name)
+        if config.excel.local_direction == "horizontal":
+            prefix = _text_or(
+                worksheet.cell(row=row, column=_LOCAL_COL["prefix"]).value,
+                definition.prefix if definition else "",
+            )
+            suffix = _text_or(
+                worksheet.cell(row=row, column=_LOCAL_COL["suffix"]).value,
+                definition.suffix if definition else "",
+            )
+            axis = row
+        else:
+            prefix = definition.prefix if definition else ""
+            suffix = definition.suffix if definition else ""
+            axis = column
+        slots.append(_VarSlot(name, definition, prefix, suffix, axis))
+    return slots
+
+
+def _case_cell(worksheet: Worksheet, config: ProjectConfig, slot: _VarSlot, case: CaseData):
+    """某个变量在某个 Case 上的那格（两种布局各取一个坐标）。"""
+    if config.excel.local_direction == "horizontal":
+        assert case.column is not None
+        return worksheet.cell(row=slot.axis, column=case.column)
+    assert case.row is not None
+    return worksheet.cell(row=case.row, column=slot.axis)
+
+
+def _case_anchors(worksheet: Worksheet, config: ProjectConfig) -> list[CaseData]:
+    """Local 表里的工况位置（只读名字与位置，不读取值）。
+
+    * ``horizontal``（默认）：一个工况一列，名字在**第 1 行**从 E 列起；
+    * ``vertical``：一个工况一行，名字在 **A 列**从第 2 行起。
+
+    两种布局都是"遇到空表头就停"，所以右拉 / 下拉加一列 / 一行即可增工况。
+    """
+    sheet_name = config.excel.sheets.local
+    anchors: list[CaseData] = []
+    seen: set[str] = set()
+
+    def take(name: str, *, column: int | None, row: int | None, position: str) -> None:
+        if name in seen:
+            raise ExcelError(f"工作表 {sheet_name!r} 的 Case 名重复: {name!r}")
+        seen.add(name)
+        anchors.append(CaseData(name=name, column=column, row=row, values={}))
+        del position
+
+    if config.excel.local_direction == "horizontal":
+        upper = max(worksheet.max_column, FIRST_CASE_COLUMN)
+        for column in range(FIRST_CASE_COLUMN, upper + 1):
+            name = to_text(worksheet.cell(row=1, column=column).value).strip()
+            if not name:
+                if anchors:  # 遇到空列说明 Case 列已经结束
+                    break
+                continue
+            take(name, column=column, row=None, position=f"第 {column} 列")
+    else:
+        for row in range(2, worksheet.max_row + 1):
+            name = to_text(worksheet.cell(row=row, column=1).value).strip()
+            if not name:
+                if anchors:  # 遇到空行说明 Case 行已经结束
+                    break
+                continue
+            take(name, column=None, row=row, position=f"第 {row} 行")
+    return anchors
 
 
 def _coerce(value: Any, kind: str, label: str) -> Any:
@@ -1229,7 +1440,7 @@ def check_value_constraints(
 
     local_sheet = config.excel.sheets.local
     for case in cases:
-        for row, variable in enumerate(config.local_variables, start=2):
+        for variable in config.local_variables:
             if variable.is_derived or not variable.has_constraints:
                 continue
             value = case.values.get(variable.name)
@@ -1237,10 +1448,7 @@ def check_value_constraints(
                 continue
             problem = variable.value_problem(value.text)
             if problem:
-                column = column_index_to_letter(case.column)
-                problems.append(
-                    f"  {local_sheet} 第 {column} 列 '{case.name}' 第 {row} 行 '{variable.name}'：{problem}"
-                )
+                problems.append(f"  {local_sheet} {case.where} '{case.name}' 的 '{variable.name}'：{problem}")
 
     # 成员表（第三层作用域）：一个成员一行
     if members:
@@ -1321,10 +1529,23 @@ def _template_source(template, base_dir: str | Path | None) -> str:
 template_source = _template_source
 
 
-def case_column_map(workbook: Workbook, config: ProjectConfig) -> dict[str, int]:
-    """Local 表的 ``Case 名 -> 列号`` 映射（公式模式要知道每个 Case 在哪一列）。"""
+def case_anchor_map(workbook: Workbook, config: ProjectConfig) -> dict[str, CaseData]:
+    """Local 表的 ``Case 名 -> 位置`` 映射（公式模式要知道每个 Case 在哪一列 / 哪一行）。"""
     worksheet = get_sheet(workbook, config.excel.sheets.local)
-    return {name: column for column, name in _case_columns(worksheet, config.excel.sheets.local)}
+    return {anchor.name: anchor for anchor in _case_anchors(worksheet, config)}
+
+
+def _case_axis(anchor: CaseData, config: ProjectConfig) -> int:
+    """Case 的"工况轴"：横向布局是列号，纵向布局是行号。"""
+    if config.excel.local_direction == "horizontal":
+        assert anchor.column is not None
+        return anchor.column
+    assert anchor.row is not None
+    return anchor.row
+
+
+def case_axis_map(workbook: Workbook, config: ProjectConfig) -> dict[str, int]:
+    return {name: _case_axis(anchor, config) for name, anchor in case_anchor_map(workbook, config).items()}
 
 
 def _formula_blocks(
@@ -1332,20 +1553,20 @@ def _formula_blocks(
     config: ProjectConfig,
     template,
     results: Sequence[RenderResult],
-    case_columns: dict[str, int],
+    case_axes: dict[str, int],
 ) -> list[_Block]:
     """把模板编译成"每行一个公式"的块。"""
-    missing = [result.case_name for result in results if result.case_name not in case_columns]
+    missing = [result.case_name for result in results if result.case_name not in case_axes]
     if missing:
         raise ExcelError(
             f"模板 {template.name!r} 使用公式模式，但 Local 表里找不到这些 Case 列: "
-            f"{', '.join(missing)}（可用: {', '.join(case_columns) or '（无）'}）"
+            f"{', '.join(missing)}（可用: {', '.join(case_axes) or '（无）'}）"
         )
     source = _template_source(template, config.source_dir)
     per_case = compile_formulas(
         template,
         config,
-        case_columns=[case_columns[result.case_name] for result in results],
+        case_axes=[case_axes[result.case_name] for result in results],
         source=source,
     )
     return [_Block(case_name=result.case_name, lines=lines) for result, lines in zip(results, per_case, strict=False)]
@@ -1393,17 +1614,18 @@ def refresh_derived_cells(
         wrote_formula = wrote_formula or is_translatable(definition)
 
     local_sheet = get_sheet(workbook, config.excel.sheets.local)
+    slots = {slot.name: slot for slot in _local_slots(local_sheet, config)}
     for case in cases:
-        resolve = _local_resolver(config, case.column)
+        resolve = _local_resolver(config, case)
         for definition in config.local_variables:
             if not definition.is_derived:
                 continue
-            row = _row_of(local_sheet, definition.name)
-            if row is None:
+            slot = slots.get(definition.name)
+            if slot is None:
                 continue
             value = case.values.get(definition.name)
             _write_derived_cell(
-                local_sheet.cell(row=row, column=case.column),
+                _case_cell(local_sheet, config, slot, case),
                 definition,
                 resolve=resolve,
                 value=value.value if value is not None else None,
@@ -1436,7 +1658,7 @@ def write_results(
     target = Path(path)
     workbook = load_workbook_file(target)
     try:
-        case_columns: dict[str, int] | None = None
+        case_axes: dict[str, int] | None = None
         formula_written = False
         for template in config.templates:
             results = list(rendered.get(template.name, ()))
@@ -1448,9 +1670,9 @@ def write_results(
             column, row = parse_cell(template.start_cell)
 
             if template.engine == "excel":
-                if case_columns is None:
-                    case_columns = case_column_map(workbook, config)
-                blocks = _formula_blocks(workbook, config, template, results, case_columns)
+                if case_axes is None:
+                    case_axes = case_axis_map(workbook, config)
+                blocks = _formula_blocks(workbook, config, template, results, case_axes)
                 formula_written = True
                 if warnings is not None:
                     longest = max((len(line) for block in blocks for line in block.lines), default=0)

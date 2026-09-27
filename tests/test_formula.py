@@ -73,7 +73,7 @@ def formula_config(tmp_path: Path) -> ProjectConfig:
 
 def _first_case_formulas(config: ProjectConfig) -> list[str]:
     template = config.templates[0]
-    return compile_formulas(template, config, case_columns=[5])[0]
+    return compile_formulas(template, config, case_axes=[5])[0]
 
 
 # --------------------------------------------------------------------------- #
@@ -81,7 +81,7 @@ def _first_case_formulas(config: ProjectConfig) -> list[str]:
 # --------------------------------------------------------------------------- #
 def test_compile_line_uses_cell_references(formula_config: ProjectConfig) -> None:
     line = "UART_Init({{ baud }}, {{ port }}, {{ mode }});"
-    formula = compile_line(line, config=formula_config, template_name="uart_init", case_column=5)
+    formula = compile_line(line, config=formula_config, template_name="uart_init", case_axis=5)
 
     assert formula.startswith('="UART_Init("')
     assert formula.endswith('&");"')
@@ -99,7 +99,7 @@ def test_compile_line_uses_cell_references(formula_config: ProjectConfig) -> Non
 
 
 def test_compile_defaults_are_inlined(formula_config: ProjectConfig) -> None:
-    formula = compile_line("{{ port }}", config=formula_config, template_name="t", case_column=5)
+    formula = compile_line("{{ port }}", config=formula_config, template_name="t", case_axis=5)
     assert '"GPIO"' in formula and '"_PORT"' in formula  # prefix / suffix 回落
     assert '"A"' in formula  # value 回落
 
@@ -109,7 +109,7 @@ def test_compile_case_name_and_template_name(formula_config: ProjectConfig) -> N
         "{{ case_name }}/{{ template_name }}",
         config=formula_config,
         template_name="uart_init",
-        case_column=6,
+        case_axis=6,
     )
     assert formula == "='Local Parameter'!F$1&\" /\"".replace(" ", "") or '"uart_init"' in formula
     assert "'Local Parameter'!F$1" in formula
@@ -118,12 +118,12 @@ def test_compile_case_name_and_template_name(formula_config: ProjectConfig) -> N
 
 def test_compile_vertical_locks_case_column(formula_config: ProjectConfig) -> None:
     vertical = formula_config.templates[1]
-    lines = compile_formulas(vertical, formula_config, case_columns=[5])[0]
+    lines = compile_formulas(vertical, formula_config, case_axes=[5])[0]
     assert "'Local Parameter'!$E$1" in lines[0]  # 纵向：Case 表头锁死
     assert "INDEX('Local Parameter'!$E:$E," in lines[0]  # 值列也锁死
 
     horizontal = formula_config.templates[0]
-    lines = compile_formulas(horizontal, formula_config, case_columns=[5])[0]
+    lines = compile_formulas(horizontal, formula_config, case_axes=[5])[0]
     assert "'Local Parameter'!E$1" in lines[0]  # 横向：相对列，右拉换 Case
 
 
@@ -137,7 +137,7 @@ def test_constant_line_and_quote_escaping(formula_config: ProjectConfig) -> None
 def test_dot_value_and_text_are_the_same(formula_config: ProjectConfig) -> None:
     def compile_one(code: str) -> str:
         template = formula_config.templates[0].model_copy(update={"code": code})
-        return compile_formulas(template, formula_config, case_columns=[5])[0][0]
+        return compile_formulas(template, formula_config, case_axes=[5])[0][0]
 
     assert compile_one("{{ port.value }}") == compile_one("{{ port.text }}")
     # 值列 + ISBLANK 保护：一次取空判断、两次取值
@@ -161,7 +161,7 @@ def test_unsupported_templates_report_line(formula_config: ProjectConfig, code: 
     template = formula_config.templates[0]
     bad = template.model_copy(update={"code": code})
     with pytest.raises(FormulaError) as excinfo:
-        compile_formulas(bad, formula_config, case_columns=[5])
+        compile_formulas(bad, formula_config, case_axes=[5])
     message = str(excinfo.value)
     assert keyword in message
     assert "行内容" in message
@@ -172,7 +172,7 @@ def test_formula_length_guard(formula_config: ProjectConfig) -> None:
     template = formula_config.templates[0]
     bad = template.model_copy(update={"code": "{{ baud }}" * 900})
     with pytest.raises(FormulaError, match="公式过长"):
-        compile_formulas(bad, formula_config, case_columns=[5])
+        compile_formulas(bad, formula_config, case_axes=[5])
 
 
 # --------------------------------------------------------------------------- #
@@ -219,5 +219,5 @@ def test_python_render_matches_formula_inputs(formula_config: ProjectConfig, tmp
     output = render_all(formula_config, path)
     assert output.results["uart_init"][0].lines[1] == "UART_Init(115200, GPIOA_PORT, MODE_TX_RX);"
     # 每条渲染行都对应一条公式
-    formulas = compile_formulas(formula_config.templates[0], formula_config, case_columns=[5])[0]
+    formulas = compile_formulas(formula_config.templates[0], formula_config, case_axes=[5])[0]
     assert len(formulas) == len(output.results["uart_init"][0].lines)

@@ -24,7 +24,7 @@ from . import __version__
 from .derived import expression_names
 from .derived import validate_config as derived_validate_config
 from .excel_io import (
-    case_column_map,
+    case_axis_map,
     check_required_sheets,
     check_value_constraints,
     create_template,
@@ -40,7 +40,7 @@ from .excel_io import (
 )
 from .formula import LONG_FORMULA_WARN, compile_formulas
 from .formula_eval import FormulaEvalError, evaluate_template_values
-from .models import FIRST_CASE_COLUMN, ProjectConfig, RenderResult, load_config
+from .models import ProjectConfig, RenderResult, load_config
 from .renderer import (
     RenderOutput,
     build_environment,
@@ -123,6 +123,17 @@ def _parse_cases(value: str) -> int | list[str]:
     if any(not name for name in names):
         raise ValueError("--cases 里的 Case 名不能为空，例如 --cases Case1,Case2")
     return names
+
+
+def _case_axis_label(project: ProjectConfig) -> str:
+    """工况轴的说法：横向是"Case 列"，纵向是"Case 行"。"""
+    return "Case 列" if project.excel.local_direction == "horizontal" else "Case 行"
+
+
+def _local_layout_hint(project: ProjectConfig) -> str:
+    if project.excel.local_direction == "horizontal":
+        return "Case 列：E 起"
+    return "Case 行：第 2 行起"
 
 
 def _case_names_of(spec: int | list[str]) -> list[str]:
@@ -217,9 +228,9 @@ def init_command(
     table.add_column("内容")
     table.add_row("文件", str(target))
     table.add_row("Global 表", project.excel.sheets.global_)
-    table.add_row("Local 表", f"{project.excel.sheets.local}（Case 列：E 起）")
+    table.add_row("Local 表", f"{project.excel.sheets.local}（{_local_layout_hint(project)}）")
     table.add_row("Output 表", ", ".join(project.excel.sheets.outputs))
-    table.add_row("Case 列", ", ".join(_case_names_of(spec)))
+    table.add_row(_case_axis_label(project), ", ".join(_case_names_of(spec)))
     table.add_row("说明表", project.excel.howto_sheet or "（未生成）")
     table.add_row("模板数", str(len(project.templates)))
     console.print(table)
@@ -378,7 +389,7 @@ def validate_command(
                 compiled = compile_formulas(
                     template,
                     project,
-                    case_columns=[FIRST_CASE_COLUMN],
+                    case_axes=[1],  # 只量长度，轴取哪个都行
                     source=template_source(template, project.source_dir),
                 )
                 longest = max((len(line) for case in compiled for line in case), default=0)
@@ -471,8 +482,8 @@ def validate_command(
             excel_table.add_row("文件", str(excel_path))
             excel_table.add_row("Global 变量", ", ".join(global_values) or "-")
             excel_table.add_row(
-                "Case 列",
-                ", ".join(f"{case.name}({column_index_to_letter(case.column)})" for case in cases),
+                _case_axis_label(project),
+                ", ".join(f"{case.name}({case.where})" for case in cases),
             )
             for case in cases:
                 excel_table.add_row(
@@ -547,7 +558,7 @@ def _expected_lines(
     if template.engine != "excel":
         return {result.case_name: result.lines for result in results}, {}
 
-    columns = case_column_map(workbook, project)
+    columns = case_axis_map(workbook, project)
     missing = [result.case_name for result in results if result.case_name not in columns]
     if missing:
         raise ExcelError(f"模板 {template.name!r} 使用公式模式，但 Local 表里找不到这些 Case 列: {', '.join(missing)}")
@@ -555,7 +566,7 @@ def _expected_lines(
     per_case = compile_formulas(
         template,
         project,
-        case_columns=[columns[result.case_name] for result in results],
+        case_axes=[columns[result.case_name] for result in results],
         source=source,
     )
     labels = {case_name: source.splitlines() for case_name in (r.case_name for r in results)}
@@ -697,7 +708,7 @@ def _output_differences(
                     problems.append(
                         f"{label}：`公式算出来的文本`与 Python 渲染不一致 → "
                         + "；".join(_differences(got, result.lines))
-                        + "（参数表结构改动过？插/删过 Case 列？请重跑 --write-excel）"
+                        + f"（参数表结构改动过？插/删过 {_case_axis_label(project)}？请重跑 --write-excel）"
                     )
     return problems, notes
 
@@ -941,7 +952,7 @@ def _doctor_config(project: ProjectConfig, excel_path: Path | None) -> tuple[lis
                 compiled = compile_formulas(
                     template,
                     project,
-                    case_columns=[FIRST_CASE_COLUMN],
+                    case_axes=[1],  # 只量长度，轴取哪个都行
                     source=template_source(template, project.source_dir),
                 )
                 longest = max((len(line) for case in compiled for line in case), default=0)
@@ -997,14 +1008,16 @@ def _doctor_workbook(project: ProjectConfig, excel_path: Path) -> tuple[list[_Fi
         findings.append(("OK", "工作表", "、".join(workbook.sheetnames)))
         global_values = read_global_values(workbook, project)
         cases = read_cases(workbook, project, global_values=global_values)
-        findings.append(("OK", "Case 列", f"{len(cases)} 个：{', '.join(case.name for case in cases)}"))
+        axis_label = _case_axis_label(project)
+        findings.append(("OK", axis_label, f"{len(cases)} 个：{', '.join(case.name for case in cases)}"))
         empty = [case.name for case in cases if not case.explicit_values]
         if empty:
             findings.append(
                 (
                     "!",
-                    "空 Case 列",
-                    f"{', '.join(empty)} 整列都是空的 —— 所有变量都会回落 default，"
+                    f"空 {axis_label}",
+                    f"{', '.join(empty)} 整{'列' if project.excel.local_direction == 'horizontal' else '行'}"
+                    "都是空的 —— 所有变量都会回落 default，"
                     "可能悄悄落进某个 case_filter（指南 §9.2）",
                 )
             )

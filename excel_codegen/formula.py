@@ -62,7 +62,9 @@ __all__ = [
     "compile_formulas",
     "compile_line",
     "excel_literal",
+    "guard_default",
     "guarded_lookup",
+    "local_cell",
     "lookup_expr",
     "lookup_expr_at",
 ]
@@ -146,6 +148,36 @@ def lookup_expr_at(sheet: str, row_expr: str, column: int, *, absolute: bool) ->
     return f"INDEX({_quote_sheet(sheet)}!{anchor},{row_expr})"
 
 
+def local_cell(
+    sheet: str,
+    variable: str,
+    *,
+    column: int | None = None,
+    row: int | None = None,
+    absolute: bool = True,
+) -> str:
+    """Local 表里"某个变量 × 某个 Case"那一格的引用（横向 / 纵向两种形态）。
+
+    * **横向**（``column``，一个工况一列）：
+      ``INDEX(sheet!E:E, MATCH("port", sheet!$A:$A, 0))``
+      —— ``absolute=False`` 时列标不加 ``$``，右拉就换到下一个 Case。
+    * **纵向**（``row``，一个工况一行）：
+      ``INDEX(sheet!$A:$ZZ, 2, MATCH("port", sheet!$1:$1, 0))``
+      —— ``absolute=False`` 时行号不加 ``$``，下拉就换到下一个 Case。
+
+    两种形态都只做一次"按**变量名**定位"，所以插/删变量列（行）都不会指错。
+    """
+    quoted = _quote_sheet(sheet)
+    if column is not None:
+        letter = column_index_to_letter(column)
+        anchor = f"${letter}:${letter}" if absolute else f"{letter}:{letter}"
+        return f"INDEX({quoted}!{anchor},MATCH({_quote_text(variable)},{quoted}!$A:$A,0))"
+    if row is None:
+        raise FormulaError(f"给 {variable!r} 定位时要给 column 或 row")
+    row_ref = f"${row}" if absolute else f"{row}"
+    return f"INDEX({quoted}!$A:$ZZ,{row_ref},MATCH({_quote_text(variable)},{quoted}!$1:$1,0))"
+
+
 def guarded_lookup(
     sheet: str,
     variable: str,
@@ -174,6 +206,10 @@ def _with_default(expr: str, default: Any) -> str:
     return f'IF(ISBLANK({expr}),{literal},IF({expr}="",{literal},{expr}))'
 
 
+#: 取不到就退回默认值：派生表达式算不出时用 YAML 里的默认值。
+guard_default = _with_default
+
+
 def _typed(expr: str, definition: VariableDef | None) -> str:
     """数值规范化：交给 Excel 的隐式转换（General = 最多 15 位有效数字）。
 
@@ -196,8 +232,22 @@ class _VarRef:
     prefix_column: int | None
     suffix_column: int | None
     value_column_is_relative: bool
+    #: 纵向布局（一行一个工况）：用 ``local_cell`` 的"行"形态定位
+    transposed: bool = False
+    #: 纵向布局下"这个 Case 的行号"（横向布局用不到）
+    value_row: int | None = None
+    #: 纵向布局下相对行 / 绝对行
+    value_row_is_relative: bool = False
 
     def _lookup(self, column: int, *, absolute: bool) -> str:
+        if self.transposed:
+            assert self.value_row is not None
+            return local_cell(
+                self.sheet,
+                self.name,
+                row=self.value_row,
+                absolute=not self.value_row_is_relative,
+            )
         return lookup_expr_at(self.sheet, self.row_expr, column, absolute=absolute)
 
     def value(self) -> str:
@@ -235,13 +285,15 @@ class _Compiler:
         #: 横向布局：一个 Case 一列，向右拖公式应该跟着换 Case（相对列）。
         #: 纵向布局：向右拖是换"同一 Case 的下一行"，Case 列必须锁死（绝对列）。
         self.relative_case_column = relative_case_column
+        #: 纵向布局（Local 表一行一个工况）："case_axis" 那个参数其实是**行号**
+        self.transposed = config.excel.local_direction == "vertical"
         self._globals = {item.name: item for item in config.global_variables}
         self._locals = {item.name: item for item in config.local_variables}
         self._group_config = config.group
         self._group = {item.name: item for item in config.group_variables}
         self._cache: dict[tuple[str, int], _VarRef] = {}
 
-    def _member_lookup(self, case_column: int) -> str:
+    def _member_lookup(self, case_axis: int) -> str:
         """这个 Case 用哪个成员：把 key 变量（local）按普通方式查出来。"""
         group = self._group_config
         assert group is not None
@@ -253,16 +305,19 @@ class _Compiler:
             name=group.key,
             definition=definition,
             row_expr=f"MATCH({_quote_text(group.key)},{quoted}!$A:$A,0)",
-            value_column=case_column,
-            prefix_column=_LOCAL_COLUMNS["prefix"],
-            suffix_column=_LOCAL_COLUMNS["suffix"],
+            value_column=case_axis,
+            prefix_column=None if self.transposed else _LOCAL_COLUMNS["prefix"],
+            suffix_column=None if self.transposed else _LOCAL_COLUMNS["suffix"],
             value_column_is_relative=self.relative_case_column,
+            transposed=self.transposed,
+            value_row=case_axis if self.transposed else None,
+            value_row_is_relative=self.relative_case_column,
         )
         return ref.value()
 
     # -- 变量 -------------------------------------------------------------- #
-    def resolve(self, name: str, case_column: int) -> _VarRef:
-        key = (name, case_column)
+    def resolve(self, name: str, case_axis: int) -> _VarRef:
+        key = (name, case_axis)
         if key in self._cache:
             return self._cache[key]
 
@@ -289,10 +344,13 @@ class _Compiler:
                 name=name,
                 definition=self._locals[name],
                 row_expr=name_match(sheet, name),
-                value_column=case_column,
-                prefix_column=_LOCAL_COLUMNS["prefix"],
-                suffix_column=_LOCAL_COLUMNS["suffix"],
+                value_column=case_axis,
+                prefix_column=None if self.transposed else _LOCAL_COLUMNS["prefix"],
+                suffix_column=None if self.transposed else _LOCAL_COLUMNS["suffix"],
                 value_column_is_relative=self.relative_case_column,
+                transposed=self.transposed,
+                value_row=case_axis if self.transposed else None,
+                value_row_is_relative=self.relative_case_column,
             )
         elif self._group is not None and name in self._group:
             group = self._group_config
@@ -304,7 +362,7 @@ class _Compiler:
                 name=name,
                 definition=self._group[name],
                 # 行 = "这个 Case 用哪个成员"（再按 A 列找行）—— 一次一维查找
-                row_expr=f"MATCH({self._member_lookup(case_column)},{quoted}!$A:$A,0)",
+                row_expr=f"MATCH({self._member_lookup(case_axis)},{quoted}!$A:$A,0)",
                 value_column=_GROUP_FIRST_COLUMN + group.names.index(name),
                 prefix_column=None,
                 suffix_column=None,
@@ -320,7 +378,7 @@ class _Compiler:
         return ref
 
     # -- 表达式 ------------------------------------------------------------ #
-    def expression(self, raw: str, *, case_column: int, line: str) -> str:
+    def expression(self, raw: str, *, case_axis: int, line: str) -> str:
         expr = raw.strip()
         if "|" in expr:
             raise FormulaError(
@@ -331,8 +389,12 @@ class _Compiler:
             return _quote_text(self.template_name)
         if expr == "case_name":
             sheet = _quote_sheet(self.config.excel.sheets.local)
-            column = column_index_to_letter(case_column)
-            anchor = f"{column}$1" if self.relative_case_column else f"${column}$1"
+            if self.transposed:
+                # 纵向布局：Case 名在 A 列，行号就是"这个 Case 的轴"
+                anchor = f"A{case_axis}" if self.relative_case_column else f"$A${case_axis}"
+            else:
+                column = column_index_to_letter(case_axis)
+                anchor = f"{column}$1" if self.relative_case_column else f"${column}$1"
             return f"{sheet}!{anchor}"
 
         match = _EXPR_RE.match(expr)
@@ -344,7 +406,7 @@ class _Compiler:
             )
 
         name, attribute = match.group(1), match.group(2)
-        ref = self.resolve(name, case_column)
+        ref = self.resolve(name, case_axis)
         if attribute is None:
             return ref.combined()
         if attribute in _VALUE_ALIASES:
@@ -359,9 +421,9 @@ class _Compiler:
         )
 
     # -- 行 ---------------------------------------------------------------- #
-    def line(self, line: str, *, case_column: int) -> str:
+    def line(self, line: str, *, case_axis: int) -> str:
         tokens = self._tokenize(line)
-        body = self._compile_tokens(tokens, case_column=case_column, line=line)
+        body = self._compile_tokens(tokens, case_axis=case_axis, line=line)
         formula = "=" + body
         if len(formula) > MAX_FORMULA_CHARS:
             raise FormulaError(
@@ -397,7 +459,7 @@ class _Compiler:
     #: 条件里可以直接写的名字（它们没有"取值/前缀/后缀"之分）
     _CONDITION_SPECIAL_NAMES = frozenset({"case_name", "template_name"})
 
-    def condition(self, source: str, *, case_column: int, line: str) -> str:
+    def condition(self, source: str, *, case_axis: int, line: str) -> str:
         """把 ``{% if %}`` 的条件翻译成 Excel 的布尔表达式。
 
         **条件里的变量必须写属性**（``x.value`` / ``x.text`` / ``x.prefix`` / ``x.suffix``）。
@@ -425,7 +487,7 @@ class _Compiler:
         self._require_attribute_access(node, expression, line)
 
         def resolve(name: str, attribute: str | None = None) -> str:
-            return self._condition_ref(name, attribute, case_column)
+            return self._condition_ref(name, attribute, case_axis)
 
         try:
             excel = to_excel(
@@ -456,10 +518,10 @@ class _Compiler:
             f"或直接写一个值按真假判断；当前条件：{expression!r}"
         )
 
-    def _condition_ref(self, name: str, attribute: str | None, case_column: int) -> str:
+    def _condition_ref(self, name: str, attribute: str | None, case_axis: int) -> str:
         if attribute is None and name in self._CONDITION_SPECIAL_NAMES:
-            return self.expression(name, case_column=case_column, line=name)
-        ref = self.resolve(name, case_column)
+            return self.expression(name, case_axis=case_axis, line=name)
+        ref = self.resolve(name, case_axis)
         if attribute is None:
             return ref.combined()
         if attribute in _VALUE_ALIASES:
@@ -508,7 +570,7 @@ class _Compiler:
         return isinstance(default, (int, float)) and not isinstance(default, bool)
 
     # -- 递归编译 ---------------------------------------------------------- #
-    def _compile_tokens(self, tokens: list[_Token], *, case_column: int, line: str) -> str:
+    def _compile_tokens(self, tokens: list[_Token], *, case_axis: int, line: str) -> str:
         index = 0
 
         def join(parts: list[str]) -> str:
@@ -545,7 +607,7 @@ class _Compiler:
                         parts.append(_quote_text(token.value))
                 elif token.kind == "expr":
                     try:
-                        parts.append(self.expression(token.value, case_column=case_column, line=line))
+                        parts.append(self.expression(token.value, case_axis=case_axis, line=line))
                     except FormulaError as exc:
                         # 统一带上出错的行，方便在几十行的模板里定位
                         raise FormulaError(f"{exc}；行内容：{line.strip()!r}") from exc
@@ -567,7 +629,7 @@ class _Compiler:
                 index += 1
                 else_expr = parse_block(("endif",))
             index += 1  # 跳过 endif
-            condition = self.condition(condition_source, case_column=case_column, line=line)
+            condition = self.condition(condition_source, case_axis=case_axis, line=line)
             return f"IF({condition},{then_expr},{else_expr})"
 
         return parse_block(())
@@ -581,20 +643,18 @@ def compile_line(
     *,
     config: ProjectConfig,
     template_name: str,
-    case_column: int,
+    case_axis: int,
     relative_case_column: bool = True,
 ) -> str:
     """编译单独一行（主要给测试用）。"""
-    return _Compiler(config, template_name, relative_case_column=relative_case_column).line(
-        line, case_column=case_column
-    )
+    return _Compiler(config, template_name, relative_case_column=relative_case_column).line(line, case_axis=case_axis)
 
 
 def compile_formulas(
     template: TemplateDef,
     config: ProjectConfig,
     *,
-    case_columns: Sequence[int],
+    case_axes: Sequence[int],
     source: str | None = None,
 ) -> list[list[str]]:
     """按 Case 编译整个模板：``[case][line] = 公式``。
@@ -610,4 +670,4 @@ def compile_formulas(
         relative_case_column=template.direction == "horizontal",
     )
     lines = text.splitlines()
-    return [[compiler.line(line, case_column=column) for line in lines] for column in case_columns]
+    return [[compiler.line(line, case_axis=column) for line in lines] for column in case_axes]

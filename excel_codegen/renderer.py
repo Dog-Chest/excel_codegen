@@ -23,7 +23,7 @@ from .excel_io import (
 )
 from .jinja_env import build_environment, pvs, wrap
 from .models import CaseData, ProjectConfig, RenderResult, TemplateDef
-from .utils import ExcelError, RenderError, VarValue, column_index_to_letter, safe_filename, to_text
+from .utils import ExcelError, RenderError, VarValue, safe_filename, to_text
 
 __all__ = [
     "FilterValue",
@@ -273,8 +273,7 @@ def check_asserts(
                     "（数值比较请写 x.value，例如 draft.value <= d_tank.value）"
                 ) from exc
             if not passed:
-                column = column_index_to_letter(case.column)
-                problems.append(f"  Case '{case.name}'（Local 第 {column} 列）不满足：{expression}")
+                problems.append(f"  Case '{case.name}'（Local 表 {case.where}）不满足：{expression}")
     if problems:
         raise ExcelError(
             f"参数不满足 YAML 里的 asserts（跨变量校验），共 {len(problems)} 处：\n"

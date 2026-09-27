@@ -37,6 +37,7 @@ __all__ = [
     "ColRef",
     "Evaluator",
     "FormulaEvalError",
+    "RowRef",
     "WorkbookReader",
     "evaluate_formula",
     "evaluate_template_values",
@@ -61,6 +62,10 @@ _TOKEN_RE = re.compile(
     """,
     re.VERBOSE,
 )
+
+
+#: ``A2`` 这种"列标+行号"挤在一个词法 token 里的形态。
+_CELL_RE = re.compile(r"([A-Za-z]{1,3})(\d+)")
 
 
 def tokenize(text: str) -> list[tuple[str, str]]:
@@ -95,16 +100,34 @@ class Cell:
 
 
 class ColRef:
-    """整列引用（只作为 ``INDEX`` / ``MATCH`` 的参数出现）。"""
+    """整列引用（只作为 ``INDEX`` / ``MATCH`` 的参数出现）。
 
-    __slots__ = ("column", "sheet")
+    ``end`` 不为空时是**整列区间**（``$A:$ZZ``）—— 纵向布局的 ``INDEX`` 拿它当二维矩形用。
+    """
 
-    def __init__(self, sheet: str, column: str) -> None:
+    __slots__ = ("column", "end", "sheet")
+
+    def __init__(self, sheet: str, column: str, end: str | None = None) -> None:
         self.sheet = sheet
         self.column = column
+        self.end = end
 
     def __repr__(self) -> str:  # pragma: no cover - 调试友好
-        return f"ColRef({self.sheet}!{self.column})"
+        suffix = f":{self.end}" if self.end else ""
+        return f"ColRef({self.sheet}!{self.column}{suffix})"
+
+
+class RowRef:
+    """整行引用（``'Local Parameter'!$1:$1``）—— 纵向布局的 ``MATCH`` 拿它按变量名找列。"""
+
+    __slots__ = ("row", "sheet")
+
+    def __init__(self, sheet: str, row: int) -> None:
+        self.sheet = sheet
+        self.row = row
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试友好
+        return f"RowRef({self.sheet}!{self.row}:{self.row})"
 
 
 def as_text(value: Any) -> str:
@@ -147,6 +170,9 @@ class SheetReader(Protocol):
     def name_row(self, sheet: str, variable: str) -> int:
         """在 A 列按**变量名**查行号（等同于 MATCH）。"""
 
+    def name_column(self, sheet: str, variable: str) -> int:
+        """在第 1 行按**变量名**查列号（纵向布局的 MATCH）。"""
+
 
 class WorkbookReader:
     """从 ``openpyxl`` 工作簿读值。
@@ -160,6 +186,7 @@ class WorkbookReader:
         #: 由 :class:`Evaluator` 装上：公式文本 -> 文本
         self.evaluate = evaluate
         self._name_rows: dict[str, dict[str, int]] = {}
+        self._name_columns: dict[str, dict[str, int]] = {}
         self._cells: dict[tuple[str, int, int], tuple[Any, bool]] = {}
         self._active: set[tuple[str, int, int]] = set()
 
@@ -205,6 +232,21 @@ class WorkbookReader:
                     cache.setdefault(str(text).strip(), row)
         if variable not in cache:
             raise FormulaEvalError(f"{sheet} 表里没有变量 {variable!r}")
+        return cache[variable]
+
+    def name_column(self, sheet: str, variable: str) -> int:
+        cache = self._name_columns.setdefault(sheet, {})
+        if not cache:
+            try:
+                worksheet = self.workbook[sheet]
+            except KeyError as exc:
+                raise FormulaEvalError(f"公式引用了不存在的工作表 {sheet!r}") from exc
+            for column in range(1, worksheet.max_column + 1):
+                text = worksheet.cell(row=1, column=column).value
+                if text is not None and str(text).strip():
+                    cache.setdefault(str(text).strip(), column)
+        if variable not in cache:
+            raise FormulaEvalError(f"{sheet} 表第 1 行里没有变量 {variable!r}")
         return cache[variable]
 
 
@@ -410,11 +452,18 @@ class Evaluator:
                 ref = self.comparison()
                 self._expect(",")
                 row = self.comparison()
+                column = None
+                if self._peek(","):
+                    self._next()
+                    column = self.comparison()
                 self._expect(")")
                 if not isinstance(ref, ColRef):
                     raise FormulaEvalError("INDEX 的第一个参数不是整列引用")
-                value, blank = self.reader.cell_value(ref.sheet, _column_number(ref.column), int(self._scalar(row)))
-                return Cell(value, blank, f"{ref.sheet}!{ref.column}{int(self._scalar(row))}")
+                row_number = int(self._scalar(row))
+                column_number = _column_number(ref.column) if column is None else int(self._scalar(column))
+                value, blank = self.reader.cell_value(ref.sheet, column_number, row_number)
+                letter = column_index_to_letter(column_number)
+                return Cell(value, blank, f"{ref.sheet}!{letter}{row_number}")
             if upper == "MATCH":
                 needle = self.comparison()
                 self._expect(",")
@@ -422,8 +471,10 @@ class Evaluator:
                 self._expect(",")
                 self.comparison()  # 0（精确匹配）
                 self._expect(")")
+                if isinstance(ref, RowRef):
+                    return self.reader.name_column(ref.sheet, str(self._scalar(needle)))
                 if not isinstance(ref, ColRef):
-                    raise FormulaEvalError("MATCH 的第二个参数不是整列引用")
+                    raise FormulaEvalError("MATCH 的第二个参数不是整列 / 整行引用")
                 return self.reader.name_row(ref.sheet, str(self._scalar(needle)))
             if upper in {"MIN", "MAX", "ABS", "TRUNC", "MOD"}:
                 arguments = [self.comparison()]
@@ -455,18 +506,40 @@ class Evaluator:
         if self._peek("$"):
             self._next()
         token_kind, column = self._next()
+        if token_kind == "number":
+            # 整行引用：'sheet'!$1:$1
+            if not self._peek(":"):
+                raise FormulaEvalError(f"看不懂的引用 {column!r}")
+            self._next()
+            if self._peek("$"):
+                self._next()
+            _, second = self._next()
+            if not str(second).lstrip("$") == str(column).lstrip("$"):
+                raise FormulaEvalError(f"只支持整行引用，不支持行区间 {column}:{second}")
+            if sheet is None:
+                raise FormulaEvalError("公式里出现了没有表名的整行引用")
+            return RowRef(sheet, int(str(column).lstrip("$")))
         if token_kind != "ident":
             raise FormulaEvalError(f"引用里缺列标: {column!r}")
+        merged = _CELL_RE.fullmatch(column)
+        if merged is not None and not self._peek(":"):
+            # 列标 + 行号被词法器吃成了一个 token（'Local Parameter'!A2，
+            # 纵向布局的 case_name 引用就是这样）。A:A 那种整列引用不会匹配到这里。
+            if sheet is None:
+                raise FormulaEvalError("公式里出现了没有表名的单元格引用")
+            letter, row_text = merged.group(1).upper(), merged.group(2)
+            value, blank = self.reader.cell_value(sheet, _column_number(letter), int(row_text))
+            return Cell(value, blank, f"{sheet}!{letter}{row_text}")
         if self._peek(":"):
             self._next()
             if self._peek("$"):
                 self._next()
             _, second = self._next()
-            if second.upper() != column.upper():
-                raise FormulaEvalError(f"只支持整列引用，不支持列区间 {column}:{second}")
             if sheet is None:
                 raise FormulaEvalError("公式里出现了没有表名的整列引用")
-            return ColRef(sheet, column.upper())
+            if second.upper() == column.upper():
+                return ColRef(sheet, column.upper())
+            return ColRef(sheet, column.upper(), second.upper())
         if self._peek("$"):
             self._next()
         row_kind, row_text = self._next()
