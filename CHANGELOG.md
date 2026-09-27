@@ -42,6 +42,26 @@ README 从 686 行压到 ~150 行 —— 它现在只回答"这是什么 / 怎�
 * 删掉了 README 里与 `CHANGELOG.md`、`docs/template_guide.md` 重复的版本变更史与语法细节。
 * 新增「现场用例：ABS FPI 内外压 → GeniE」一节，并注明里面的舱容与工况是**示意数值**。
 
+### 3. 跨文件复用：`extends`
+
+**需求**：一个项目要在一本工作簿里放几套规范、共用一张 Global 表，此前只能把变量**手抄**
+进一个文件（`abs_fpi` 是靠项目侧脚本 `compose.py` 绕过的）。现在工具内建：
+
+```yaml
+extends: [rules/external.yaml, rules/internal.yaml]
+```
+
+| 变化 | 说明 |
+| --- | --- |
+| 根节点新增 `extends` | 递归合并（A extends B extends C 可以），循环引用会报错并打出引用链 |
+| 合并判据与 `compose.py` 一致 | 同名变量：`prefix` / `suffix` / `type` / `derived` / 取值约束**必须逐字一致**，`default` 与 `description` 不一致只**告警**（保留先出现的）；同名模板内容必须一致。取值约束也纳入了"必须一致"的字段 |
+| **`template_file` 相对声明它的文件解析** | 这是 `compose.py` 做不到的那件事（它要求各文件在同一目录）。新增 `TemplateDef.source_dir`，`renderer` / `excel_io` 两处路径解析都优先用它 |
+| 告警可见 | `ProjectConfig.load_warnings` + CLI 的 `_load_project()`：合并告警以 `!` 开头打印出来 |
+| 文档 | 指南新增 §16（合并规则、`template_file` 解析、与 `compose.py` 的分工）；`compose.py` 的 docstring 改写成"它现在还多做什么" |
+
+新增 `tests/test_extends.py` 16 项：合并语义 4 项、冲突判定 4 项、错误写法 4 项、
+`template_file` 路径解析 2 项、无 `extends` 时行为不变 2 项。
+
 ---
 
 ## 0.5.2 — 多平台零配置：uv（2026-09-27）

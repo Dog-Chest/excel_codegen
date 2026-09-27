@@ -84,6 +84,14 @@ def _warn(message: str) -> None:
     console.print(f"[bold yellow]![/] {message}")
 
 
+def _load_project(config: Path):
+    """加载配置，并把 ``extends`` 合并过程中的告警打出来。"""
+    project = load_config(config)
+    for warning in project.load_warnings:
+        _warn(warning)
+    return project
+
+
 def _version_callback(value: bool) -> None:
     if value:
         console.print(f"excel-codegen [cyan]{__version__}[/]")
@@ -176,7 +184,7 @@ def init_command(
     """根据 YAML 生成 Excel 参数填写模板。"""
     try:
         spec = _parse_cases(cases)
-        project = load_config(config)
+        project = _load_project(config)
         target = create_template(
             project,
             output or Path(project.excel.output),
@@ -248,7 +256,7 @@ def render_command(
 ) -> None:
     """读取填好的 Excel + YAML，渲染模板并输出到 Excel / 代码文件 / 终端。"""
     try:
-        project = load_config(config)
+        project = _load_project(config)
         excel_path = _open_excel(project, excel)
         output = render_all(project, excel_path, only_cases=list(case) if case else None)
 
@@ -333,7 +341,7 @@ def validate_command(
     """校验 YAML 配置（以及可选地校验 Excel 结构），不产生任何输出。"""
     warnings: list[str] = []
     try:
-        project = load_config(config)
+        project = _load_project(config)
         environment = build_environment()
         # 派生参数：语法 / 引用范围 / 循环 / 能否翻译成 Excel 公式
         warnings.extend(derived_validate_config(project, env=environment))
@@ -707,7 +715,7 @@ def check_command(
 ) -> None:
     """检查 Excel 里的输出表是否与当前参数一致；过期则退出码 1（可放进 CI）。"""
     try:
-        project = load_config(config)
+        project = _load_project(config)
         excel_path = _open_excel(project, excel)
         fresh = render_all(project, excel_path)
         workbook = load_workbook_file(excel_path)

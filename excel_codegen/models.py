@@ -411,6 +411,11 @@ class TemplateDef(BaseModel):
     #: 例如 ``case_filter: "kind == 'EXT'"``。用于"一本工作簿放两套规则"的场景。
     case_filter: str | None = None
 
+    #: 声明这个模板（以及它的 ``template_file``）的文件所在目录。
+    #: 只有 ``extends`` 合并进来的模板才需要它 —— 那些相对路径要相对**声明它的那个文件**解析，
+    #: 而不是相对最终的项目 YAML。``None`` 表示"就是配置文件自己"，用 ``config.source_dir``。
+    source_dir: Path | None = Field(default=None, exclude=True)
+
     @field_validator("name")
     @classmethod
     def _check_name(cls, value: str) -> str:
@@ -478,6 +483,11 @@ class ProjectConfig(BaseModel):
 
     #: 配置文件所在目录（加载时自动填充，用于解析相对路径的 template_file）。
     source_dir: Path | None = Field(default=None, exclude=True)
+    #: ``extends`` 指向的其他 YAML（相对本文件解析）。加载时会先合并它们，见 §16。
+    #: 加载后这里保留的是**本文件写的原始列表**，方便调用方知道配置由哪些文件组成。
+    extends: list[str] = Field(default_factory=list, exclude=True)
+    #: 合并 ``extends`` 时的告警（例如同名变量的 ``default`` 不一致），由 CLI 打印出来。
+    load_warnings: list[str] = Field(default_factory=list, exclude=True)
 
     @model_validator(mode="after")
     def _validate_config(self) -> "ProjectConfig":
@@ -587,19 +597,16 @@ _StrictLoader.add_constructor(
 )
 
 
-def load_config(path: str | Path) -> ProjectConfig:
-    """读取并校验 YAML 配置，失败时抛出带清晰提示的 :class:`ConfigError`。"""
-    config_path = Path(path)
-    if not config_path.exists():
-        raise ConfigError(f"配置文件不存在: {config_path}")
-    if config_path.is_dir():
-        raise ConfigError(f"配置路径是目录而不是文件: {config_path}")
-
+def _read_yaml_mapping(path: Path) -> dict:
+    """读一个 YAML 文件并要求根节点是映射；失败时抛带位置的 :class:`ConfigError`。"""
+    if not path.exists():
+        raise ConfigError(f"配置文件不存在: {path}")
+    if path.is_dir():
+        raise ConfigError(f"配置路径是目录而不是文件: {path}")
     try:
-        raw_text = config_path.read_text(encoding="utf-8")
+        raw_text = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise ConfigError(f"无法读取配置文件 {config_path}: {exc}") from exc
-
+        raise ConfigError(f"无法读取配置文件 {path}: {exc}") from exc
     try:
         raw = yaml.load(raw_text, Loader=_StrictLoader)
     except ConfigError:
@@ -607,12 +614,155 @@ def load_config(path: str | Path) -> ProjectConfig:
     except yaml.YAMLError as exc:
         mark = getattr(exc, "problem_mark", None)
         where = f"（第 {mark.line + 1} 行，第 {mark.column + 1} 列）" if mark else ""
-        raise ConfigError(f"YAML 解析失败 {config_path}{where}:\n  {exc}") from exc
-
+        raise ConfigError(f"YAML 解析失败 {path}{where}:\n  {exc}") from exc
     if raw is None:
-        raise ConfigError(f"配置文件内容为空: {config_path}")
+        raise ConfigError(f"配置文件内容为空: {path}")
     if not isinstance(raw, dict):
-        raise ConfigError(f"配置文件根节点必须是映射（mapping），实际是 {type(raw).__name__}: {config_path}")
+        raise ConfigError(f"配置文件根节点必须是映射（mapping），实际是 {type(raw).__name__}: {path}")
+    return raw
+
+
+#: extends 合并时，同名变量之间**必须逐字一致**的字段 —— 它们决定生成出来的文本。
+#: 和 ``abs_fpi/compose.py`` 的 STRICT_FIELDS 是同一套判据，只是把取值约束也纳入了。
+EXTENDS_STRICT_FIELDS: tuple[str, ...] = (
+    "prefix", "suffix", "type", "derived", "min", "max", "choices", "pattern",
+)
+#: 这些字段不一致只告警（不同规则集的示例工况本来就不同），保留先出现的那个。
+EXTENDS_LOOSE_FIELDS: tuple[str, ...] = ("default", "description")
+
+
+def _merge_variable(
+    existing: dict, incoming: dict, *, scope: str, origin: Path, first_seen: Path, warnings: list[str]
+) -> None:
+    name = incoming.get("name")
+    for field in EXTENDS_STRICT_FIELDS:
+        before, after = existing.get(field), incoming.get(field)
+        if before != after:
+            raise ConfigError(
+                f"变量 {name!r} 在 {scope} 里被 {first_seen} 与 {origin} 定义成不同的 {field}："
+                f"{before!r} vs {after!r}。这些字段决定生成出来的文本，必须先统一。"
+            )
+    for field in EXTENDS_LOOSE_FIELDS:
+        if existing.get(field) != incoming.get(field):
+            warnings.append(
+                f"变量 {name!r}（{scope}）的 {field} 在两处不一致：保留 {first_seen} 的 "
+                f"{existing.get(field)!r}，忽略 {origin} 的 {incoming.get(field)!r}"
+            )
+
+
+def _merge_into(
+    merged: dict,
+    origins: dict[str, Path],
+    raw: dict,
+    *,
+    origin: Path,
+    is_root: bool,
+    warnings: list[str],
+) -> None:
+    """把一个文件的 ``variables`` / ``templates`` 合并进累积结果。"""
+    if not is_root and raw.get("excel"):
+        warnings.append(f"忽略 {origin} 里的 excel 配置（工作簿布局以根配置文件为准）")
+
+    variables = raw.get("variables") or {}
+    if not isinstance(variables, dict):
+        variables = {}
+    for scope in ("global", "local"):
+        for item in variables.get(scope) or []:
+            if not isinstance(item, dict) or "name" not in item:
+                merged["variables"][scope].append(item)  # 交给 pydantic 报错，信息更统一
+                continue
+            name = item["name"]
+            existing = next(
+                (v for v in merged["variables"][scope] if isinstance(v, dict) and v.get("name") == name),
+                None,
+            )
+            if existing is None:
+                merged["variables"][scope].append(dict(item))
+                origins.setdefault(f"{scope}:{name}", origin)
+                continue
+            _merge_variable(
+                existing, item, scope=scope, origin=origin,
+                first_seen=origins.get(f"{scope}:{name}", origin), warnings=warnings,
+            )
+
+    for template in raw.get("templates") or []:
+        if not isinstance(template, dict):
+            merged["templates"].append(template)
+            continue
+        name = template.get("name")
+        same = next(
+            (t for t in merged["templates"] if isinstance(t, dict) and t.get("name") == name), None
+        )
+        if same is not None:
+            if yaml.safe_dump(same, sort_keys=True, allow_unicode=True) != yaml.safe_dump(
+                template, sort_keys=True, allow_unicode=True
+            ):
+                raise ConfigError(
+                    f"模板 {name!r} 在 {origins.get(f'template:{name}', origin)} 与 {origin} "
+                    "里都定义了，但内容不同 —— 模板名必须唯一，请改名或统一内容"
+                )
+            continue
+        merged["templates"].append(dict(template))
+        origins.setdefault(f"template:{name}", origin)
+
+
+def _load_with_extends(
+    config_path: Path, *, chain: tuple[Path, ...] = (), warnings: list[str]
+) -> tuple[dict, dict[str, Path]]:
+    """递归展开 ``extends``，返回合并后的 raw dict 与"每项来自哪个目录"的索引。"""
+    resolved = config_path.resolve()
+    if resolved in chain:
+        loop = " → ".join(str(p) for p in (*chain, resolved))
+        raise ConfigError(f"extends 出现循环引用: {loop}")
+
+    origin_dir = resolved.parent
+    raw = _read_yaml_mapping(config_path)
+    parents = raw.get("extends") or []
+    if not isinstance(parents, list) or not all(isinstance(p, str) for p in parents):
+        raise ConfigError(
+            f"extends 必须是文件路径的列表，例如 extends: [rules/a.yaml, rules/b.yaml]: {config_path}"
+        )
+
+    merged: dict = {"variables": {"global": [], "local": []}, "templates": []}
+    origins: dict[str, Path] = {}
+
+    for relative in parents:
+        parent_path = (origin_dir / relative).resolve()
+        if not parent_path.exists():
+            raise ConfigError(f"extends 指向的文件不存在: {parent_path}（写在 {config_path}）")
+        parent_raw, parent_origins = _load_with_extends(
+            parent_path, chain=(*chain, resolved), warnings=warnings
+        )
+        _merge_into(
+            merged, origins, parent_raw,
+            origin=parent_path.parent, is_root=False, warnings=warnings,
+        )
+        origins.update(parent_origins)
+
+    _merge_into(
+        merged, origins, raw, origin=origin_dir, is_root=True, warnings=warnings
+    )
+    merged["version"] = raw.get("version", 1)
+    merged["excel"] = raw.get("excel", {})
+    return merged, origins
+
+
+def load_config(path: str | Path) -> ProjectConfig:
+    """读取并校验 YAML 配置，失败时抛出带清晰提示的 :class:`ConfigError`。
+
+    配置里写了 ``extends: [a.yaml, b.yaml]`` 时会先递归合并那些文件（见指南 §16）：
+    同名变量的 ``prefix`` / ``suffix`` / ``type`` / 取值约束必须一致，``default`` 与
+    ``description`` 不一致只告警；同名模板内容必须一致。
+    """
+    config_path = Path(path)
+    warnings: list[str] = []
+
+    probe = _read_yaml_mapping(config_path)
+
+    if isinstance(probe.get("extends"), list) and probe["extends"]:
+        raw, origins = _load_with_extends(config_path, warnings=warnings)
+    else:
+        raw, origins = probe, {}
 
     try:
         config = ProjectConfig.model_validate(raw)
@@ -622,7 +772,15 @@ def load_config(path: str | Path) -> ProjectConfig:
         ) from exc
 
     config.source_dir = config_path.resolve().parent
+    config.load_warnings = warnings
+    config.extends = [str(item) for item in (probe.get("extends") or [])]
+    # 每个模板记住"声明它的那个文件在哪"，这样 extends 进来的 template_file 相对路径仍然解析得对
+    for template in config.templates:
+        origin = origins.get(f"template:{template.name}")
+        if origin is not None and origin != config.source_dir:
+            template.source_dir = origin
     return config
+
 
 
 # --------------------------------------------------------------------------- #

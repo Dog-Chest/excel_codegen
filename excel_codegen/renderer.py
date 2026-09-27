@@ -42,11 +42,16 @@ __all__ = [
 
 
 def _template_source(template: TemplateDef, base_dir: str | Path | None) -> str:
-    """返回模板源码；``template_file`` 优先读取外部文件（相对配置文件目录）。"""
+    """返回模板源码；``template_file`` 优先读取外部文件（相对**声明它的那个文件**所在目录）。
+
+    ``extends`` 合并进来的模板会带自己的 ``source_dir`` —— 它的相对路径要相对原文件解析，
+    而不是相对最终的项目 YAML。
+    """
     if template.template_file:
         path = Path(template.template_file)
-        if base_dir and not path.is_absolute():
-            path = Path(base_dir) / path
+        base = template.source_dir or base_dir
+        if base and not path.is_absolute():
+            path = Path(base) / path
         if not path.exists():
             raise RenderError(f"模板 {template.name!r} 引用的模板文件不存在: {path}")
         try:

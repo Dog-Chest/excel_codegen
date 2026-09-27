@@ -1031,12 +1031,13 @@ class _Block:
 
 
 def _template_source(template, base_dir: str | Path | None) -> str:
-    """读取模板源码（公式模式需要它；``template_file`` 相对配置文件目录解析）。"""
+    """读取模板源码（公式模式需要它；``template_file`` 相对**声明它的那个文件**所在目录解析）。"""
     if not template.template_file:
         return template.source_code
     path = Path(template.template_file)
-    if base_dir and not path.is_absolute():
-        path = Path(base_dir) / path
+    base = template.source_dir or base_dir
+    if base and not path.is_absolute():
+        path = Path(base) / path
     if not path.exists():
         raise ExcelError(f"模板 {template.name!r} 引用的模板文件不存在: {path}")
     try:

@@ -43,6 +43,7 @@ Jinja2 语法速查、Excel 表结构与填写规则、输出布局、导出代�
 | 字段 | 类型 | 必填 | 默认 | 说明 |
 | --- | --- | --- | --- | --- |
 | `version` | int | 否 | `1` | 配置版本，必须 ≥ 1 |
+| `extends` | list[str] | 否 | `[]` | 先合并这些 YAML（路径相对本文件），见 §16 |
 | `excel` | mapping | 否 | 见下 | Excel 相关配置 |
 | `variables` | mapping | 否 | 空 | 变量定义：`global` / `local` |
 | `templates` | list | **是** | — | 至少一个模板 |
@@ -703,7 +704,7 @@ Prefix/Suffix 是按变量（不是按 Case）生效的。见 4.4：再加一个
 | 快照模式下的自动重算 | `engine: snapshot`（默认）的输出表是**文本快照**，改了参数必须重跑 `render --write-excel`；用 `check` 判过期。想要"改参数自动重算"就把模板改成 `engine: excel`（§14）。 |
 | 公式模式下的控制流 | 公式只做占位符替换：`{% if %}` / `{% for %}` / 过滤器一律报错（带行号）。复杂模板留在快照模式。 |
 | 语义检查（量纲、语法、业务规则） | 本工具只管"参数怎么填、模板怎么复用、结果怎么写回"，它不认识 GeniE/C 的语法，也不会拦 `Math.sin(90)`。这类检查留给下游校验器。 |
-| 条件包含 / 片段组合 | 没有 `{% include %}` 的模板搜索路径，也没有"部分模板"；跨文件复用请用 YAML 锚点或把公共片段写成变量值。 |
+| 条件包含 / 片段组合 | 没有 `{% include %}` 的模板搜索路径，也没有"部分模板"；跨文件复用请用 YAML 锚点或把公共片段写成变量值。**注意区分**：跨 **YAML 文件**复用变量与模板有 `extends`（§16），这里说的是**模板片段**的复用 |
 | 单个变量跨 Case 的联动 | 每个 Case 的取值互相独立；"B 列跟着 A 列算"这种联动要在 Excel 里用公式实现（读的是公式结果）。 |
 | 超大工作簿的性能 | 读取走 openpyxl 全量加载；万行级别以内没问题，更大规模建议按规范集/分段拆工作簿。 |
 
@@ -928,5 +929,77 @@ templates:
 
 > 什么时候**不要**用：需要 `round` 的精确语义、要用 `{% if %}` 表达的分段逻辑、
 > 或者这个量根本不该给 Excel 读者看到 —— 那就留在模板里。
+
+---
+
+## 16. 跨文件复用：`extends`
+
+一个 YAML = 一本工作簿。但一个项目常常要在一本工作簿里放几套规范、共用一张 Global 表
+（船的主尺度只填一次）。`extends` 就是为此：**根配置把几个规则集文件合并成一份**，
+不用手抄变量。
+
+```yaml
+# project.yaml —— 工作簿的真源
+version: 1
+extends:
+  - rules/external.yaml      # 路径相对**本文件**解析
+  - rules/internal.yaml
+
+excel:
+  output: "ABS_FPI_load_cases.xlsx"
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Code EXT", "Code INT"]
+
+variables:
+  global:
+    - name: project_code     # 根文件自己的变量，追加在后面
+      default: "P-001"
+  local: []
+templates:
+  - name: index              # 根文件自己的模板
+    output_sheet: "Code EXT"
+    code: |
+      // {{ project_code }}
+```
+
+被 extends 的文件就是普通的单文件配置（单独拿出来 `validate` 也必须是对的）。
+
+### 16.1 合并规则
+
+顺序：**按 `extends` 列表的顺序先合并各文件，最后合并根文件自己的内容**（同名时先出现的赢）。
+
+| 对象 | 判据 |
+| --- | --- |
+| 同名变量 | **必须逐字一致**的字段：`prefix`、`suffix`、`type`、`derived`、`min`/`max`/`choices`/`pattern`（它们决定生成出来的文本）—— 不一致直接报错 |
+| 同名变量 | **只告警**的字段：`default`、`description`（不同规则集的示例工况本来就不同），保留先出现的那个 |
+| 同名模板 | 内容必须**完全一致**（一致则去重），否则报错 |
+| `excel` | 只有根文件的生效；被 extends 的文件里写了 `excel` 会告警并忽略 |
+| `version` | 取根文件的 |
+
+`extends` 是**递归**的（A extends B，B extends C 没问题），循环引用会报错并打出引用链。
+合并过程中的告警会由 CLI 打出来（`! 变量 'draft'（global）的 default 在两处不一致…`）。
+
+### 16.2 `template_file` 相对谁解析
+
+**相对声明它的那个文件**。所以 `rules/external.yaml` 里写 `template_file: tpl/body.j2`，
+指的是 `rules/tpl/body.j2` —— 模板文件可以和它所属的规则集放在一起，根配置放在别处也不会错。
+
+这条是 `extends` 相对"手工合并"最容易出错的地方，工具把它做成了自动的。
+
+### 16.3 与 `abs_fpi/compose.py` 的关系
+
+`abs_fpi/compose.py` 是这套合并逻辑的**前身**（当时工具还没这个能力）：它把规则集 YAML 合成
+一份项目 YAML 写进磁盘。现在有了 `extends`，大多数场景可以直接用：
+
+| | `compose.py`（项目侧脚本） | `extends`（工具内建） |
+| --- | --- | --- |
+| 产物 | 生成一份新的 YAML 文件（需要跟着一起提交/维护） | 内存里合并，根 YAML 就是唯一真源 |
+| `output_sheet` | 脚本按规则集后缀**改写**表名 | 各规则集自己写，或用 `case_filter` 分流 |
+| `template_file` | 各文件必须在同一目录 | 相对各自文件解析 |
+
+`compose.py` 仍有它的用处：它会在合并时**改写输出表名**（`Code` → `Code EXT`），
+适合"一个规则集不关心自己叫哪张表"的批量场景。两者判据一致，可以并存。
 
 
