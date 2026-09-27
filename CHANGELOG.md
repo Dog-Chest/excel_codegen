@@ -20,6 +20,7 @@
 | `setup.sh` 支持 uv | 有 uv → `uv sync`（跳过 ensurepip / pip / apt 检查）；没有 uv → 原 venv + pip 路径。**两条路都实测过** |
 | **支持下限 3.10 → 3.11** | `requires-python` 改成 `>=3.11`：3.10 于 2026-10 结束支持。同时把 CI 矩阵改成「**底线 3.11** + 3.13」，并写清"改底线要同时改 `requires-python` / CI 矩阵 / README"的规矩。重新锁定时去掉了只为 3.10 存在的 `exceptiongroup`（26 个包） |
 | 文档 | README 新增「想在三个系统上零配置跑起来：用 uv」与「Python 版本策略」两节（含 Windows PowerShell 的装法与 `UV_PROJECT_ENVIRONMENT` 用法） |
+| 发布准备（公开仓库） | 补 `LICENSE`（MIT / `JG. Luo`）并升级到 PEP 639 元数据；`.gitignore` 增加密钥与凭据兜底规则；README 新增「发布与隐私」一节（密钥扫描、GitHub push protection、noreply 邮箱）。提交作者改为 `129145708+Dog-Chest@users.noreply.github.com` |
 
 **更正 0.5.1 的一条过强结论**：上次把"外置 NTFS 盘上 `rm -rf .venv` 卡在 `D` 状态"归因于
 "NTFS 写碎文件"。本轮实测：干净写入并干净删除一个 **36MB / 1080 个文件**的 venv 在 ntfs3 上

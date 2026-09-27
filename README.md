@@ -640,6 +640,47 @@ GeniE 加载代码，7 个工况 2 个规范集）。报告列出的 12 条问�
 - 版本变更历史：[`CHANGELOG.md`](CHANGELOG.md)。
 - 现场实测项目（ABS FPI 内外压 → GeniE 加载代码，含公式模式与四层校验链）：[`abs_fpi/README.md`](abs_fpi/README.md) 与 [`abs_fpi/FINDINGS.md`](abs_fpi/FINDINGS.md)（对工具本身的实测报告 + 修复复测记录）。
 
+## 发布与隐私
+
+本仓库是**公开**的，往里面加东西之前过一遍这三条。
+
+### 1. 不要提交密钥
+
+`.gitignore` 已经挡住常见落点（`.env*`、`*.pem` / `*.key`、`secrets.*`、`.aws/`、
+各家大模型 CLI 的配置目录……），但**它只在文件还没被跟踪时有效** —— 一旦 `git add` 过，
+内容就永久留在历史里。提交前扫一遍：
+
+```bash
+# 只打印命中位置，不打印内容（避免把密钥二次暴露到终端/日志）
+git grep -lIE 'sk-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|(AKIA|ASIA)[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|-----BEGIN [A-Z ]*PRIVATE KEY-----' -- .
+```
+
+**万一真提交了密钥**：① 立刻去服务商后台**吊销并轮换**（改历史救不了已泄露的凭据）；
+② 改 `.gitignore`；③ 用 `git filter-repo` / BFG 清历史后强推；④ 只要推过公开仓库，
+就按"已经泄露"处理。
+
+### 2. 打开 GitHub 的两个免费开关
+
+仓库页 → **Settings → Code security and analysis**：
+
+- **Secret scanning** —— 自动扫已知格式的密钥并告警（公开仓库默认开）。
+- **Push protection** —— **确认它是开的**。它在 `git push` 那一刻就拦下含密钥的提交，
+  比事后补救有用得多（公开仓库默认开；私有仓库要手动开且需要 Advanced Security）。
+
+### 3. 提交邮箱
+
+commit 里的邮箱会被 GitHub **永久公开**。建议用 noreply 地址，并在
+**Settings → Emails** 勾上「Keep my email addresses private」与
+「Block command line pushes that expose my email」。
+
+本仓库当前作者是 `Dog-Chest <129145708+Dog-Chest@users.noreply.github.com>`。
+换机器开发时记得同步（否则新提交又会带出真实邮箱）：
+
+```bash
+git config --global user.name  "Dog-Chest"
+git config --global user.email "129145708+Dog-Chest@users.noreply.github.com"
+```
+
 ## License
 
 MIT
