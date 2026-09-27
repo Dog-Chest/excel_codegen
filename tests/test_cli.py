@@ -478,9 +478,27 @@ def test_cli_formula_mode_validate_and_howto(tmp_path: Path) -> None:
         workbook.close()
 
 
-def test_cli_formula_mode_rejects_control_flow(tmp_path: Path) -> None:
-    """公式模式下含控制流的模板要在 validate 阶段就报出具体行。"""
+def test_cli_formula_mode_rejects_for_loop(tmp_path: Path) -> None:
+    """公式模式下 {% for %} 要在 validate 阶段就报出具体行（一行 = 一个单元格，循环没法表达）。"""
     config_path = tmp_path / "bad_formula.yaml"
+    config_path.write_text(
+        FORMULA_CLI_YAML.replace(
+            "      UART_Init({{ baud }}, {{ port }});",
+            "      {% for x in [1] %}UART_Init({{ baud }}, {{ port }});{% endfor %}",
+        ),
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["validate", "--config", str(config_path)])
+    assert result.exit_code == 1
+    text = output_of(result)
+    assert "不支持" in text
+    assert "行内容" in text
+    assert "engine: snapshot" in text
+
+
+def test_cli_formula_mode_if_requires_attribute(tmp_path: Path) -> None:
+    """行内 {% if %} 是支持的，但条件里的变量必须写 .value —— 裸变量在快照模式会直接报 TypeError。"""
+    config_path = tmp_path / "bad_if.yaml"
     config_path.write_text(
         FORMULA_CLI_YAML.replace(
             "      UART_Init({{ baud }}, {{ port }});",
@@ -491,9 +509,8 @@ def test_cli_formula_mode_rejects_control_flow(tmp_path: Path) -> None:
     result = runner.invoke(app, ["validate", "--config", str(config_path)])
     assert result.exit_code == 1
     text = output_of(result)
-    assert "不支持 Jinja 控制流" in text
-    assert "行内容" in text
-    assert "engine: snapshot" in text
+    assert "裸写" in text
+    assert "baud.value" in text
 
 
 def flat(text: str) -> str:

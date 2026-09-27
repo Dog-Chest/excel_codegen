@@ -62,6 +62,31 @@ extends: [rules/external.yaml, rules/internal.yaml]
 新增 `tests/test_extends.py` 16 项：合并语义 4 项、冲突判定 4 项、错误写法 4 项、
 `template_file` 路径解析 2 项、无 `extends` 时行为不变 2 项。
 
+### 4. 公式模式支持行内 `{% if %}`
+
+**需求**：公式模式此前只做纯替换，`{% if %}` 一律报错。但"有分支就退回快照模式"代价很大 ——
+退回快照就意味着改参数得重跑脚本，正是 §14 想解决的问题。
+
+| 变化 | 说明 |
+| --- | --- |
+| 行内 `{% if 条件 %}A{% else %}B{% endif %}` | 编译成 Excel `IF(条件,A,B)`，可嵌套；`{# 注释 #}` 也一并支持（整段丢掉） |
+| 硬约束：**必须整段写在同一行** | 一行模板 = 一个单元格，跨行分支会改变行数，映射不到固定单元格；报错信息直接讲明这一点 |
+| 条件里必须写 `.value` | 裸变量在快照模式里是 `VarValue` 对象，`VarValue > 20` 直接抛 `TypeError`；`.value` 在两种引擎里都是纯值。规则与 `case_filter` 一致，报错时给出改法 |
+| 条件子集 | 比较（`==` `!=` `<` `>` `<=` `>=`）、逻辑（`and` `or` `not`）、真假判断（数值比 0 / 文本比空串）、`case_name` / `template_name` |
+| 复用派生参数的翻译器 | `derived.to_excel(..., condition=True)` —— 同一套"表达式 → Excel 公式"逻辑，不另写一份 |
+
+**顺带修掉一个真 bug**：jinja2 里 `nodes.And` / `nodes.Or` 是 `nodes.BinExpr` 的**子类**，
+而 `derived._translate` 先命中 `BinExpr` 分支 —— 于是 `and` / `or` 从来没能翻译成功
+（那两行是死代码，测试里还有一个 `if False else` 的规避写法）。现在把 And/Or 的判断排到
+BinExpr 前面，`{% if flag.value > 0 and kind.value == "EXT" %}` 才真正可用。
+
+**求值器同步扩展**（`formula_eval.py`）：补上 `<` `>` `<=` `>=` 与 `AND` / `OR` / `NOT`，
+否则 `check --values` 遇到这些公式会报"不能识别的公式片段"—— 那就等于新功能没有被验证。
+
+新增 `tests/test_formula_if.py` 25 项（编译形态 11、报错 8、端到端 2、其余边界）；
+`tests/test_formula_eval.py` 补 12 项运算符用例；`tests/test_derived.py` 补 4 项（含把
+那个规避写法换成真断言）。
+
 ---
 
 ## 0.5.2 — 多平台零配置：uv（2026-09-27）

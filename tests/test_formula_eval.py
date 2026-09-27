@@ -128,6 +128,28 @@ def test_literals_and_concat(reader: FakeReader) -> None:
     assert evaluate_formula('="x"&1&"y"&2.5', reader=reader, config=_Cfg) == "x1y2.5"
 
 
+@pytest.mark.parametrize(
+    ("formula", "expected"),
+    [
+        ('=IF(3>2,"y","n")', "y"),
+        ('=IF(3<2,"y","n")', "n"),
+        ('=IF(2>=2,"y","n")', "y"),
+        ('=IF(2<=1,"y","n")', "n"),
+        ('=IF(2<>3,"y","n")', "y"),
+        ('=IF("B">"A","y","n")', "y"),          # 文本按字典序比
+        ('=IF("A"<"B","y","n")', "y"),
+        ('=AND((3>2),("A"="A"))', "TRUE"),       # 行内 {% if %} 的 and
+        ('=OR((1>2),("A"="A"))', "TRUE"),
+        ('=NOT(1>2)', "TRUE"),
+        ('=AND((1>2),(2>3))', "FALSE"),
+        ('=IF(AND((1>2),(2>3)),"y","n")', "n"),
+    ],
+)
+def test_comparison_and_logical_operators(reader: FakeReader, formula: str, expected: str) -> None:
+    """行内 {% if %} 会用 < > <= >= AND OR NOT —— 求值器必须跟编译器同步支持。"""
+    assert evaluate_formula(formula, reader=reader, config=_Cfg) == expected
+
+
 def test_isblank_and_if_fallback(reader: FakeReader) -> None:
     # 空单元格：ISBLANK 为真 → 回落默认值
     assert (

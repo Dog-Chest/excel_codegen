@@ -139,11 +139,20 @@ def test_derived_arithmetic_uses_pure_values() -> None:
         ("int(x)", "TRUNC(X)"),
         ("a if b > 1 else c", "IF((B>1),A,C)"),
         ('"GPIO" ~ p', '("GPIO")&(P)'),
-        ("a and b if c < 2 else a", "IF(AND(C<2),A,A)") if False else ("-a", "-(A)"),
+        # and / or 是条件表达式的一部分（0.6.0 修复：它们曾经被 BinExpr 分支抢先命中而不可用）
+        ("a if b > 1 and c < 2 else d", "IF(AND((B>1),(C<2)),A,D)"),
+        ("a if b > 1 or c < 2 else d", "IF(OR((B>1),(C<2)),A,D)"),
+        ("a if not b else c", "IF(NOT(B),A,C)"),
     ],
 )
 def test_translate_expressions(expression: str, expected: str) -> None:
     assert to_excel(expression, name="t", resolve=lambda name: name.upper()) == expected
+
+
+def test_and_or_outside_condition_is_rejected() -> None:
+    """非条件位置不放行 and/or —— Python 的返回值语义与 Excel 不同，翻了会静默不一致。"""
+    with pytest.raises(DerivedNotTranslatable, match="只能用在条件"):
+        to_excel("a and b", name="t", resolve=lambda name: name.upper())
 
 
 def test_round_is_deliberately_not_translated() -> None:

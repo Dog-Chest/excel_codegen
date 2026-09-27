@@ -149,7 +149,9 @@ def test_dot_value_and_text_are_the_same(formula_config: ProjectConfig) -> None:
 @pytest.mark.parametrize(
     "code, keyword",
     [
-        ("{% if baud %}\nX\n{% endif %}", "控制流"),
+        # 跨行的 {% if %}：一行模板 = 一个单元格，所以必须整段写在同一行内
+        ("{% if baud %}\nX\n{% endif %}", "没有闭合"),
+        ("{% for x in [1] %}\nX\n{% endfor %}", "不支持"),
         ("{{ port | upper }}", "过滤器"),
         ("{{ baud + 1 }}", "只支持"),
         ("{{ port.name }}", "不支持属性"),

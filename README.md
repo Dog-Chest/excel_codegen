@@ -40,7 +40,7 @@ uv run excel-codegen render -c examples/example.yaml -x examples/template.xlsx -
 | **一个 YAML 描述一切** | 全局变量、局部变量、多个输出模板（内联 `code` 或外部 `template_file`） |
 | **Excel 就是表单** | 一行一个全局变量；从 E 列起一个工况一列，右拉即增列 |
 | **Prefix + Value + Suffix** | `{{ port }}` → `GPIOA_PORT`，`{{ port.value }}` → `A`；空格有意义（`suffix: " m"` 就是 `" m"`） |
-| **两种输出引擎** | `snapshot` 写文本快照；`excel` 写 **Excel 公式** —— 改参数后打开 Excel 即重算，**不用再跑脚本** |
+| **两种输出引擎** | `snapshot` 写文本快照；`excel` 写 **Excel 公式** —— 改参数后打开 Excel 即重算，**不用再跑脚本**。公式模式支持**行内 `{% if %}`**（编译成 `IF()`） |
 | **派生参数** | `derived: "rho * g"` 让参数引用参数（同工况的 local + global），参数表里是活公式 |
 | **取值约束** | `min` / `max` / `choices` / `pattern` 声明合法取值：Excel 里变下拉列表与数值范围，`render` / `validate` / `check` 每次读表都再查一遍 —— 挡住"手滑把 20.559 打成 205.59 却照样生成代码" |
 | **一本工作簿放多套规则** | `case_filter: "kind == 'EXT'"` 让模板只作用于匹配的工况，共用一张 Global 表 |

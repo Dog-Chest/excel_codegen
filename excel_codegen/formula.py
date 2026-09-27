@@ -14,8 +14,19 @@
 ``{{ template_name }}``    模板名（常量）
 =========================  ==========================================================
 
-出现 ``{%`` / ``{#`` / ``|`` 过滤器 / 运算表达式 / 函数调用等一律**报错并指出行号内容**，
-提示该模板继续用 ``engine: snapshot`` —— 控制流没法用"单元格引用"表达。
+出现 ``|`` 过滤器 / 运算表达式 / 函数调用等一律**报错并指出行号内容**，
+提示该模板继续用 ``engine: snapshot``。
+
+**行内 ``{% if %}``**（0.6.0 起）
+--------------------------------
+``{% if 条件 %}A{% else %}B{% endif %}`` 可以写，条件是**比较或逻辑表达式**，
+会被翻译成 Excel 的 ``IF(...)``。但有一条硬约束：**必须整段写在同一行内** ——
+公式模式是"一行模板 → 一个单元格"，跨行的分支会改变行数，没法映射到固定单元格。
+``{% for %}`` / ``{% set %}`` 等仍然报错。
+
+条件里的**变量名指它的取值**（相当于 Python 侧的 ``VarValue.value``），不是
+Prefix+Value+Suffix 的组合值 —— 这样 ``draft > 20`` 才是数值比较。
+``{{ }}`` 里那套组合值语义不变。
 
 两条路径的一致性
 ----------------
@@ -37,6 +48,9 @@ import re
 from dataclasses import dataclass
 from typing import Any, Sequence
 
+from jinja2 import TemplateSyntaxError, nodes
+
+from .jinja_env import build_environment
 from .models import ProjectConfig, TemplateDef, VariableDef
 from .utils import RenderError, column_index_to_letter, to_text
 
@@ -58,8 +72,19 @@ MAX_FORMULA_CHARS = 8000
 #: 超过这个量级的行虽然能编译，但人已经读不懂了，建议拆行。
 LONG_FORMULA_WARN = 3000
 
-_PLACEHOLDER_RE = re.compile(r"\{\{(.*?)\}\}", re.DOTALL)
+#: 一次匹配出 ``{{ 表达式 }}`` / ``{% 标签 %}`` / ``{# 注释 #}``
+_TAG_RE = re.compile(
+    r"\{\{(?P<expr>.*?)\}\}|\{%(?P<tag>.*?)%\}|\{#(?P<comment>.*?)#\}", re.DOTALL
+)
 _EXPR_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?$")
+
+
+@dataclass(frozen=True)
+class _Token:
+    """模板一行的词法单元：``text``（字面文本）/ ``expr``（``{{ }}``）/ ``tag``（``{% %}``）/ ``comment``。"""
+
+    kind: str
+    value: str
 
 #: 与 excel_io 的列约定一致
 _GLOBAL_COLUMNS = {"value": 2, "prefix": 4, "suffix": 5}
@@ -273,43 +298,219 @@ class _Compiler:
 
     # -- 行 ---------------------------------------------------------------- #
     def line(self, line: str, *, case_column: int) -> str:
-        if "{%" in line or "{#" in line:
-            raise FormulaError(
-                f"模板 {self.template_name!r} 的公式模式不支持 Jinja 控制流/注释（含 {{% 或 {{#）；"
-                f"请把该模板改回 engine: snapshot；行内容：{line.strip()!r}"
-            )
-
-        pieces: list[str] = []
-        cursor = 0
-        for match in _PLACEHOLDER_RE.finditer(line):
-            literal = line[cursor:match.start()]
-            if literal:
-                pieces.append(_quote_text(literal))
-            try:
-                pieces.append(
-                    self.expression(match.group(1), case_column=case_column, line=line)
-                )
-            except FormulaError as exc:
-                # 统一带上出错的行，方便在几十行的模板里定位
-                raise FormulaError(f"{exc}；行内容：{line.strip()!r}") from exc
-            cursor = match.end()
-        tail = line[cursor:]
-        if tail:
-            pieces.append(_quote_text(tail))
-        if cursor == 0:  # 整行没有占位符：常量文本
-            pieces = [_quote_text(line)]
-        elif "{{" in line[cursor:] or "}}" in line[cursor:]:
-            raise FormulaError(
-                f"模板 {self.template_name!r} 的占位符没有闭合：{line.strip()!r}"
-            )
-
-        formula = "=" + "&".join(pieces)
+        tokens = self._tokenize(line)
+        body = self._compile_tokens(tokens, case_column=case_column, line=line)
+        formula = "=" + body
         if len(formula) > MAX_FORMULA_CHARS:
             raise FormulaError(
                 f"模板 {self.template_name!r} 编译出的公式过长（{len(formula)} > "
                 f"{MAX_FORMULA_CHARS} 字符）：{line.strip()[:60]!r}…；请拆成多行或改用 engine: snapshot"
             )
         return formula
+
+    # -- 分词 -------------------------------------------------------------- #
+    def _tokenize(self, line: str) -> list[_Token]:
+        tokens: list[_Token] = []
+        cursor = 0
+        for match in _TAG_RE.finditer(line):
+            if match.start() > cursor:
+                tokens.append(_Token("text", line[cursor:match.start()]))
+            if match.group("expr") is not None:
+                tokens.append(_Token("expr", match.group("expr")))
+            elif match.group("tag") is not None:
+                tokens.append(_Token("tag", match.group("tag").strip()))
+            cursor = match.end()
+        if cursor < len(line):
+            tokens.append(_Token("text", line[cursor:]))
+
+        for token in tokens:
+            if token.kind == "text" and any(
+                mark in token.value for mark in ("{{", "}}", "{%", "%}", "{#", "#}")
+            ):
+                raise FormulaError(
+                    f"模板 {self.template_name!r} 的标记没有闭合：{token.value.strip()[:40]!r}；"
+                    f"行内容：{line.strip()!r}"
+                )
+        return tokens
+
+    # -- 条件（{% if %}）---------------------------------------------------- #
+    #: 条件里可以直接写的名字（它们没有"取值/前缀/后缀"之分）
+    _CONDITION_SPECIAL_NAMES = frozenset({"case_name", "template_name"})
+
+    def condition(self, source: str, *, case_column: int, line: str) -> str:
+        """把 ``{% if %}`` 的条件翻译成 Excel 的布尔表达式。
+
+        **条件里的变量必须写属性**（``x.value`` / ``x.text`` / ``x.prefix`` / ``x.suffix``）。
+        这不是洁癖：快照模式里裸变量是 ``VarValue`` 对象，拿它跟数字比会直接报 TypeError，
+        而 ``x.value`` 在两边都是一个"纯值" —— 只有这种写法能让两种引擎逐字一致。
+        规则与 ``case_filter`` 一致（那里也是"要数值比较请用 .value"）。
+        """
+        from .derived import DerivedError, to_excel  # 延迟导入：derived 依赖 formula，避免循环
+
+        expression = source.strip()
+        if not expression:
+            raise FormulaError(
+                f"模板 {self.template_name!r} 的 {{{{ if }}}} 后面没有条件；行内容：{line.strip()!r}"
+            )
+
+        env = build_environment()
+        try:
+            ast = env.parse("{{ " + expression + " }}")
+        except TemplateSyntaxError as exc:
+            raise FormulaError(
+                f"模板 {self.template_name!r} 的 {{{{ if }}}} 条件语法错误：{exc.message}；"
+                f"条件：{expression!r}"
+            ) from exc
+        body = getattr(ast, "body", [])
+        if len(body) != 1 or not isinstance(body[0], nodes.Output) or len(body[0].nodes) != 1:
+            raise FormulaError(
+                f"模板 {self.template_name!r} 的 {{{{ if }}}} 条件必须是单个表达式：{expression!r}"
+            )
+        node = body[0].nodes[0]
+        self._require_attribute_access(node, expression, line)
+
+        def resolve(name: str, attribute: str | None = None) -> str:
+            return self._condition_ref(name, attribute, case_column)
+
+        try:
+            excel = to_excel(
+                expression,
+                name=f"{self.template_name} 的 {{{{ if }}}} 条件",
+                resolve=resolve,
+                env=env,
+                condition=True,
+            )
+        except DerivedError as exc:
+            raise FormulaError(f"{exc}；行内容：{line.strip()!r}") from exc
+
+        if isinstance(node, (nodes.Compare, nodes.And, nodes.Or, nodes.Not)):
+            return excel
+        if isinstance(node, (nodes.Name, nodes.Getattr)):
+            # 按真假判断：数值比 0，其余比空串（与 Python 侧 bool(value) 的直觉一致）
+            return f"({excel}<>{'0' if self._is_numeric_node(node) else '\"\"'})"
+        if isinstance(node, nodes.Const):
+            numeric = isinstance(node.value, (int, float)) and not isinstance(node.value, bool)
+            return f"({excel}<>{'0' if numeric else '\"\"'})"
+        raise FormulaError(
+            f"模板 {self.template_name!r} 的 {{{{ if }}}} 条件必须是比较或逻辑表达式"
+            f"（例如 draft.value > 20、kind.value == \"EXT\"、not flag.value），"
+            f"或直接写一个值按真假判断；当前条件：{expression!r}"
+        )
+
+    def _condition_ref(self, name: str, attribute: str | None, case_column: int) -> str:
+        if attribute is None and name in self._CONDITION_SPECIAL_NAMES:
+            return self.expression(name, case_column=case_column, line=name)
+        ref = self.resolve(name, case_column)
+        if attribute is None:
+            return ref.combined()
+        if attribute in _VALUE_ALIASES:
+            return ref.value()
+        if attribute == "prefix":
+            return ref.decor("prefix")
+        if attribute == "suffix":
+            return ref.decor("suffix")
+        raise FormulaError(
+            f"模板 {self.template_name!r} 的 {{{{ if }}}} 条件里不支持 .{attribute}"
+            f"（变量 {name!r}）：只支持 .value / .text / .prefix / .suffix"
+        )
+
+    def _require_attribute_access(self, node, expression: str, line: str) -> None:
+        """条件里的变量必须带属性；裸变量（除 ``case_name`` / ``template_name``）直接报错。"""
+
+        def walk(current, parent) -> None:
+            if isinstance(current, nodes.Name) and not isinstance(parent, nodes.Getattr):
+                if current.name not in self._CONDITION_SPECIAL_NAMES:
+                    raise FormulaError(
+                        f"模板 {self.template_name!r} 的 {{{{ if }}}} 条件里裸写了变量 "
+                        f"{current.name!r}：请指明要比较哪一部分 —— 数值比较写 "
+                        f"{current.name}.value（快照模式里裸变量是 VarValue 对象，"
+                        f"拿它跟数字比会直接报错）；条件：{expression!r}"
+                    )
+            for child in current.iter_child_nodes():
+                walk(child, current)
+
+        walk(node, None)
+
+    def _is_numeric_node(self, node) -> bool:
+        if isinstance(node, nodes.Getattr) and isinstance(node.node, nodes.Name):
+            return self._is_numeric(node.node.name)
+        return False
+
+    def _is_numeric(self, name: str) -> bool:
+        definition = self._globals.get(name) or self._locals.get(name)
+        if definition is None:
+            return False
+        if definition.type in ("int", "float"):
+            return True
+        default = definition.default
+        return isinstance(default, (int, float)) and not isinstance(default, bool)
+
+    # -- 递归编译 ---------------------------------------------------------- #
+    def _compile_tokens(self, tokens: list[_Token], *, case_column: int, line: str) -> str:
+        index = 0
+
+        def join(parts: list[str]) -> str:
+            return "&".join(parts) if parts else '""'
+
+        def parse_block(stop: tuple[str, ...]) -> str:
+            nonlocal index
+            parts: list[str] = []
+            while index < len(tokens):
+                token = tokens[index]
+                if token.kind == "tag":
+                    words = token.value.split()
+                    keyword = words[0] if words else ""
+                    if keyword in stop:
+                        return join(parts)
+                    if keyword == "if":
+                        index += 1
+                        parts.append(parse_if())
+                        continue
+                    if keyword in ("else", "elif", "endif"):
+                        raise FormulaError(
+                            f"模板 {self.template_name!r} 里的 {{% {keyword} %}} 没有对应的 "
+                            f"{{% if %}}；行内容：{line.strip()!r}"
+                        )
+                    raise FormulaError(
+                        f"模板 {self.template_name!r} 的公式模式不支持 {{% {keyword} %}}："
+                        "行内只支持 {% if %} / {% else %} / {% endif %}（因为一行对应一个单元格，"
+                        "循环与跨行分支没法用单元格引用表达）；请把该模板改回 engine: snapshot。"
+                        f"行内容：{line.strip()!r}"
+                    )
+                index += 1
+                if token.kind == "text":
+                    if token.value:
+                        parts.append(_quote_text(token.value))
+                elif token.kind == "expr":
+                    try:
+                        parts.append(
+                            self.expression(token.value, case_column=case_column, line=line)
+                        )
+                    except FormulaError as exc:
+                        # 统一带上出错的行，方便在几十行的模板里定位
+                        raise FormulaError(f"{exc}；行内容：{line.strip()!r}") from exc
+                # kind == "comment"：整段丢掉
+            if stop:
+                raise FormulaError(
+                    f"模板 {self.template_name!r} 的 {{{{ if }}}} 没有闭合（这一行少了 "
+                    f"{{% endif %}}）。公式模式**每行对应一个单元格**，所以 {{% if %}} 必须"
+                    f"写在同一行内；行内容：{line.strip()!r}"
+                )
+            return join(parts)
+
+        def parse_if() -> str:
+            nonlocal index
+            condition_source = tokens[index - 1].value[len("if"):].strip()
+            then_expr = parse_block(("else", "elif", "endif"))
+            else_expr = '""'
+            if tokens[index].value.split()[0] == "else":
+                index += 1
+                else_expr = parse_block(("endif",))
+            index += 1  # 跳过 endif
+            condition = self.condition(condition_source, case_column=case_column, line=line)
+            return f"IF({condition},{then_expr},{else_expr})"
+
+        return parse_block(())
 
 
 # --------------------------------------------------------------------------- #

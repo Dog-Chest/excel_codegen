@@ -55,7 +55,7 @@ _TOKEN_RE = re.compile(
     | (?P<sheet>'(?:[^']|'')*')
     | (?P<number>\d+(?:\.\d*)?)
     | (?P<ident>[A-Za-z_][A-Za-z0-9_.]*)
-    | (?P<punct>[&(),!=:$+\-*/^])
+    | (?P<punct>[&(),!=:$+\-*/^<>])
     | (?P<space>\s+)
     """,
     re.VERBOSE,
@@ -245,15 +245,52 @@ class Evaluator:
     # Excel 的优先级：比较 < 拼接(&) < 加减 < 乘除 < 幂 < 一元 < 项
     def comparison(self):
         left = self.concat()
-        while self._peek("=") or self._peek("!"):
+        while True:
             if self._peek("="):
                 self._next()
-            else:  # <>
+                right = self.concat()
+                left = as_text(self._scalar(left)) == as_text(self._scalar(right))
+            elif self._peek("!"):
                 self._next()
                 self._expect("=")
-            right = self.concat()
-            left = as_text(self._scalar(left)) == as_text(self._scalar(right))
+                right = self.concat()
+                left = as_text(self._scalar(left)) != as_text(self._scalar(right))
+            elif self._peek("<") or self._peek(">"):
+                operator = self._next()[1]
+                if self._peek("="):
+                    self._next()
+                    operator += "="
+                elif operator == "<" and self._peek(">"):
+                    self._next()
+                    operator = "<>"
+                right = self.concat()
+                left = self._compare(left, right, operator)
+            else:
+                break
         return left
+
+    def _compare(self, left, right, operator: str) -> bool:
+        """``<`` / ``>`` / ``<=`` / ``>=`` / ``<>``。
+
+        Excel 对**数值**按数值比、对**文本**按字典序比 —— 这里照做（能读成数字就当数字）。
+        行内 ``{% if %}`` 编译出来的条件会用到这些运算符。
+        """
+        a, b = self._scalar(left), self._scalar(right)
+        try:
+            x, y = self._number(a), self._number(b)
+        except FormulaEvalError:
+            x, y = as_text(a), as_text(b)
+        if operator == "<":
+            return x < y
+        if operator == ">":
+            return x > y
+        if operator == "<=":
+            return x <= y
+        if operator == ">=":
+            return x >= y
+        if operator == "<>":
+            return x != y
+        raise FormulaEvalError(f"不支持的比较运算符 {operator!r}")
 
     def concat(self):
         left = self.additive()
@@ -342,6 +379,18 @@ class Evaluator:
                 no = self.comparison()
                 self._expect(")")
                 return yes if self.truthy(condition) else no
+            if upper in {"AND", "OR"}:
+                values = [self.comparison()]
+                while self._peek(","):
+                    self._next()
+                    values.append(self.comparison())
+                self._expect(")")
+                flags = [self.truthy(item) for item in values]
+                return all(flags) if upper == "AND" else any(flags)
+            if upper == "NOT":
+                value = self.comparison()
+                self._expect(")")
+                return not self.truthy(value)
             if upper == "ISBLANK":
                 argument = self.comparison()
                 self._expect(")")

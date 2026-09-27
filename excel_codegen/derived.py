@@ -232,10 +232,14 @@ def to_excel(
     name: str,
     resolve,
     env: Environment | None = None,
+    condition: bool = False,
 ) -> str:
     """把派生表达式翻译成 Excel 公式（不带前导 ``=``）。
 
     :param resolve: ``变量名 -> Excel 引用`` 的回调（由调用方决定列/表名与相对/绝对）
+    :param condition: 这是不是一个**条件**表达式。为 ``True`` 时 ``and`` / ``or`` / ``not``
+        可以翻译成 ``AND`` / ``OR`` / ``NOT``（Python 的 ``and``/``or`` 有返回值语义，
+        与 Excel 不同，所以只在条件位置放行）。公式模式的行内 ``{% if %}`` 走这条路。
     :raises DerivedError: 表达式超出可翻译子集（调用方应当降级为"写入算好的值"）
     """
     environment = env or build_environment()
@@ -248,7 +252,9 @@ def to_excel(
     body = getattr(ast, "body", [])
     if len(body) != 1 or not isinstance(body[0], nodes.Output) or len(body[0].nodes) != 1:
         raise DerivedError(f"派生参数 {name!r} 的表达式不是单个表达式：{expression!r}")
-    return _translate(body[0].nodes[0], name=name, resolve=resolve, env=environment, condition=False)
+    return _translate(
+        body[0].nodes[0], name=name, resolve=resolve, env=environment, condition=condition
+    )
 
 
 def _translate(node, *, name: str, resolve, env: Environment, condition: bool) -> str:
@@ -256,11 +262,38 @@ def _translate(node, *, name: str, resolve, env: Environment, condition: bool) -
         return _excel_literal(node.value)
     if isinstance(node, nodes.Name):
         return resolve(node.name)
+    if isinstance(node, nodes.Getattr):
+        # 属性访问（``x.value`` / ``x.prefix`` …）：把属性名一并交给调用方 —— 只有它知道
+        # 该怎么把一个"取值 / 前缀"映射成单元格引用。老的回调只收一个参数，用 TypeError 兜住。
+        inner = node.node
+        if not isinstance(inner, nodes.Name):
+            raise DerivedNotTranslatable(
+                f"表达式 {name!r} 里的 .{node.attr} 只能接在变量名后面"
+            )
+        try:
+            return resolve(inner.name, node.attr)
+        except TypeError as exc:
+            raise DerivedNotTranslatable(
+                f"表达式 {name!r} 里用了属性访问 .{node.attr}，但当前上下文不支持"
+                "（属性访问只在公式模式的行内 {% if %} 条件里可用）"
+            ) from exc
     if isinstance(node, nodes.Concat):
         return "&".join(
             f"({_translate(item, name=name, resolve=resolve, env=env, condition=False)})"
             for item in node.nodes
         )
+    # ⚠ and / or 必须排在 BinExpr **前面**：jinja2 里 ``And`` / ``Or`` 是 ``BinExpr`` 的子类，
+    # 先命中 BinExpr 分支的话它们会被当成"不支持的运算符"（这段曾经是死代码，见 0.6.0 修复）。
+    if isinstance(node, (nodes.And, nodes.Or)):
+        if not condition:
+            raise DerivedNotTranslatable(
+                f"派生参数 {name!r} 的 and/or 只能用在条件表达式里"
+                "（Python 的 and/or 返回值语义与 Excel 不同，避免静默偏差）"
+            )
+        function = "AND" if isinstance(node, nodes.And) else "OR"
+        left = _translate(node.left, name=name, resolve=resolve, env=env, condition=True)
+        right = _translate(node.right, name=name, resolve=resolve, env=env, condition=True)
+        return f"{function}({left},{right})"
     if isinstance(node, nodes.BinExpr):
         operator = getattr(node, "operator", None)
         left = _translate(node.left, name=name, resolve=resolve, env=env, condition=False)
@@ -283,16 +316,6 @@ def _translate(node, *, name: str, resolve, env: Environment, condition: bool) -
             raise DerivedNotTranslatable(f"派生参数 {name!r} 的 not 只能用在条件表达式里")
         inner = _translate(node.node, name=name, resolve=resolve, env=env, condition=True)
         return f"NOT({inner})"
-    if isinstance(node, (nodes.And, nodes.Or)):
-        if not condition:
-            raise DerivedNotTranslatable(
-                f"派生参数 {name!r} 的 and/or 只能用在条件表达式里"
-                "（Python 的 and/or 返回值语义与 Excel 不同，避免静默偏差）"
-            )
-        function = "AND" if isinstance(node, nodes.And) else "OR"
-        left = _translate(node.left, name=name, resolve=resolve, env=env, condition=True)
-        right = _translate(node.right, name=name, resolve=resolve, env=env, condition=True)
-        return f"{function}({left},{right})"
     if isinstance(node, nodes.Compare):
         return _translate_compare(node, name=name, resolve=resolve, env=env)
     if isinstance(node, nodes.CondExpr):
