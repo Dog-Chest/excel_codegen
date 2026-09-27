@@ -1,0 +1,49 @@
+version: 1
+
+# 探针 L：公式模式（engine: excel）—— 0.3.0 新增能力
+#
+# 输出表里写的是 Excel 公式而不是文本快照，所以改 Global / Local 的参数之后
+# Excel 打开即重算，不需要再跑任何脚本。
+# 本探针只用"纯替换"子集（没有 {% %} / 过滤器），否则公式编译会直接报错。
+excel:
+  output: "probe_formula.xlsx"
+  template_sheet: null
+  howto_sheet: null
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Output"]
+
+variables:
+  global:
+    - name: L
+      description: "长度；suffix 带前导空格（公式模式同样保留）"
+      default: 340
+      type: float
+      suffix: " m"
+  local:
+    - name: draft
+      description: "吃水"
+      default: 20.5
+      type: float
+      suffix: " m"
+    - name: mu_deg
+      description: "浪向角"
+      default: 90
+      type: float
+
+templates:
+  - name: probe_formula
+    description: "公式模式最小示例"
+    output_sheet: "Output"
+    start_cell: "B2"
+    direction: "horizontal"
+    engine: "excel"
+    filename: "probe_formula_{{ case_name }}.txt"
+    code: |
+      // case {{ case_name }}
+      var L = {{ L }};
+      var draft = {{ draft }};
+      var mu = {{ mu_deg }} deg;
+      // 纯值 {{ draft.value }} / 前缀 {{ draft.prefix }} / 后缀 {{ draft.suffix }}
+      // 常量行 with "quotes"

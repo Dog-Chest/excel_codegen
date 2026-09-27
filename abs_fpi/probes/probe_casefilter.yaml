@@ -1,0 +1,54 @@
+version: 1
+
+# 探针 J：用 case_filter 把"两套规则"放进一本工作簿（0.2.0 新增能力）
+#
+# 与 probe_twosets.yaml 相同的场景，只多了每个模板一行 case_filter：
+# 外压模板只作用于 kind == 'EXT' 的工况，内压模板只作用于 kind == 'INT' 的工况。
+# 这样"船的主尺度"就只填一次（Global 表），不必拆成两个工作簿。
+excel:
+  output: "probe_casefilter.xlsx"
+  template_sheet: null
+  howto_sheet: null
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Code EXT", "Code INT"]
+
+variables:
+  global:
+    - name: L
+      description: "船长 —— 两个规范集共用"
+      default: 340
+      suffix: ""
+  local:
+    - name: kind
+      description: "这个 Case 属于哪一套规则：EXT 或 INT"
+      default: "EXT"
+      type: string
+    - name: draft
+      default: 20.5
+
+templates:
+  - name: ext_code
+    description: "只生成给 kind=EXT 的 Case"
+    output_sheet: "Code EXT"
+    start_cell: "B2"
+    direction: "horizontal"
+    write_case_headers: true
+    case_filter: "kind == 'EXT'"
+    filename: "ext_{{ case_name }}.txt"
+    code: |
+      // EXT body for {{ case_name }} (kind={{ kind }}, L={{ L }})
+      var draft = {{ draft }};
+
+  - name: int_code
+    description: "只生成给 kind=INT 的 Case"
+    output_sheet: "Code INT"
+    start_cell: "B2"
+    direction: "horizontal"
+    write_case_headers: true
+    case_filter: "kind == 'INT'"
+    filename: "int_{{ case_name }}.txt"
+    code: |
+      // INT body for {{ case_name }} (kind={{ kind }}, L={{ L }})
+      var draft = {{ draft }};

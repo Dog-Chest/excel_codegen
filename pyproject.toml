@@ -1,0 +1,60 @@
+[build-system]
+# >=77 是 PEP 639（SPDX 许可证表达式 + license-files）的起点
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "excel_codegen"
+version = "0.5.2"
+description = "Excel 模板参数填写 + Jinja2 代码生成器（支持 Prefix/Value/Suffix 组合）"
+readme = "README.md"
+# 支持下限 = **CI 真正测过的最老版本**（见 .github/workflows/ci.yml）。
+# 3.10 于 2026-10 结束支持，故下限抬到 3.11；要用 3.12+ 的新语法时，
+# 只需把这里、CI 矩阵、以及 README 的说明一起改掉（不要让文档比代码乐观）。
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "JG. Luo" }]
+keywords = ["excel", "openpyxl", "jinja2", "codegen", "template"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Code Generators",
+]
+dependencies = [
+    "openpyxl>=3.1.2",
+    "jinja2>=3.1.2",
+    "pyyaml>=6.0",
+    "pydantic>=2.5",
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+# pip 用户：pip install -e ".[dev]"
+dev = ["pytest>=7.4", "pytest-cov>=4.1"]
+
+# PEP 735 依赖组：uv 默认就会装（`uv run pytest` / `uv sync` 不需要任何额外参数），
+# 这是"换一台机器 / 换一个系统零配置跑起来"的关键。内容与上面的 dev extra 保持一致；
+# 改一处记得改另一处（pip 侧用 extra，uv 侧用依赖组，两边都不能少）。
+[dependency-groups]
+dev = ["pytest>=7.4", "pytest-cov>=4.1"]
+
+[project.scripts]
+excel-codegen = "excel_codegen.cli:app"
+
+[project.urls]
+# 建好远程仓库后把下面这行改成真地址再发 PyPI（占位符会变成一个打不开的链接）：
+# Documentation = "https://github.com/<你的用户名>/excel_codegen#readme"
+
+[tool.setuptools.packages.find]
+include = ["excel_codegen*"]
+namespaces = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --tb=short"
+filterwarnings = ["ignore::DeprecationWarning"]

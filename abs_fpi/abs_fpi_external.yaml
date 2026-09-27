@@ -1,0 +1,161 @@
+version: 1
+
+# =========================================================================== #
+# 规则集：ABS FPI 5A-3-2/5.5   外压（external sea pressures）
+#
+# 这是"模板数据库"里的一个单元：自带变量定义与模板，可以单独生成一本工作簿，
+# 也可以被 compose.py 合进一本项目工作簿（与内压共用一张 Global 表）。
+#
+#   engine: excel  → Code 表写的是 Excel 公式：改参数后 Excel / WPS 打开即重算，
+#                    不需要重跑任何脚本。代价是模板只能用"纯替换"
+#                    （{{ x }} / .value / .text / .prefix / .suffix / case_name），
+#                    不能出现 {% if %} / {% for %} / 过滤器。
+#                    本模板的 if/else 是**GeniE 的字面文本**，不是 Jinja 控制流，
+#                    所以公式模式照样能用；坐标映射也用 6 个变量做纯替换表达。
+# =========================================================================== #
+excel:
+  output: "abs_fpi_external.xlsx"
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Code", "Summary"]
+
+variables:
+  # ------------------------------------------------------------------ 船 / 海 --
+  global:
+    - name: L
+      description: "规范船长 [m]（3-1-1/3）；同时驱动 C_1 / k_lo / k_f"
+      default: 340
+      type: float
+      suffix: " m"
+    - name: B
+      description: "规范型宽 [m]；B/2 决定舭部位置"
+      default: 64
+      type: float
+      suffix: " m"
+    - name: D
+      description: "规范型深 [m]（基线到甲板）"
+      default: 32
+      type: float
+      suffix: " m"
+    - name: r_b
+      description: "舭圆半径 [m]：z_bilge = r_b，平底宽 = B/2 - r_b"
+      default: 0.703
+      type: float
+      suffix: " m"
+    - name: freeboard
+      description: "甲板边线在载重线以上的余量 [m]；Fig. 10 的截断高度用它算"
+      default: 0.5
+      type: float
+      suffix: " m"
+    - name: rho_sea
+      description: "海水密度 [kg/m^3]；规范下限 1.005 N/cm^2-m 即 1025 kg/m^3"
+      default: 1025
+      type: float
+      suffix: " kg/m^3"
+    - name: g
+      description: "重力加速度 [m/s^2]"
+      default: 9.81
+      type: float
+      suffix: " m/s^2"
+    - name: Cb
+      description: "方形系数 [-]（3-1-1/13.3）"
+      default: 1
+      type: float
+
+    # ------------------------------------------------------- 坐标映射（纯替换）--
+    # 公式模式不能写 {% if %}，所以这里把"取哪个轴 + 是否取反"直接做成可替换的文本：
+    #   x = {{ neg_x }}t{{ ax_x }};   →   x = t1;  或  x = -t3;
+    - name: ax_x
+      description: "规范 x（自 AP）取自模型哪个轴：1=x, 2=y, 3=z"
+      default: "1"
+      type: string
+    - name: ax_y
+      description: "规范 y（自中线，向右舷为正）取自模型哪个轴"
+      default: "2"
+      type: string
+    - name: ax_z
+      description: "规范 z（基线以上，向上为正）取自模型哪个轴"
+      default: "3"
+      type: string
+    - name: neg_x
+      description: "规范 x 是否取反：填 - 表示取反，留空表示不取反"
+      default: ""
+      type: string
+    - name: neg_y
+      description: "规范 y 是否取反：填 - 表示取反，留空表示不取反"
+      default: ""
+      type: string
+    - name: neg_z
+      description: "规范 z 是否取反：填 - 表示取反，留空表示不取反"
+      default: ""
+      type: string
+
+  # ---------------------------------------------------------------- 每个工况 --
+  local:
+    - name: kind
+      description: "这个 Case 属于哪一套规则：EXT / INT（多规则集合用时用 case_filter 分流）"
+      default: "EXT"
+      type: string
+    - name: draft
+      description: "工况吃水 [m]；h_s = draft - z，负值截断为 0"
+      default: 20.559
+      type: float
+      suffix: " m"
+    - name: mu_deg
+      description: "浪向角 [deg]，0 = 顶浪，90 = 右舷来浪（Table 1A D）"
+      default: 90
+      type: float
+      suffix: " deg"
+    - name: k_c
+      description: "组合工况相关系数 [-]，进 h_de = k_c h_di（Table 1A B）"
+      default: 1
+      type: float
+    - name: k_f0
+      description: "相位因子 +1 / -1 [-]，决定参考站落在哪一端（Table 1A B）"
+      default: 1
+      type: float
+    - name: k_u
+      description: "载荷系数 [-]；规范默认 1.0，1.1 用于板与纵骨的工况"
+      default: 1.1
+      type: float
+    - name: beta_EPS
+      description: "外压 ESF，右舷 [-]（5A-3-A1/3）"
+      default: 0.733
+      type: float
+    - name: beta_EPP
+      description: "外压 ESF，左舷 [-]（5A-3-A1/3）"
+      default: 0.733
+      type: float
+    - name: k_esf
+      description: "项目对 ESF 的分项系数 [-]"
+      default: 1.1
+      type: float
+    - name: x_o
+      description: "参考站 [m]，自 AP 量起（Fig. 9 脚注）"
+      default: 51
+      type: float
+      suffix: " m"
+
+templates:
+  # 一列一个工况：整段 GeniE 函数体，逐行铺在 Code 表里（公式模式 → 自动重算）
+  - name: genie_ext
+    description: "ABS FPI 5A-3-2/5.5 外压 -- GeniE 强度函数体"
+    output_sheet: "Code"
+    start_cell: "B2"
+    direction: "horizontal"
+    write_case_headers: true
+    engine: "excel"
+    filename: "{{ case_name }}.js"
+    template_file: "templates/ext_body.js.j2"
+
+  # 一行一个工况：输入参数汇总（Markdown），随代码归档
+  - name: ext_summary
+    description: "外压工况输入汇总（Markdown）"
+    output_sheet: "Summary"
+    start_cell: "B2"
+    direction: "vertical"
+    write_case_headers: true
+    engine: "excel"
+    filename: "{{ case_name }}_summary.md"
+    template_file: "templates/ext_summary.md.j2"

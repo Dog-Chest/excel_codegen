@@ -1,0 +1,81 @@
+version: 1
+
+# --------------------------------------------------------------------------- #
+# Excel 模板文件的生成配置
+# --------------------------------------------------------------------------- #
+excel:
+  output: "template.xlsx"
+  template_sheet: "Template"     # 隐藏工作表，保存模板原文；设为 null 可关闭
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Output", "Output Vertical"]
+
+# --------------------------------------------------------------------------- #
+# 变量定义
+#   global : 对所有 Case 生效（Excel 中只有一列取值）
+#   local  : 每个 Case 一列取值（Excel 中从 E 列开始）
+# --------------------------------------------------------------------------- #
+variables:
+  global:
+    - name: baud
+      description: "波特率"
+      default: 115200
+      prefix: ""
+      suffix: ""
+      type: int
+    - name: baud_div
+      description: "分频值 = baud / 16（派生参数：引用另一个参数，不用手填）"
+      derived: "baud / 16"
+      type: float
+    - name: mcu
+      description: "MCU 型号（字符串变量示例）"
+      default: "STM32F103"
+      prefix: ""
+      suffix: ""
+
+  local:
+    - name: port
+      description: "端口"
+      default: "A"
+      prefix: "GPIO"
+      suffix: "_PORT"
+    - name: mode
+      description: "模式"
+      default: "TX_RX"
+      prefix: "MODE_"
+      suffix: ""
+
+# --------------------------------------------------------------------------- #
+# 输出模板
+# --------------------------------------------------------------------------- #
+templates:
+  # 横向布局：每个 Case 占 Output 表的一列，结果行向下展开
+  - name: uart_init
+    description: "UART 初始化代码"
+    output_sheet: "Output"
+    start_cell: "B2"
+    direction: "horizontal"
+    write_case_headers: true
+    filename: "uart_init_{{ case_name }}.c"
+    code: |
+      // Case: {{ case_name }}
+      UART_Init({{ baud }}, {{ port }}, {{ mode }});
+      // 纯值: {{ port.value }}, 前缀: {{ port.prefix }}, 后缀: {{ port.suffix }}
+      // 分频: {{ baud_div }}
+      // 过滤器: {{ port.value | pvs("GPIO", "_PORT") }}
+      // MCU: {{ mcu }}
+
+  # 纵向布局：每个 Case 占一行，结果行向右展开
+  - name: uart_summary
+    description: "UART 配置汇总表（Markdown）"
+    output_sheet: "Output Vertical"
+    start_cell: "B2"
+    direction: "vertical"
+    write_case_headers: true
+    filename: "uart_summary_{{ case_name }}.md"
+    code: |
+      | case_name | baud | port | mode |
+      | --- | --- | --- | --- |
+      | {{ case_name }} | {{ baud }} | {{ port }} | {{ mode }} |
+      | 纯值/组合值 | {{ baud.value }} | {{ port.value | wrap("GPIO", "_PORT") }} | 前缀={{ mode.prefix }} 纯值={{ mode.value }} |

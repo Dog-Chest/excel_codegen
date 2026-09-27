@@ -1,0 +1,52 @@
+version: 1
+
+# 探针 C：一个工作簿里放"两套规则"
+#
+# 场景：外压和内压各自需要一套代码模板，但共用一个全局参数表（船的主尺度只填一次）。
+# 期望：ext_code 只对 kind=EXT 的工况出代码，int_code 只对 kind=INT 出代码。
+# 本工具的行为：render 外层遍历 templates、内层遍历 cases —— 交叉积，
+# 每个模板都会给每个 Case 出一份结果，没有"这个模板只适用于哪些 Case"的开关。
+excel:
+  output: "probe_twosets.xlsx"
+  template_sheet: null
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Code EXT", "Code INT"]
+
+variables:
+  global:
+    - name: L
+      description: "船长 —— 两个规范集共用"
+      default: 340
+      suffix: ""
+  local:
+    - name: kind
+      description: "这个 Case 属于哪一套规则：EXT 或 INT"
+      default: "EXT"
+      type: string
+    - name: draft
+      default: 20.5
+
+templates:
+  - name: ext_code
+    description: "只应生成给 kind=EXT 的 Case"
+    output_sheet: "Code EXT"
+    start_cell: "B2"
+    direction: "horizontal"
+    write_case_headers: true
+    filename: "ext_{{ case_name }}.txt"
+    code: |
+      // EXT body for {{ case_name }} (kind={{ kind }}, L={{ L }})
+      var draft = {{ draft }};
+
+  - name: int_code
+    description: "只应生成给 kind=INT 的 Case"
+    output_sheet: "Code INT"
+    start_cell: "B2"
+    direction: "horizontal"
+    write_case_headers: true
+    filename: "int_{{ case_name }}.txt"
+    code: |
+      // INT body for {{ case_name }} (kind={{ kind }}, L={{ L }})
+      var draft = {{ draft }};

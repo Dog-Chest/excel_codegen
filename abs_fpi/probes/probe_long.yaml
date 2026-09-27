@@ -1,0 +1,35 @@
+version: 1
+
+# 探针 D（长）：8 行渲染结果 —— 与 probe_short.yaml 配对使用，
+# 验证"重新渲染会清理旧区域"在多行变少时是否成立。
+excel:
+  output: "probe_stale.xlsx"
+  template_sheet: null
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Output"]
+
+variables:
+  global:
+    - name: L
+      default: 340
+  local:
+    - name: draft
+      default: 20.5
+
+templates:
+  - name: probe_stale
+    output_sheet: "Output"
+    start_cell: "B2"
+    direction: "horizontal"
+    write_case_headers: true
+    code: |
+      line 1 of the LONG render
+      line 2 of the LONG render
+      line 3 of the LONG render
+      line 4 of the LONG render
+      line 5 of the LONG render
+      line 6 of the LONG render
+      line 7 of the LONG render
+      line 8 of the LONG render

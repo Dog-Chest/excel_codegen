@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 工具/临时
+.tmp/
+*.bak
+~$*.xlsx
+
+# 根目录上一次 render 的临时产物（示例产物 examples/ 与 abs_fpi/ 是刻意保留的）
+/template.xlsx
+/template_formula.xlsx
+/generated/
+/generated_formula/
+
+# abs_fpi/probes：探针工作簿是每次跑 run_probes.py 重新生成的中间产物
+# （探针的 YAML、脚本与 _probe_run.txt 是证据，保留）
+abs_fpi/probes/*.xlsx
+abs_fpi/probes/_out/
+
+# --------------------------------------------------------------------------- #
+# 密钥与凭据 —— 本仓库是**公开**的，下面这些东西永远不要提交。
+# 这一层只是兜底；真正的守门人是 GitHub 的 push protection（见 README「发布与隐私」）。
+# --------------------------------------------------------------------------- #
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+secrets.*
+credentials.*
+*credentials*.json
+*service-account*.json
+.aws/
+.gcp/
+.ssh/
+id_rsa*
+id_ed25519*
+*.code-workspace
+.vscode/settings.json
+
+# 大模型 / 云服务的本地配置（各家 CLI 常把 key 落在这里）
+.anthropic/
+.openai/
+.config/openai/
+.dsh/

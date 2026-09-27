@@ -1,0 +1,23 @@
+# 行尾统一：仓库里存 LF，工作区检出也用 LF。
+# 本仓库在 Windows 上开发过一轮，不声明的话"Windows 生成的文件"与"Linux 生成的文件"
+# 会整文件 diff（内容一样、只差 \r）。加这一行之后 git 会自动归一。
+* text=auto eol=lf
+
+# 二进制：绝不转换
+*.xlsx  binary
+*.xlsm  binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.zip   binary
+*.rar   binary
+*.pdf   binary
+
+# 将来若出现 Windows 脚本，必须保持 CRLF
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# 生成物：在 diff / 统计里降噪（不影响内容）
+abs_fpi/generated/**   linguist-generated=true
+examples/generated*/** linguist-generated=true

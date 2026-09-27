@@ -1,0 +1,298 @@
+# =========================================================================== #
+# 本文件由 compose.py 生成，请不要手改 —— 改了会在下次 compose 时被覆盖。
+#
+# 真源是各规则集 YAML（见 compose.yaml 的 rulesets）：
+#   - abs_fpi_external.yaml
+#   - abs_fpi_internal.yaml
+# 改参数请改工作簿；加规则集请加规则集 YAML 再跑 python compose.py。
+# =========================================================================== #
+version: 1
+excel:
+  output: ABS_FPI_load_cases.xlsx
+  template_sheet: Template
+  howto_sheet: HOWTO
+  sheets:
+    global: Global Parameter
+    local: Local Parameter
+    outputs:
+    - Code EXT
+    - Summary EXT
+    - Code INT
+    - Summary INT
+variables:
+  global:
+  - name: L
+    description: 规范船长 [m]（3-1-1/3）；同时驱动 C_1 / k_lo / k_f
+    default: 340
+    type: float
+    suffix: ' m'
+  - name: B
+    description: 规范型宽 [m]；B/2 决定舭部位置
+    default: 64
+    type: float
+    suffix: ' m'
+  - name: D
+    description: 规范型深 [m]（基线到甲板）
+    default: 32
+    type: float
+    suffix: ' m'
+  - name: r_b
+    description: 舭圆半径 [m]：z_bilge = r_b，平底宽 = B/2 - r_b
+    default: 0.703
+    type: float
+    suffix: ' m'
+  - name: freeboard
+    description: 甲板边线在载重线以上的余量 [m]；Fig. 10 的截断高度用它算
+    default: 0.5
+    type: float
+    suffix: ' m'
+  - name: rho_sea
+    description: 海水密度 [kg/m^3]；规范下限 1.005 N/cm^2-m 即 1025 kg/m^3
+    default: 1025
+    type: float
+    suffix: ' kg/m^3'
+  - name: g
+    description: 重力加速度 [m/s^2]
+    default: 9.81
+    type: float
+    suffix: ' m/s^2'
+  - name: Cb
+    description: 方形系数 [-]（3-1-1/13.3）
+    default: 1
+    type: float
+  - name: ax_x
+    description: 规范 x（自 AP）取自模型哪个轴：1=x, 2=y, 3=z
+    default: '1'
+    type: string
+  - name: ax_y
+    description: 规范 y（自中线，向右舷为正）取自模型哪个轴
+    default: '2'
+    type: string
+  - name: ax_z
+    description: 规范 z（基线以上，向上为正）取自模型哪个轴
+    default: '3'
+    type: string
+  - name: neg_x
+    description: 规范 x 是否取反：填 - 表示取反，留空表示不取反
+    default: ''
+    type: string
+  - name: neg_y
+    description: 规范 y 是否取反：填 - 表示取反，留空表示不取反
+    default: ''
+    type: string
+  - name: neg_z
+    description: 规范 z 是否取反：填 - 表示取反，留空表示不取反
+    default: ''
+    type: string
+  - name: d_f
+    description: 结构吃水 [m]；规范表按它给出，GM 四点表也按它插值
+    default: 20.559
+    type: float
+    suffix: ' m'
+  - name: rho_g_lo
+    description: k_s = 0.878 对应的 rho g [N/m^3]（1.005 N/cm^2-m = 10050）
+    default: 10050
+    type: float
+    suffix: ' N/m^3'
+  - name: rho_g_hi
+    description: k_s 达到 1.0 的 rho g [N/m^3]（1.118 N/cm^2-m = 11180）
+    default: 11180
+    type: float
+    suffix: ' N/m^3'
+  local:
+  - name: kind
+    description: 这个 Case 属于哪一套规则：EXT / INT（多规则集合用时用 case_filter 分流）
+    default: EXT
+    type: string
+  - name: draft
+    description: 工况吃水 [m]；h_s = draft - z，负值截断为 0
+    default: 20.559
+    type: float
+    suffix: ' m'
+  - name: mu_deg
+    description: 浪向角 [deg]，0 = 顶浪，90 = 右舷来浪（Table 1A D）
+    default: 90
+    type: float
+    suffix: ' deg'
+  - name: k_c
+    description: 组合工况相关系数 [-]，进 h_de = k_c h_di（Table 1A B）
+    default: 1
+    type: float
+  - name: k_f0
+    description: 相位因子 +1 / -1 [-]，决定参考站落在哪一端（Table 1A B）
+    default: 1
+    type: float
+  - name: k_u
+    description: 载荷系数 [-]；规范默认 1.0，1.1 用于板与纵骨的工况
+    default: 1.1
+    type: float
+  - name: beta_EPS
+    description: 外压 ESF，右舷 [-]（5A-3-A1/3）
+    default: 0.733
+    type: float
+  - name: beta_EPP
+    description: 外压 ESF，左舷 [-]（5A-3-A1/3）
+    default: 0.733
+    type: float
+  - name: k_esf
+    description: 项目对 ESF 的分项系数 [-]
+    default: 1.1
+    type: float
+  - name: x_o
+    description: 参考站 [m]，自 AP 量起（Fig. 9 脚注）
+    default: 51
+    type: float
+    suffix: ' m'
+  - name: beta_VAC
+    description: 垂向加速度 ESF [-]（5A-3-A1/3）
+    default: 0.66
+    type: float
+  - name: beta_LAC
+    description: 纵向加速度 ESF [-]
+    default: 0.758
+    type: float
+  - name: beta_TAC
+    description: 横向加速度 ESF [-]
+    default: 0.557
+    type: float
+  - name: beta_PMO
+    description: 纵摇 ESF [-]
+    default: 0.686
+    type: float
+  - name: beta_RMO
+    description: 横摇 ESF [-]
+    default: 0.492
+    type: float
+  - name: w_v
+    description: 垂向加速度权重 [-]（Table 1A B）
+    default: 0.75
+    type: float
+  - name: w_l
+    description: 纵向加速度权重 [-]
+    default: 0.25
+    type: float
+  - name: w_t
+    description: 横向加速度权重 [-]
+    default: 0.75
+    type: float
+  - name: xi
+    description: 舱长方向参考位置 [m]（5.7.2(b)）
+    default: 21
+    type: float
+    suffix: ' m'
+  - name: delta_b
+    description: 舱宽方向修正 [m]（5.7.2(b)）；无则填 0
+    default: 0
+    type: float
+    suffix: ' m'
+  - name: delta_h
+    description: 舱高方向修正 [m]（5.7.2(b)）；无则填 0
+    default: 0
+    type: float
+    suffix: ' m'
+  - name: tank_ref
+    description: 本列数据来自哪个舱（仅标注；样例 WBT6 / WBT7 / COT1）
+    default: WBT6
+    type: string
+  - name: rho_tank
+    description: 舱内液体密度 [kg/m^3]
+    default: 1025
+    type: float
+    suffix: ' kg/m^3'
+  - name: l_tank
+    description: 舱长 [m]（Fig. 11）
+    default: 42
+    type: float
+    suffix: ' m'
+  - name: b_tank
+    description: 舱宽 [m]（Fig. 11）
+    default: 32
+    type: float
+    suffix: ' m'
+  - name: h_tank
+    description: 舱高 [m]（Fig. 11）
+    default: 32
+    type: float
+    suffix: ' m'
+  - name: eta_deck
+    description: 甲板以上高度 [m]
+    default: 0
+    type: float
+    suffix: ' m'
+  - name: eta_overflow
+    description: 溢流管高度 [m]；Fig. 12 要求取 2/3 且不低于 760 mm
+    default: 0
+    type: float
+    suffix: ' m'
+  - name: C_dp
+    description: 舱形系数 [-]（5.7.2(d)）：矩形 1.0，J 形 0.7
+    default: 1
+    type: float
+  - name: C_ru
+    description: 舱形系数 [-]（5.7.2(d)）：矩形 1.0，U 形 0.7
+    default: 1
+    type: float
+  - name: p_vp
+    description: 真空/压力阀整定压力 [N/cm^2]
+    default: 0
+    type: float
+    suffix: ' N/cm^2'
+  - name: GM_full_in
+    description: 完整稳性 GM [m]；填 0 时用规范估算 0.12 B
+    default: 0
+    type: float
+    suffix: ' m'
+  - name: k_r_in
+    description: 横摇惯性半径 [m]；填 0 时用规范估算（0.35 B / 0.45 B）
+    default: 0
+    type: float
+    suffix: ' m'
+  - name: tank_is_ballast
+    description: 压载舱 1 / 货舱 0；决定 k_s 是否取 1
+    default: 1
+    type: int
+  - name: member_11_17
+    description: 构件是否属于 5.7 表 3 的 11..17 项（1 = 是）
+    default: 0
+    type: int
+templates:
+- name: genie_ext
+  description: ABS FPI 5A-3-2/5.5 外压 -- GeniE 强度函数体
+  output_sheet: Code EXT
+  start_cell: B2
+  direction: horizontal
+  write_case_headers: true
+  engine: excel
+  filename: '{{ case_name }}.js'
+  template_file: templates/ext_body.js.j2
+  case_filter: kind == 'EXT'
+- name: ext_summary
+  description: 外压工况输入汇总（Markdown）
+  output_sheet: Summary EXT
+  start_cell: B2
+  direction: vertical
+  write_case_headers: true
+  engine: excel
+  filename: '{{ case_name }}_summary.md'
+  template_file: templates/ext_summary.md.j2
+  case_filter: kind == 'EXT'
+- name: genie_int
+  description: ABS FPI 5A-3-2/5.7 内压 -- GeniE 强度函数体
+  output_sheet: Code INT
+  start_cell: B2
+  direction: horizontal
+  write_case_headers: true
+  engine: excel
+  filename: '{{ case_name }}.js'
+  template_file: templates/int_body.js.j2
+  case_filter: kind == 'INT'
+- name: int_summary
+  description: 内压工况输入汇总（Markdown）
+  output_sheet: Summary INT
+  start_cell: B2
+  direction: vertical
+  write_case_headers: true
+  engine: excel
+  filename: '{{ case_name }}_summary.md'
+  template_file: templates/int_summary.md.j2
+  case_filter: kind == 'INT'

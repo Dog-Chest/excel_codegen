@@ -1,0 +1,20 @@
+# =========================================================================== #
+# 项目工作簿的配方：把哪些规则集合进一本工作簿、各自用什么 case_filter 分流。
+#
+#   python compose.py   →   abs_fpi.yaml   →   init / render
+#
+# 变量与模板的真源仍在各规则集 YAML 里；compose 会把它们合并、检查冲突，
+# 再给每套模板加上 case_filter（只在多于一个规则集时才加）。
+# =========================================================================== #
+project: "abs_fpi.yaml"
+output: "ABS_FPI_load_cases.xlsx"
+
+rulesets:
+  # 外压放前面：case_filter 模式下"横向相对列"要在每个规则集内部保持连续，
+  # 同一规则集的工况必须相邻（见 README「工况顺序」）。
+  - file: "abs_fpi_external.yaml"
+    set: "EXT"
+    filter: "kind == 'EXT'"
+  - file: "abs_fpi_internal.yaml"
+    set: "INT"
+    filter: "kind == 'INT'"

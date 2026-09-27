@@ -1,0 +1,31 @@
+version: 1
+
+# 探针 E：YAML 里同一个键写了两遍。
+# 这里 `variables` 出现两次（第一份只有 global，第二份只有 local）。
+# 期望：报错，或者至少合并；实际是 PyYAML 后者覆盖前者，global 整段消失。
+excel:
+  output: "probe_dupkey.xlsx"
+  template_sheet: null
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Output"]
+
+variables:
+  global:
+    - name: L
+      description: "船长 —— 如果它被静默丢掉，渲染时会报 变量缺失: 'L' is undefined"
+      default: 340
+
+variables:
+  local:
+    - name: draft
+      default: 20.5
+
+templates:
+  - name: probe_dupkey
+    output_sheet: "Output"
+    start_cell: "B2"
+    code: |
+      var L = {{ L }};
+      var draft = {{ draft }};

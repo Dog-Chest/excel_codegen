@@ -1,0 +1,30 @@
+version: 1
+
+# 探针 D（短）：3 行渲染结果 —— 写进 probe_long.yaml 已经写过的同一个文件、
+# 同一张 Output 表、同一个 start_cell。旧的第 4..8 行如果没被清掉就会残留。
+excel:
+  output: "probe_stale.xlsx"
+  template_sheet: null
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Output"]
+
+variables:
+  global:
+    - name: L
+      default: 340
+  local:
+    - name: draft
+      default: 20.5
+
+templates:
+  - name: probe_stale
+    output_sheet: "Output"
+    start_cell: "B2"
+    direction: "horizontal"
+    write_case_headers: true
+    code: |
+      line 1 of the SHORT render
+      line 2 of the SHORT render
+      line 3 of the SHORT render

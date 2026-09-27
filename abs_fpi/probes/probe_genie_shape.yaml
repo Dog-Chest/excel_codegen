@@ -1,0 +1,95 @@
+version: 1
+
+# 探针 M：把"坐标映射前导"改写成纯替换之后，GeniE 那种"大段字面 if/else"模板
+# 能不能进公式模式（engine: excel）。
+#
+# 背景：docs/template_guide.md §14.6（0.4.0 前编号为 §14.4）与 abs_fpi/FINDINGS.md 的复测结论都说
+# "abs_fpi 的内外压有大段 {% if %} 分段链，超出纯替换子集，必须留在 snapshot"。
+# 但那些 if/else 是**模板里的字面文本**（GeniE 语句），真正的 Jinja 控制流
+# 只有坐标映射那几行。所以本探针把前导改成纯替换，看看公式模式是否接受。
+excel:
+  output: "probe_genie_shape.xlsx"
+  template_sheet: null
+  howto_sheet: null
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Output"]
+
+variables:
+  global:
+    - name: L
+      description: "船长 [m]"
+      default: 340
+      type: float
+      suffix: " m"
+    - name: ax_x
+      description: "规范 x 取自模型哪个轴：1=x, 2=y, 3=z"
+      default: "1"
+      type: string
+    - name: ax_y
+      description: "规范 y 取自模型哪个轴"
+      default: "2"
+      type: string
+    - name: ax_z
+      description: "规范 z 取自模型哪个轴"
+      default: "3"
+      type: string
+    - name: neg_x
+      description: "规范 x 是否取反：填 - 取反，留空不取反"
+      default: ""
+      type: string
+    - name: neg_y
+      description: "同上"
+      default: ""
+      type: string
+    - name: neg_z
+      description: "同上"
+      default: ""
+      type: string
+  local:
+    - name: draft
+      description: "吃水 [m]"
+      default: 20.5
+      type: float
+      suffix: " m"
+
+templates:
+  - name: genie_shape
+    description: "公式模式 + 字面 if/else 链 + 纯替换坐标映射"
+    output_sheet: "Output"
+    start_cell: "B2"
+    direction: "horizontal"
+    write_case_headers: true
+    engine: "excel"
+    filename: "genie_shape_{{ case_name }}.js"
+    code: |
+      // {{ case_name }}
+      var t1 = x;
+      var t2 = y;
+      var t3 = z;
+      x = {{ neg_x }}t{{ ax_x }};
+      y = {{ neg_y }}t{{ ax_y }};
+      z = {{ neg_z }}t{{ ax_z }};
+      var L = {{ L }};
+      var draft = {{ draft }};
+      var C_1 = 0;
+      // 下面就是 GeniE 的字面 if/else 链（不是 Jinja 控制流）
+      if      (L >= 61 m  && L <= 90 m ) C_1 = 0.044 * (L / 1 m) + 3.75;
+      else if (L >  90 m  && L <  300 m) C_1 = 10.75 - Math.pow((300 m - L) / 100 m, 1.5);
+      else if (L >= 300 m && L <  350 m) C_1 = 10.75;
+      else if (L >= 350 m && L <= 500 m) C_1 = 10.75 - Math.pow((L - 350 m) / 150 m, 1.5);
+      else                               C_1 = 0;
+      var alpha_i = 0;
+      if (z >= 0.703 m) {
+          if (z <= draft) {
+              if (y >= 0 m) alpha_i = 1;
+              else          alpha_i = 2;
+          } else {
+              if (y >= 0 m) alpha_i = 3;
+              else          alpha_i = 4;
+          }
+      } else {
+          alpha_i = 5;
+      }
+      return alpha_i * 1 Pa;

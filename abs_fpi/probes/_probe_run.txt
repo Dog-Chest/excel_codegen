@@ -1,0 +1,157 @@
+excel_codegen 0.5.0 探针复测（探针标题里的 FINDINGS 编号指向 0.1.0 的原始报告）
+
+==============================================================================
+探针 A  prefix / suffix 的首尾空格   (FINDINGS #2 · probe_suffix.yaml)
+==============================================================================
+YAML 写的是 suffix: " m" / " kg/m^3"（带前导空格）
+YAML 里的 suffix : [('L', ' m'), ('rho_sea', ' kg/m^3')]
+  Excel E 列 L         = ' m'
+  Excel E 列 rho_sea   = ' kg/m^3'
+  上下文     L         prefix='' suffix=' m' -> str='340 m'
+  上下文     rho_sea   prefix='' suffix=' kg/m^3' -> str='1025 kg/m^3'
+
+--- probe_suffix_Case1.txt
+combined   L           = 340 m
+combined   rho_sea     = 1025 kg/m^3
+combined   draft       = 20.5 m
+suffix     L.suffix    = [ m]
+prefix     L.prefix    = []
+raw value  L.value     = [340]
+filter     pvs("", " m") = [340 m]
+
+==============================================================================
+探针 B  数值规范化：{{ x }} vs {{ x.value }}   (FINDINGS #4 · probe_value.yaml)
+==============================================================================
+  L   type=float value=340.0  str(v)='340'  repr(v.value)=340.0
+  g   type=float value=9.81  str(v)='9.81'  repr(v.value)=9.81
+  Li  type=int   value=340  str(v)='340'  repr(v.value)=340
+  La  type=auto  value=340  str(v)='340'  repr(v.value)=340
+  draft type=float value=20.0  str(v)='20'
+
+--- probe_value_Case1.txt
+L      (float) combined = 340        .value = 340
+g      (float) combined = 9.81        .value = 9.81
+Li     (int)   combined = 340       .value = 340
+La     (auto)  combined = 340       .value = 340
+draft  (float) combined = 20    .value = 20
+
+==============================================================================
+探针 C  一个工作簿两套规则：模板 × Case 是交叉积   (FINDINGS #3b · probe_twosets.yaml)
+==============================================================================
+  期望：ext_code 只出 case_ext，int_code 只出 case_int（各 1 个）
+  实际：4 个渲染结果
+    ext_code  -> ['case_ext', 'case_int']
+    int_code  -> ['case_ext', 'case_int']
+  Code EXT  表头行 = ['case_ext', 'case_int']
+  Code INT  表头行 = ['case_ext', 'case_int']
+  -> 不用 case_filter 时仍是交叉积（4 个结果）；加一行 case_filter 即可只出该模板适用的 Case（见探针 J）。
+
+==============================================================================
+探针 J  用 case_filter 把两套规则放进一本工作簿   (FINDINGS #3b 修复验证 · probe_casefilter.yaml)
+==============================================================================
+  期望：ext_code 只出 case_ext，int_code 只出 case_int（各 1 个）
+  实际：2 个渲染结果
+    ext_code  -> ['case_ext']
+    int_code  -> ['case_int']
+  被 case_filter 跳过：{'ext_code': ['case_int'], 'int_code': ['case_ext']}
+  Code EXT  表头行 = ['case_ext']
+  Code INT  表头行 = ['case_int']
+  -> Global 表只填一次（L），两套规则各写各的列。
+
+==============================================================================
+探针 L  公式模式：输出表写公式，改参数 Excel 自己重算   (probe_formula.yaml)
+==============================================================================
+  fullCalcOnLoad = True（Excel/WPS 打开即重算）
+  Output!B2: ="// case "&'Local Parameter'!E$1
+  Output!B3: ="var L = "&IF(ISBLANK(INDEX('Global Parameter'!$D:$D,MATCH("L",'Global Parameter'!$A:$A,0))),""…
+  Output!B4: ="var draft = "&IF(ISBLANK(INDEX('Local Parameter'!$C:$C,MATCH("draft",'Local Parameter'!$A:$A,0…
+  Output!B5: ="var mu = "&IF(ISBLANK(INDEX('Local Parameter'!$C:$C,MATCH("mu_deg",'Local Parameter'!$A:$A,0))…
+  Output!B6: ="// 纯值 "&IF(ISBLANK(INDEX('Local Parameter'!E:E,MATCH("draft",'Local Parameter'!$A:$A,0))),20.5…
+  -> 单元格里是公式，不是文本：openpyxl 不会算它（值只在 Excel 里存在）
+
+  Python 侧渲染（用于导出文件 / 指纹；公式应当产出相同文本）：
+    [Case1] var L = 340 m;
+    [Case2] var L = 340 m;
+
+  改参数不需要重跑脚本 —— 直接把 Local 表 E2 改成 12，Excel 打开就是：
+    [Case1] var draft = 12 m;   ← 公式会自动变成这一行
+  （在 Excel 里这一步是「打开文件」就完成的；脚本只在改模板时才需要重跑）
+
+==============================================================================
+探针 D  长渲染之后用短模板重渲染   (FINDINGS #5 症状 A · probe_long/short.yaml)
+==============================================================================
+  长渲染之后 B 列： ['Case1', 'line 1 of the LONG render', 'line 2 of the LONG render', 'line 3 of the LONG render', 'line 4 of the LONG render', 'line 5 of the LONG render', 'line 6 of the LONG render', 'line 7 of the LONG render', 'line 8 of the LONG render', None]
+  短渲染之后 B 列： ['Case1', 'line 1 of the SHORT render', 'line 2 of the SHORT render', 'line 3 of the SHORT render', None, None, None, None, None, None]
+  残留的 LONG 行：（无）
+
+==============================================================================
+探针 D2  减少 Case 列之后重渲染（FINDINGS #5 反例）
+==============================================================================
+  3 个 Case 渲染后 D 列（第 3 列）： ['Case3', 'line 1 of the LONG render', 'line 2 of the LONG render', 'line 3 of the LONG render', 'line 4 of the LONG render', 'line 5 of the LONG render', 'line 6 of the LONG render', 'line 7 of the LONG render', 'line 8 of the LONG render', None]
+  只渲染 2 个 Case 之后 D 列： [None, None, None, None, None, None, None, None, None, None]
+  第 3 列残留：（无）
+
+==============================================================================
+探针 I  vertical 布局：Case 数从 8 减到 1   (FINDINGS #5 症状 B)
+==============================================================================
+  8 个 Case 之后 A 列行 1..10： [None, 'Case1', 'Case2', 'Case3', 'Case4', 'Case5', 'Case6', 'Case7', 'Case8', None]
+  只渲染 1 个 Case 之后 A 列： [None, 'Case1', None, None, None, None, None, None, None, None]
+  Case2..Case8 残留：（无）
+
+==============================================================================
+探针 E  YAML 同一个键写两遍   (FINDINGS #6 · probe_dupkey.yaml)
+==============================================================================
+  配置阶段就报错：ConfigError: YAML 键重复: 'variables'（第 20 行）—— 同一个映射里同一个键只能出现一次（重复会让前一份被静默覆盖）
+
+==============================================================================
+探针 G  init --cases：数量或 Case 名字   (FINDINGS #7)
+==============================================================================
+  cli.init_command 的 --cases 类型: str
+  create_template 的 cases 类型   : int | Sequence[str]
+  -> 现在 CLI 的 --cases 也接受逗号分隔的工况名（0.1.0 时只接受整数）。
+  试一下 CLI（--cases 直接给名字）：
+    │ probe_suffix.xlsx --write-excel                                             │
+    │    excel-codegen render --config probe_suffix.yaml --excel                  │
+    │ probe_suffix.xlsx --outdir generated/                                       │
+    └─────────────────────────────────────────────────────────────────────────────┘
+    exit=0
+
+==============================================================================
+探针 H  --write-excel 之后隐藏的 Template 表还在不在   (原报告「没问题的几件事」)
+==============================================================================
+  init 之后: Template 表 state = 'hidden'
+  write-excel 之后: Template 表 state = 'hidden', 表内行数 = 16
+
+==============================================================================
+探针 F  中文 Windows（GBK 控制台）下 CLI 的收尾打印   (FINDINGS #1)
+==============================================================================
+  当前 sys.stdout.encoding = utf-8
+  用 PYTHONIOENCODING=gbk 真跑一次 validate：
+    +-----------------------------------------------------------------------------+
+    OK 配置校验通过
+    exit=0   （0.1.0 时：UnicodeEncodeError，exit=1）
+
+==============================================================================
+探针 K  render 不带 --write-excel / check 的判定   (FINDINGS #8.1 / #8.3 修复验证)
+==============================================================================
+  render（不带 --write-excel）：
+    │ 写回 Excel │ 否（需要 --write-excel） │
+    │ 导出文件   │ 无                       │
+    └────────────┴──────────────────────────┘
+    ! 本次只预览：没有写回 Excel，也没有导出文件。加 --write-excel / --outdir 
+    才会落盘。
+    OK 渲染完成
+    exit=0
+  check（第 1 步没写回；表里是更早一次渲染留下的指纹）：
+    │ 参数指纹     │ 记录 c1273da2acb5 / 当前 c1273da2acb5 │
+    │ 输出指纹     │ 记录 80ecfe5dc6e7 / 当前 80ecfe5dc6e7 │
+    └──────────────┴───────────────────────────────────────┘
+    OK 输出表与当前参数一致
+    exit=0   （0.1.0 时没有 check 命令）
+  写回之后再 check：
+    │ 输出指纹     │ 记录 80ecfe5dc6e7 / 当前 80ecfe5dc6e7 │
+    └──────────────┴───────────────────────────────────────┘
+    OK 输出表与当前参数一致
+    exit=0
+
+完成。

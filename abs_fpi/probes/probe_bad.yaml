@@ -1,0 +1,22 @@
+version: 1
+
+# 故意写坏：start_cell 非法 + output_sheet 未声明。
+# 目的是看 `_fail()` 打印的 '✗'（U+2717）在 GBK 控制台下能不能出来。
+excel:
+  output: "probe_bad.xlsx"
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Output"]
+
+variables:
+  global:
+    - name: L
+      default: 340
+
+templates:
+  - name: probe_bad
+    output_sheet: "NotDeclared"
+    start_cell: "2B"
+    code: |
+      var L = {{ L }};

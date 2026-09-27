@@ -1,0 +1,39 @@
+# 多平台回归：同一份 uv.lock 在三个系统上装出来的环境应当一致。
+#
+# 这个文件是**可选**的 —— 没有 GitHub 也能用，本地等价命令就是 `uv run pytest`
+# （见 README「安装」里的 uv 一节）。放在这里是为了把"多平台无缝"变成可自动复查的事实：
+# 任何一次改动，三个系统 × 两个 Python 版本都会真跑一遍 107 项测试。
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        # 3.11 = pyproject 里的支持下限（必须测，否则"支持 3.11"只是嘴上说说）；
+        # 3.13 = 较新版本。开发默认解释器是 .python-version 里的 3.12。
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # 锁文件必须与 pyproject.toml 同步（改了依赖忘了 uv lock 会在这里失败）
+      - name: 校验 uv.lock 与 pyproject.toml 一致
+        run: uv lock --check
+
+      - name: 跑测试
+        run: uv run --python ${{ matrix.python }} pytest
+
+      - name: CLI 冒烟
+        run: uv run --python ${{ matrix.python }} excel-codegen --version

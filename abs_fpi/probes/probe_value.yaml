@@ -1,0 +1,48 @@
+version: 1
+
+# 探针 B：数值规范化
+# 文档（README「数值变量不会出现 115200.0 这种尾巴」）与 template_guide §3.2
+# 都承诺整数浮点会被规范化。这个探针对比 `{{ x }}` 与 `{{ x.value }}`。
+excel:
+  output: "probe_value.xlsx"
+  template_sheet: null
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Output"]
+
+variables:
+  global:
+    - name: L
+      description: "整数浮点（type: float）"
+      default: 340
+      type: float
+    - name: g
+      description: "非整数浮点"
+      default: 9.81
+      type: float
+    - name: Li
+      description: "同上的整数（type: int）"
+      default: 340
+      type: int
+    - name: La
+      description: "同上的整数（type: auto，默认）"
+      default: 340
+  local:
+    - name: draft
+      default: 20.0
+      type: float
+
+templates:
+  - name: probe_value
+    output_sheet: "Output"
+    start_cell: "B2"
+    direction: "horizontal"
+    write_case_headers: true
+    filename: "probe_value_{{ case_name }}.txt"
+    code: |
+      L      (float) combined = {{ L }}        .value = {{ L.value }}
+      g      (float) combined = {{ g }}        .value = {{ g.value }}
+      Li     (int)   combined = {{ Li }}       .value = {{ Li.value }}
+      La     (auto)  combined = {{ La }}       .value = {{ La.value }}
+      draft  (float) combined = {{ draft }}    .value = {{ draft.value }}

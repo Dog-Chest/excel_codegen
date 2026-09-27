@@ -1,0 +1,82 @@
+version: 1
+
+# --------------------------------------------------------------------------- #
+# 公式模式示例（engine: excel）
+#
+# 与 example.yaml 的区别只有一个：模板里写了 `engine: excel`。
+# 于是 Output 表里写进去的是**公式**而不是文本快照 —— 改了 Global / Local 的
+# 参数之后，Excel 打开即自动重算，**不需要再跑任何命令**。
+#
+# 代价（务必知悉）：
+#   1. 只支持"纯替换"子集：{{ x }} / {{ x.value }} / {{ x.prefix }} / {{ x.suffix }} /
+#      {{ case_name }} / {{ template_name }}；出现 {% %} 或过滤器会直接报错（带行号）；
+#   2. 值只存在于 Excel / WPS 里：导出代码文件（--outdir）与 CI 检查（check）仍走命令行；
+#   3. 改模板（这个 YAML）需要重跑一次 --write-excel 刷新公式，改参数不用。
+# --------------------------------------------------------------------------- #
+excel:
+  output: "template_formula.xlsx"
+  template_sheet: "Template"
+  howto_sheet: "HOWTO"
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Output", "Output Vertical"]
+
+variables:
+  global:
+    - name: baud
+      description: "波特率"
+      default: 115200
+      prefix: ""
+      suffix: ""
+      type: int
+    - name: baud_khz
+      description: "波特率（kHz）= baud / 1000 —— 派生参数示例"
+      derived: "baud / 1000"          # ← 引用另一个参数，不用自己在表里算
+      type: float
+    - name: mcu
+      description: "MCU 型号（字符串变量示例）"
+      default: "STM32F103"
+      prefix: ""
+      suffix: ""
+
+  local:
+    - name: port
+      description: "端口"
+      default: "A"
+      prefix: "GPIO"
+      suffix: "_PORT"
+    - name: mode
+      description: "模式"
+      default: "TX_RX"
+      prefix: "MODE_"
+      suffix: ""
+
+templates:
+  # 横向：一个 Case 一列；每行一个公式，右拉即多一个 Case
+  - name: uart_init
+    description: "UART 初始化代码（公式模式）"
+    output_sheet: "Output"
+    start_cell: "B2"
+    direction: "horizontal"
+    write_case_headers: true
+    engine: "excel"
+    filename: "uart_init_{{ case_name }}.c"
+    code: |
+      // Case: {{ case_name }}
+      UART_Init({{ baud }}, {{ port }}, {{ mode }});
+      // 纯值: {{ port.value }}, 前缀: {{ port.prefix }}, 后缀: {{ port.suffix }}
+      // 派生参数: {{ baud_khz }} kHz
+      // MCU: {{ mcu }}
+
+  # 纵向：一个 Case 一行（公式一样有效，只是右拉会换列）
+  - name: uart_pins
+    description: "端口占用表（公式模式，纵向）"
+    output_sheet: "Output Vertical"
+    start_cell: "B2"
+    direction: "vertical"
+    write_case_headers: true
+    engine: "excel"
+    filename: "uart_pins_{{ case_name }}.csv"
+    code: |
+      {{ case_name }},{{ port }},{{ mode }},{{ baud }}

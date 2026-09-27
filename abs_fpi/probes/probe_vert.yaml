@@ -1,0 +1,29 @@
+version: 1
+
+# 探针 I：vertical 布局 —— 3 个 Case 渲染完之后只渲染 1 个。
+# 期望：第 3、4 行（Case2 / Case3）被清掉。
+# 怀疑：与 horizontal 同源 —— 清理范围的底边由"本次结果数"算出。
+excel:
+  output: "probe_vert.xlsx"
+  template_sheet: null
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Output"]
+
+variables:
+  global:
+    - name: L
+      default: 340
+  local:
+    - name: draft
+      default: 20.5
+
+templates:
+  - name: probe_vert
+    output_sheet: "Output"
+    start_cell: "B2"
+    direction: "vertical"
+    write_case_headers: true
+    code: |
+      | {{ case_name }} | {{ draft }} |

@@ -1,0 +1,42 @@
+version: 1
+
+# 探针 A：prefix / suffix 的首尾空格
+# YAML 写 suffix: " m"，期望输出 `340 m`。
+excel:
+  output: "probe_suffix.xlsx"
+  template_sheet: null
+  sheets:
+    global: "Global Parameter"
+    local: "Local Parameter"
+    outputs: ["Output"]
+
+variables:
+  global:
+    - name: L
+      description: "长度；单位放在 suffix 里，suffix 带一个前导空格"
+      default: 340
+      suffix: " m"
+    - name: rho_sea
+      description: "密度；suffix 带前导空格"
+      default: 1025
+      suffix: " kg/m^3"
+  local:
+    - name: draft
+      default: 20.5
+      suffix: " m"
+
+templates:
+  - name: probe_suffix
+    output_sheet: "Output"
+    start_cell: "B2"
+    direction: "horizontal"
+    write_case_headers: true
+    filename: "probe_suffix_{{ case_name }}.txt"
+    code: |
+      combined   L           = {{ L }}
+      combined   rho_sea     = {{ rho_sea }}
+      combined   draft       = {{ draft }}
+      suffix     L.suffix    = [{{ L.suffix }}]
+      prefix     L.prefix    = [{{ L.prefix }}]
+      raw value  L.value     = [{{ L.value }}]
+      filter     pvs("", " m") = [{{ L.value | pvs("", " m") }}]
