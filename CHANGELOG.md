@@ -34,7 +34,7 @@
 * 指南新增 §19。
 
 新增 `tests/test_local_direction.py` 16 项（建表 / 读值 / 两种布局对拍 / 公式值对拍 /
-插行加工况 / 约束报错定位）。**测试 268 → 284 项。**
+插行加工况 / 约束报错定位）。
 
 ### 2. abs_fpi 重做工作表：舱数据改用成员表
 
@@ -58,8 +58,10 @@
 | `tank_ref` 指向不存在的成员 → 明确报错（`choices` 先拦；去掉 `choices` 是成员表查找拦） | ✅ 两种报错都点名成员 + 列可选值 |
 | 公式模式下 Case → 舱 → 变量的两级 `INDEX/MATCH` 链条 | ✅ 工具自带 `check` 会整条算一遍；28 项公式求值 0 失败 |
 
-新增 `abs_fpi/probes/probe_group_table.py`（5 步实测）。`abs_fpi/README.md`、
-`TEMPLATES.md`、`FINDINGS.md` #3(a) 从"尚未迁移的能力边界"改成"已迁移 + 证据"。
+新增 `abs_fpi/probes/probe_group_table.py`（5 步实测）**与 `tests/test_abs_fpi_group.py` 9 项回归**
+（把这次迁移钉进 CI：配置层面舱参数不在 local 里、数据层面两个工况共用一份舱数据、
+产物层面 `abs_fpi/generated/` 与当前 YAML + 工作簿一致 —— 免得改了 YAML 忘了重新生成）。
+`abs_fpi/README.md`、`TEMPLATES.md`、`FINDINGS.md` #3(a) 从"尚未迁移的能力边界"改成"已迁移 + 证据"。
 
 ### 3. 生成测试：NASTRAN 工况控制语句
 
@@ -82,7 +84,7 @@
 
 新增 `tests/test_nastran_case_control.py` 11 项 + `tests/test_renderer.py` 2 项。
 `examples/generated_nastran/` 是示例工作簿的实测产物（含拼好的 `case_control.deck`）。
-**测试 284 → 297 项。**
+**测试 268 → 306 项。**
 
 ---
 

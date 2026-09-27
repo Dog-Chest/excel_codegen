@@ -111,7 +111,7 @@ pip install -e ".[dev]"
 ## 开发
 
 ```bash
-uv run pytest --cov          # 297 项用例 + 覆盖率门槛（85%）
+uv run pytest --cov          # 306 项用例 + 覆盖率门槛（85%）
 uv run ruff check .          # lint
 uv run ruff format --check . # 格式
 uv run mypy                  # 类型检查
