@@ -211,10 +211,7 @@ def step5(cfg, book: Path) -> None:
     print("\ncheck 输出：")
     for row in text[-6:]:
         print("   ", row.strip())
-    print(
-        f"\n退出码 {proc.returncode}"
-        "（0 = 工作簿里的公式算出来与当前参数一致；1 = 过期；2 = 用法/配置错）"
-    )
+    print(f"\n退出码 {proc.returncode}（0 = 工作簿里的公式算出来与当前参数一致；1 = 过期；2 = 用法/配置错）")
     assert proc.returncode == 0, text
     print("OK  公式引用到了成员表，check 能把整条链（Case → 舱 → 变量）在 Python 里算一遍")
 

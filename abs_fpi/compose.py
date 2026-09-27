@@ -84,9 +84,7 @@ def merge_variables(target: dict, incoming: list[dict], *, scope: str, source: s
                 )
 
 
-def merge_group(
-    existing: dict | None, incoming: dict, *, source: str, warnings: list[str]
-) -> dict:
+def merge_group(existing: dict | None, incoming: dict, *, source: str, warnings: list[str]) -> dict:
     """合并两个规则集的成员表声明（一本工作簿只有一张成员表）。"""
     if existing is None:
         existing = dict(incoming)
@@ -208,7 +206,11 @@ def compose(manifest_path: Path) -> Path:
     for w in warnings:
         print(f"  ! {w}")
     group = project["variables"].get("group")
-    member_note = f", 成员表 {group['sheet']}（{len(group.get('members') or [])} 行 × {len(group['variables'])} 变量）" if group else ""
+    member_note = (
+        f", 成员表 {group['sheet']}（{len(group.get('members') or [])} 行 × {len(group['variables'])} 变量）"
+        if group
+        else ""
+    )
     print(
         f"wrote {out_path.name}: {len(project['variables']['global'])} 全局 / "
         f"{len(project['variables']['local'])} 局部变量{member_note}, {len(project['templates'])} 模板 "
