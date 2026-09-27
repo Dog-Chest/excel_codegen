@@ -1,12 +1,17 @@
 # 变更历史（CHANGELOG）
 
 本项目遵循"每个版本对应一次真实测试驱动"的节奏：0.1.0 落地 → 0.2.0 修实测报告 →
-0.3.0 加公式模式 → 0.4.0 补齐公式模式的验证链 → 0.5.0 派生参数。逐条实测证据见
+0.3.0 加公式模式 → 0.4.0 补齐公式模式的验证链 → 0.5.0 派生参数 → 0.5.x 跨平台与文档 →
+0.6.0 取值约束 / `extends` / 行内 `{% if %}` / 质量护栏。逐条实测证据见
 [`abs_fpi/FINDINGS.md`](abs_fpi/FINDINGS.md)。
 
 ---
 
-## 未发布（Unreleased）
+## 0.6.0 — 取值约束 / `extends` / 行内 `{% if %}` / 质量护栏（2026-09-27）
+
+四个功能 + 一道质量闸，共 4 个提交（① 取值约束 → ③ `extends` → ④ 行内 `{% if %}` →
+⑤ 质量护栏），另有一个发布流程。**测试从 107 项涨到 195 项**，其中两个是 lint / 类型检查
+当场揪出来的真 bug（见 §5）。
 
 ### 1. 取值约束：`min` / `max` / `choices` / `pattern`
 
@@ -111,6 +116,14 @@ Python 版本各跑一遍。
 顺带清掉一批：未使用的导入/变量、`zip()` 缺 `strict=`、`try/except/pass` 改
 `contextlib.suppress`、嵌套 `if` 合并、`FilterValue` 的 `__slots__` 属性补类型标注、
 `Evaluator` 的 `tokens/index` 在 `__init__` 里显式初始化（原来是 `getattr(..., None)`）。
+
+### 6. 发布流程：`.github/workflows/release.yml`
+
+推 `v*` tag → 校验 tag 与 `pyproject.toml` 的版本一致 → 跑一遍质量闸 → `uv build` →
+`twine check` → 用 **Trusted Publishing（OIDC）** 发到 PyPI，**仓库里不存任何 token**。
+手动触发（`workflow_dispatch`）默认发到 TestPyPI，用来演练。
+
+发布前的登记步骤见 [`docs/publishing.md`](docs/publishing.md)。
 
 ---
 

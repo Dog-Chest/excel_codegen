@@ -68,11 +68,67 @@ git push -u origin main
   Settings → Developer settings → Personal access tokens（`Contents: Read and write`）。
   注意 token 会明文落在 `~/.git-credentials`，共享机器上不要用。
 
-推送后 `.github/workflows/ci.yml` 会自动在 **3 个系统 × 2 个 Python 版本**上跑测试。
+推送后 `.github/workflows/ci.yml` 会自动在 **3 个系统 × 2 个 Python 版本**上跑
+测试、lint、类型检查与覆盖率门槛。
 
 ---
 
-## 发布到 PyPI（可选，尚未做）
+## 发布到 PyPI
 
-`uv build` 可以产出 wheel 与 sdist。发布前记得把 `pyproject.toml` 里注释掉的
-`Documentation` URL 换成真地址 —— 占位符在 PyPI 页面上会变成一个打不开的链接。
+发布流程已经在 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 里了，
+用 **Trusted Publishing（OIDC）** —— 仓库里不存任何 token，GitHub 每次发布时向 PyPI
+换一张短期凭据。
+
+### 一次性配置（只在第一次做）
+
+1. **注册 PyPI 账号**并开启两步验证（发版必需）。
+2. **登记 pending publisher**：PyPI → Account → Publishing → *Add a pending publisher*：
+
+   | 字段 | 填什么 |
+   | --- | --- |
+   | PyPI Project Name | `excel-codegen` |
+   | Owner | `Dog-Chest` |
+   | Repository name | `excel_codegen` |
+   | Workflow name | `release.yml` |
+   | Environment name | `pypi` |
+
+   > 项目名写成 `excel-codegen`（连字符）是因为**分发的名字**与**导入的名字**可以不同：
+   > `pip install excel-codegen` 装进来的是 `import excel_codegen`。
+   > 已确认 PyPI 上 `excel-codegen` 与 `excel_codegen` 都还没被占用。
+3. GitHub 仓库 → Settings → Environments → 新建一个叫 **`pypi`** 的环境
+   （可以顺手加 "Required reviewers"，发版前多一道人工确认）。
+4. 把 `pyproject.toml` 里注释掉的 `Documentation` URL 换成真地址 —— 占位符在 PyPI
+   页面上会变成一个打不开的链接。
+
+### 每次发版
+
+```bash
+# 1) 改版本号（pyproject.toml 与 excel_codegen/__init__.py 两处）+ 写 CHANGELOG
+# 2) 重新锁定（版本号变化会写进 uv.lock）
+uv lock
+# 3) 本地过一遍质量闸
+uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov
+# 4) 提交、打 tag、推
+git commit -am "0.7.0：……"
+git tag v0.7.0
+git push origin main --tags
+```
+
+tag 一推，`release.yml` 就会：校验 tag 与 `pyproject.toml` 版本一致 → 再跑一遍质量闸 →
+`uv build` → `twine check` → 发到 PyPI。
+
+> **先演练**：Actions 页面手动触发 `release`，`target` 选 `testpypi`，会发到 TestPyPI
+> （用 `--index-url https://test.pypi.org/simple/` 装来验证）。TestPyPI 与 PyPI 是两个
+> 独立的账号体系，需要在 TestPyPI 上单独登记一次 pending publisher。
+
+### 发布之后，别人怎么装
+
+```bash
+uv tool install excel-codegen      # 装成全局命令
+# 或
+pipx install excel-codegen
+# 或
+pip install excel-codegen
+```
+
+这样同事就不需要克隆仓库了 —— 「多平台零配置」这条线到此才算闭环。

@@ -96,6 +96,9 @@ pip install -e ".[dev]"
 装好后得到命令 `excel-codegen`（也可用 `python -m excel_codegen`）。
 跨平台细节、外置盘注意事项与 Python 版本策略见 [`docs/setup.md`](docs/setup.md)。
 
+> **PyPI 发布流程已就绪、尚未首次发布**（[`docs/publishing.md`](docs/publishing.md) 里有一次性登记步骤）。
+> 发布之后就可以不克隆仓库、直接 `uv tool install excel-codegen`（或 `pipx install excel-codegen`）。
+
 ## 开发
 
 ```bash

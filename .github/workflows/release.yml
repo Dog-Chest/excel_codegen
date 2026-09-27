@@ -1,0 +1,91 @@
+# 发布到 PyPI —— 用 **Trusted Publishing**（OIDC），仓库里不存任何 token。
+#
+# 触发方式：
+#   * 推送形如 v0.6.0 的 tag → 先校验 tag 与 pyproject 版本一致，再构建、发布到 PyPI
+#   * 手动触发（workflow_dispatch）→ 默认发到 TestPyPI，用来演练
+#
+# 首次发布前需要在 PyPI 上登记一个 "pending publisher"（见 docs/publishing.md）：
+#   PyPI → Account → Publishing → Add a pending publisher
+#     PyPI Project Name : excel-codegen
+#     Owner             : Dog-Chest
+#     Repository name   : excel_codegen
+#     Workflow name     : release.yml
+#     Environment name  : pypi
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "发布到哪"
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
+
+jobs:
+  build:
+    name: 构建发行包
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # tag 与 pyproject 版本必须一致 —— 否则 PyPI 上会出现"版本对不上 tag"的包，无法重发
+      - name: 校验 tag 与 pyproject.toml 的版本一致
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version="$(uv version --short)"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$tag" ]; then
+            echo "::error::tag 是 $tag，但 pyproject.toml 写的是 $version"
+            exit 1
+          fi
+          echo "版本一致：$version"
+
+      - name: 跑一遍质量闸（发出去的东西不能是坏的）
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy
+          uv run pytest --cov
+
+      - name: 构建 wheel + sdist
+        run: uv build
+
+      - name: 检查产物里有没有混进不该有的东西
+        run: |
+          uv run --with twine twine check dist/*
+          ls -l dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: 上传到 ${{ github.event.inputs.target || 'pypi' }}
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # Trusted Publishing 靠这个拿短期凭据，不需要 password
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: 发布到 TestPyPI
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+      - name: 发布到 PyPI
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
+        uses: pypa/gh-action-pypi-publish@release/v1
