@@ -24,6 +24,9 @@ variables:
       prefix: ""
       suffix: ""
       type: int
+      # 取值约束：越界在 validate / render 时就报错，并写成 Excel 的数值范围校验
+      min: 300
+      max: 4000000
     - name: baud_div
       description: "分频值 = baud / 16（派生参数：引用另一个参数，不用手填）"
       derived: "baud / 16"
@@ -33,6 +36,7 @@ variables:
       default: "STM32F103"
       prefix: ""
       suffix: ""
+      pattern: "^STM32[A-Z][0-9]{3}[A-Z]{0,2}$"
 
   local:
     - name: port
@@ -40,11 +44,13 @@ variables:
       default: "A"
       prefix: "GPIO"
       suffix: "_PORT"
+      pattern: "^[A-H]$"
     - name: mode
-      description: "模式"
+      description: "模式（取值约束：Excel 里会变成下拉列表）"
       default: "TX_RX"
       prefix: "MODE_"
       suffix: ""
+      choices: ["TX", "RX", "TX_RX"]
 
 # --------------------------------------------------------------------------- #
 # 输出模板

@@ -22,6 +22,7 @@ from . import __version__
 from .excel_io import (
     case_column_map,
     check_required_sheets,
+    check_value_constraints,
     create_template,
     input_fingerprint,
     load_workbook_file,
@@ -455,6 +456,8 @@ def validate_command(
                 metadata = read_metadata(workbook, project)
             finally:
                 workbook.close()
+            # 取值约束：这一条会让"表里填错了一个数字"在 validate 阶段就暴露
+            check_value_constraints(project, global_values, cases)
             excel_table = Table(title="Excel 检查", header_style="bold cyan")
             excel_table.add_column("项目", style="bold")
             excel_table.add_column("内容")

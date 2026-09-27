@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -80,6 +81,26 @@ def _duplicates(items: list[str]) -> list[str]:
     return dupes
 
 
+def _number_text(value: float) -> str:
+    """数字的提示文本：整数不显示小数点（``20.0`` → ``20``）。"""
+    return to_text(int(value)) if float(value).is_integer() else to_text(value)
+
+
+def _as_number(value: Any) -> float | None:
+    """把取值当数字读；读不出来返回 ``None``（bool 不算数字）。"""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = to_text(value).strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
 def _valid_sheet_name(value: Any) -> str:
     """校验并规范化一个 Excel 工作表名。"""
     name = to_text(value).strip()
@@ -117,6 +138,16 @@ class VariableDef(BaseModel):
     #: 例如 ``derived: "k_c * h_di"``。派生参数不用在 Excel 里填值（那一格由工具写成公式或算好的值）。
     derived: str | None = None
 
+    #: 取值约束（可选，只对"填写型"变量有效；派生参数的值是算出来的，不能加）。
+    #: ``min`` / ``max``：数值上下限。``type`` 为 string / bool / raw 时不允许。
+    min: float | None = None
+    max: float | None = None
+    #: 允许的取值集合，按**文本**比较（``1`` 与 ``1.0`` 视为同一个值）。
+    #: 会同时写成 Excel 的下拉列表。
+    choices: list[Any] | None = None
+    #: 整串匹配的正则（``re.fullmatch``）。
+    pattern: str | None = None
+
     @field_validator("name")
     @classmethod
     def _check_name(cls, value: str) -> str:
@@ -144,6 +175,53 @@ class VariableDef(BaseModel):
         text = to_text(value).strip()
         return text or None
 
+    @field_validator("min", "max", mode="before")
+    @classmethod
+    def _number_or_none(cls, value: Any) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            raise ValueError("min / max 必须是数字，不能是 true/false")
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = to_text(value).strip()
+        if not text:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            raise ValueError(f"min / max 必须是数字，得到 {value!r}") from None
+
+    @field_validator("choices", mode="before")
+    @classmethod
+    def _check_choices(cls, value: Any) -> list[Any] | None:
+        if value is None:
+            return None
+        if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+            raise ValueError("choices 必须是列表，例如 choices: [EXT, INT]")
+        items = list(value)
+        if not items:
+            raise ValueError("choices 不能是空列表（不想要约束就删掉这个字段）")
+        texts = [to_text(item) for item in items]
+        dupes = sorted({text for text in texts if texts.count(text) > 1})
+        if dupes:
+            raise ValueError(f"choices 里有重复取值: {', '.join(dupes)}")
+        return items
+
+    @field_validator("pattern", mode="before")
+    @classmethod
+    def _check_pattern(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = to_text(value).strip()
+        if not text:
+            return None
+        try:
+            re.compile(text)
+        except re.error as exc:
+            raise ValueError(f"pattern 不是合法的正则: {exc}") from None
+        return text
+
     @model_validator(mode="after")
     def _check_derived(self) -> "VariableDef":
         if self.derived and to_text(self.default) != "":
@@ -153,9 +231,84 @@ class VariableDef(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _check_constraints(self) -> "VariableDef":
+        constrained = (
+            self.min is not None or self.max is not None or self.choices or self.pattern
+        )
+        if not constrained:
+            return self
+        if self.is_derived:
+            raise ValueError(
+                f"变量 {self.name!r} 是派生参数（值由表达式算出来），不能加 min / max / choices / pattern —— "
+                "请在表达式里约束（例如 max(x, 0)），或把它改成填写型变量"
+            )
+        if self.min is not None and self.max is not None and self.min > self.max:
+            raise ValueError(
+                f"变量 {self.name!r} 的 min({_number_text(self.min)}) 大于 max({_number_text(self.max)})"
+            )
+        if (self.min is not None or self.max is not None) and self.type in ("string", "bool", "raw"):
+            raise ValueError(
+                f"变量 {self.name!r} 的 type 是 {self.type!r}，不能加 min / max —— "
+                "数值范围只对 type: int / float / auto 有意义"
+            )
+        # 默认值是 YAML 自己写的，违反约束属于配置错误，立刻指出（空默认值允许：表示"必须去表里填"）
+        if to_text(self.default) != "":
+            problem = self.value_problem(self.default)
+            if problem:
+                raise ValueError(f"变量 {self.name!r} 的 default {problem}")
+        return self
+
     @property
     def is_derived(self) -> bool:
         return bool(self.derived)
+
+    @property
+    def has_constraints(self) -> bool:
+        return bool(
+            self.min is not None or self.max is not None or self.choices or self.pattern
+        )
+
+    @property
+    def constraint_text(self) -> str:
+        """给人和给 Excel 提示用的一句话约束描述。"""
+        parts: list[str] = []
+        if self.choices:
+            parts.append("可选: " + " / ".join(to_text(item) for item in self.choices))
+        if self.pattern:
+            parts.append(f"格式: {self.pattern}")
+        if self.min is not None and self.max is not None:
+            parts.append(f"范围: {_number_text(self.min)} ~ {_number_text(self.max)}")
+        elif self.min is not None:
+            parts.append(f"范围: >= {_number_text(self.min)}")
+        elif self.max is not None:
+            parts.append(f"范围: <= {_number_text(self.max)}")
+        return "；".join(parts)
+
+    def value_problem(self, value: Any) -> str | None:
+        """检查一个取值是否满足约束；返回问题描述，没问题返回 ``None``。
+
+        空值（``""``）在声明了约束时**算不合格** —— ``choices`` 之类的约束意味着"必须有个合法取值"。
+        """
+        text = to_text(value)
+        if self.choices:
+            allowed = [to_text(item) for item in self.choices]
+            if text not in allowed:
+                shown = text if text != "" else "（空）"
+                return f"取值 {shown} 不在允许列表 {'/'.join(allowed)} 里"
+        if self.pattern is not None and re.fullmatch(self.pattern, text) is None:
+            shown = text if text != "" else "（空）"
+            return f"取值 {shown} 不匹配格式 {self.pattern}"
+        if self.min is not None or self.max is not None:
+            number = _as_number(value)
+            if number is None:
+                shown = text if text != "" else "（空）"
+                return f"取值 {shown} 不是数字，但该变量声明了 min/max"
+            if self.min is not None and number < self.min:
+                return f"取值 {_number_text(number)} 小于下限 {_number_text(self.min)}"
+            if self.max is not None and number > self.max:
+                return f"取值 {_number_text(number)} 大于上限 {_number_text(self.max)}"
+        return None
 
 
 class VariablesConfig(BaseModel):

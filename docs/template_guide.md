@@ -71,6 +71,9 @@ Jinja2 语法速查、Excel 表结构与填写规则、输出布局、导出代�
 | `suffix` | str | `""` | 组合值后缀 |
 | `type` | enum | `auto` | `auto` / `string` / `int` / `float` / `bool` / `raw`，见 3.2 |
 | `derived` | str \| null | `null` | **派生参数**：一段表达式，引用同 Case 的 local 与 global（见 §15）。写了它就不用填值 |
+| `min` / `max` | number \| null | `null` | **取值约束**：数值上下限（`type` 为 `string` / `bool` / `raw` 时不允许）。见 3.5 |
+| `choices` | list \| null | `null` | **取值约束**：允许的取值集合，按文本比较，会写成 Excel 下拉列表。见 3.5 |
+| `pattern` | str \| null | `null` | **取值约束**：整串匹配的正则（`re.fullmatch`）。见 3.5 |
 
 同名变量在 `global` 与 `local` 中重复是允许的（local 覆盖 global），但 `validate` 会给出警告；
 同一作用域内重名会直接报错。
@@ -143,6 +146,60 @@ name: case_name      # ❌ 报错：保留名（渲染时由程序注入）
 `Global Parameter` / `Local Parameter` 表里多出来的变量行，即使 YAML 未定义也会被读进上下文
 （按 `auto` 类型）。这让临时参数不用改 YAML 就能用；但 `validate` 会对"模板引用了但 YAML 未定义"的名字给出警告，
 建议确认无误后补回 YAML，避免参数长期游离在配置之外。
+
+### 3.5 取值约束：`min` / `max` / `choices` / `pattern`
+
+工具会检查"变量有没有定义、类型对不对"，但**不看值** —— 把吃水 `20.559` 手滑打成 `205.59`，
+模板照样渲染，`check` 也只会说"与参数一致"。取值约束就是为了堵这一类**静默的错误交付物**。
+
+```yaml
+variables:
+  global:
+    - name: draft
+      type: float
+      default: 20.559
+      min: 0
+      max: 50                 # 数值范围
+    - name: mcu
+      default: "STM32F103"
+      pattern: "STM32[A-Z][0-9]{3}[A-Z]{0,2}"     # 整串匹配的正则
+  local:
+    - name: kind
+      choices: ["EXT", "INT"] # 枚举；Excel 里变成下拉列表
+    - name: n_cyl
+      type: int
+      min: 1
+      max: 8
+```
+
+**两道闸，判据是第二道**：
+
+| 闸 | 在哪 | 挡什么 |
+| --- | --- | --- |
+| Excel 数据有效性 | `init` 时写进工作簿 | 下拉列表 / 数值范围，**帮人填对**。`choices` → 下拉；`min` / `max` → 数值范围（`type: int` 用整数校验） |
+| `check_value_constraints` | `render` / `validate` / `check` 每次读表后 | **判据**。挡住粘贴、脚本写入、别人发来的老文件，以及 Excel 校验表达不了的情况（正则） |
+
+几个要点：
+
+* **空值也算不合格**。声明了约束就意味着"必须给一个合法取值"。这正好治了"新插一个空 Case 列
+  悄悄落进某个规则集"的老问题（见 §9.2）：`kind` 一旦有 `choices` 又没给 `default`，
+  新列在渲染时就会报"取值（空）不在允许列表里"。
+* **按文本比较**：`choices: [1, 2]` 里填 `1.0` 也算命中（整数浮点会规范化）。
+* **`min` / `max` 只能给数值类型**（`int` / `float` / `auto`）。写成 `type: string` 又加范围会在配置阶段报错。
+* **正则只由工具检查**：Excel 的数据有效性没有正则，所以 `pattern` 不会写进工作簿（写一个乱报错的校验不如不写）。
+* **`default` 也要满足约束**（YAML 自己写的值写错了一样是配置错误）。反过来，**不给 `default` 是允许的** ——
+  那表示"这一格必须去表里填"。
+* **派生参数不能加约束**：它的值是算出来的，请在表达式里约束（`derived: "max(x, 0)"`）。
+* **下拉列表的两个硬限制**（超出会直接报错，不会静默失效）：选项里不能有逗号；所有选项拼起来不超过 255 字符。
+
+报错长这样，一次列出全部问题并指名道姓：
+
+```
+ERROR 参数取值不满足变量声明的约束，共 2 处：
+  Global Parameter 第 2 行 'draft'：取值 205.59 大于上限 50
+  Local Parameter 第 F 列 'EXT-T15' 第 2 行 'kind'：取值 （空） 不在允许列表 EXT/INT 里
+  → 改 Excel 里的取值，或放宽 YAML 里的 min / max / choices / pattern
+```
 
 ---
 

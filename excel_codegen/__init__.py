@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from .excel_io import (
     check_required_sheets,
+    check_value_constraints,
     create_template,
     input_fingerprint,
     load_workbook_file,
@@ -121,6 +122,7 @@ __all__ = [
     "load_config",
     # excel io
     "check_required_sheets",
+    "check_value_constraints",
     "create_template",
     "input_fingerprint",
     "load_workbook_file",

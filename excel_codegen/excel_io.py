@@ -28,6 +28,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 
 from .derived import (
@@ -227,6 +228,7 @@ def _build_global_sheet(worksheet: Worksheet, config: ProjectConfig) -> None:
             value_cell = worksheet.cell(row=row, column=_GLOBAL_COL["value"], value=variable.default)
             value_cell.fill = _INPUT_FILL
             value_cell.alignment = _TOP_ALIGN
+            _add_value_validation(worksheet, variable, [value_cell.coordinate])
         worksheet.cell(
             row=row, column=_GLOBAL_COL["description"], value=_described(variable)
         )
@@ -244,6 +246,7 @@ def _build_local_sheet(worksheet: Worksheet, config: ProjectConfig, case_names: 
         worksheet.cell(row=row, column=_LOCAL_COL["description"], value=_described(variable))
         worksheet.cell(row=row, column=_LOCAL_COL["prefix"], value=variable.prefix)
         worksheet.cell(row=row, column=_LOCAL_COL["suffix"], value=variable.suffix)
+        input_cells: list[str] = []
         for offset in range(len(case_names)):
             column = FIRST_CASE_COLUMN + offset
             cell = worksheet.cell(row=row, column=column)
@@ -255,12 +258,75 @@ def _build_local_sheet(worksheet: Worksheet, config: ProjectConfig, case_names: 
                 cell.value = variable.default
                 cell.fill = _INPUT_FILL
                 cell.alignment = _TOP_ALIGN
+                input_cells.append(cell.coordinate)
+        _add_value_validation(worksheet, variable, input_cells)
     for index, width in enumerate((24, 40, 16, 16), start=1):
         worksheet.column_dimensions[column_index_to_letter(index)].width = width
     for offset, name in enumerate(case_names):
         column = FIRST_CASE_COLUMN + offset
         worksheet.column_dimensions[column_index_to_letter(column)].width = max(16, min(36, len(name) + 14))
     worksheet.freeze_panes = "E2"
+
+
+def _add_value_validation(
+    worksheet: Worksheet, variable: VariableDef, cells: Sequence[str]
+) -> None:
+    """把变量声明的取值约束写成 Excel 的**数据有效性**（下拉列表 / 数值范围）。
+
+    这是"挡在输入口"的第一道闸，方便人填；**判据仍然是** :func:`check_value_constraints` ——
+    读回来的取值一律再查一遍。原因：数据有效性挡不住粘贴、脚本写入和别人发来的老文件，
+    而且我们允许空单元格（``allow_blank``），而工具侧认为"声明了约束就不许为空"。
+
+    约束本身表达不了时（下拉列表的选项里带逗号、或拼起来超过 Excel 的 255 字符上限）
+    直接报错 —— 与其写一个悄悄失效的校验，不如让人知道。
+    """
+    if not cells or not variable.has_constraints:
+        return
+    if not variable.choices and variable.min is None and variable.max is None:
+        # 只有 pattern：Excel 的数据有效性没有正则，写不出有意义的校验。
+        # 不写总比写一个乱报错的强 —— pattern 由 check_value_constraints 在 render/validate 时检查。
+        return
+
+    if variable.choices:
+        allowed = [to_text(item) for item in variable.choices]
+        if any("," in item for item in allowed):
+            raise ExcelError(
+                f"变量 {variable.name!r} 的 choices 里有取值含逗号（{', '.join(allowed)}）—— "
+                "Excel 下拉列表用逗号分隔，表达不了；请改写取值或去掉 choices"
+            )
+        joined = ",".join(allowed)
+        if len(joined) > 255:
+            raise ExcelError(
+                f"变量 {variable.name!r} 的 choices 合计超过 Excel 下拉列表的 255 字符上限"
+                f"（当前 {len(joined)}）；请减少选项，或去掉 choices（取值仍会在 render / validate 时检查）"
+            )
+        validation = DataValidation(type="list", formula1=f'"{joined}"', allow_blank=True)
+    else:
+        if variable.min is not None and variable.max is not None:
+            operator, low, high = "between", variable.min, variable.max
+        elif variable.min is not None:
+            operator, low, high = "greaterThanOrEqual", variable.min, None
+        else:
+            operator, low, high = "lessThanOrEqual", variable.max, None
+        validation = DataValidation(
+            type="whole" if variable.type == "int" else "decimal",
+            operator=operator,
+            formula1=to_text(low),
+            formula2=None if high is None else to_text(high),
+            allow_blank=True,
+        )
+
+    prompt = variable.constraint_text
+    validation.promptTitle = variable.name
+    validation.prompt = prompt
+    validation.showInputMessage = True
+    validation.errorTitle = "取值不合规"
+    validation.error = f"{variable.name}：{prompt}"
+    validation.showErrorMessage = True
+
+    worksheet.add_data_validation(validation)
+    for coordinate in cells:
+        validation.add(coordinate)
 
 
 # --------------------------------------------------------------------------- #
@@ -875,6 +941,55 @@ def _coerce(value: Any, kind: str, label: str) -> Any:
             return False
         raise ExcelError(f"变量 {label} 的值 {value!r} 无法转换为 bool")
     return value
+
+
+def check_value_constraints(
+    config: ProjectConfig,
+    global_values: Mapping[str, VarValue],
+    cases: Sequence[CaseData],
+) -> None:
+    """校验表里填的取值是否满足变量声明的 ``min`` / ``max`` / ``choices`` / ``pattern``。
+
+    为什么要它：工具此前只查"变量有没有定义、类型对不对"，**完全不看值** —— 把
+    ``20.559`` 手滑打成 ``205.59`` 会一路渲染成错误代码，而 ``check`` 只会说"与参数一致"。
+    声明了约束就一定查，**空值也算不合格**（``choices`` 意味着"必须给一个合法取值"）。
+
+    不满足时抛 :class:`ExcelError`，一次列全部问题并指出是哪张表、哪一列、哪个变量。
+    """
+    problems: list[str] = []
+    global_sheet = config.excel.sheets.global_
+
+    for row, variable in enumerate(config.global_variables, start=2):
+        if variable.is_derived or not variable.has_constraints:
+            continue
+        value = global_values.get(variable.name)
+        if value is None:
+            continue
+        problem = variable.value_problem(value.text)
+        if problem:
+            problems.append(f"  {global_sheet} 第 {row} 行 '{variable.name}'：{problem}")
+
+    local_sheet = config.excel.sheets.local
+    for case in cases:
+        for row, variable in enumerate(config.local_variables, start=2):
+            if variable.is_derived or not variable.has_constraints:
+                continue
+            value = case.values.get(variable.name)
+            if value is None:
+                continue
+            problem = variable.value_problem(value.text)
+            if problem:
+                column = column_index_to_letter(case.column)
+                problems.append(
+                    f"  {local_sheet} 第 {column} 列 '{case.name}' 第 {row} 行 '{variable.name}'：{problem}"
+                )
+
+    if problems:
+        raise ExcelError(
+            f"参数取值不满足变量声明的约束，共 {len(problems)} 处：\n"
+            + "\n".join(problems)
+            + "\n  → 改 Excel 里的取值，或放宽 YAML 里的 min / max / choices / pattern"
+        )
 
 
 # --------------------------------------------------------------------------- #

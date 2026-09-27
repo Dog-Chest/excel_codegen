@@ -42,6 +42,7 @@ uv run excel-codegen render -c examples/example.yaml -x examples/template.xlsx -
 | **Prefix + Value + Suffix** | `{{ port }}` → `GPIOA_PORT`，`{{ port.value }}` → `A`；空格有意义（`suffix: " m"` 就是 `" m"`） |
 | **两种输出引擎** | `snapshot` 写文本快照；`excel` 写 **Excel 公式** —— 改参数后打开 Excel 即重算，**不用再跑脚本** |
 | **派生参数** | `derived: "rho * g"` 让参数引用参数（同工况的 local + global），参数表里是活公式 |
+| **取值约束** | `min` / `max` / `choices` / `pattern` 声明合法取值：Excel 里变下拉列表与数值范围，`render` / `validate` / `check` 每次读表都再查一遍 —— 挡住"手滑把 20.559 打成 205.59 却照样生成代码" |
 | **一本工作簿放多套规则** | `case_filter: "kind == 'EXT'"` 让模板只作用于匹配的工况，共用一张 Global 表 |
 | **可导出代码文件** | 文件名支持 Jinja2（`uart_init_{{ case_name }}.c`），一次生成多份 |
 | **自带说明与指纹** | 工作簿里有 `HOWTO` 表与生成指纹；`excel-codegen check` 判定"表里的代码是否已过期"，**CI 可用** |

@@ -12,7 +12,13 @@ from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 from jinja2 import Environment, TemplateError, TemplateSyntaxError, UndefinedError, meta
 
-from .excel_io import check_required_sheets, load_workbook_file, read_cases, read_global_values
+from .excel_io import (
+    check_required_sheets,
+    check_value_constraints,
+    load_workbook_file,
+    read_cases,
+    read_global_values,
+)
 from .jinja_env import build_environment, pvs, wrap
 from .models import CaseData, ProjectConfig, RenderResult, TemplateDef
 from .utils import ExcelError, RenderError, VarValue, safe_filename, to_text
@@ -266,6 +272,9 @@ def render_all(
         )
     finally:
         workbook.close()
+
+    # 取值约束（min / max / choices / pattern）：声明了就一定查，别让手滑的数字生成出错误代码
+    check_value_constraints(config, global_values, cases)
 
     if only_cases:
         wanted = [to_text(name).strip() for name in only_cases]
