@@ -792,13 +792,24 @@ def write_howto_sheet(
         add(f"  2.  {config.excel.sheets.local} 从 E 列起：每个 Case 一列，右拉复制即可增加。", _HOWTO_NOTE, None)
     else:
         add(f"  2.  {config.excel.sheets.local} 从第 2 行起：每个 Case 一行，下拉复制即可增加。", _HOWTO_NOTE, None)
-    add("  3.  改完参数后回到命令行执行：", _HOWTO_NOTE, None)
-    add(
-        f"          excel-codegen render -c <配置>.yaml -x {config.excel.output} --write-excel",
-        _HOWTO_MONO,
-        _HOWTO_FILL,
-    )
-    add("      只想导出代码文件就换成 --outdir <目录>；只预览不写回则什么参数都不加。", _HOWTO_NOTE, None)
+    all_formula = bool(config.templates) and all(item.engine == "excel" for item in config.templates)
+    if all_formula:
+        # 全公式模式（默认）：改完参数 Output 表自己就重算了，不需要跑命令 —— 别再让人白跑一趟
+        add("  3.  改完参数直接看输出表：里面是公式，Excel 会自己重算，**不用跑任何命令**。", _HOWTO_NOTE, None)
+        add("      只有『要把代码导成文件』时才回到命令行：", _HOWTO_NOTE, None)
+        add(
+            f"          excel-codegen render -c <配置>.yaml -x {config.excel.output} --outdir <目录>",
+            _HOWTO_MONO,
+            _HOWTO_FILL,
+        )
+    else:
+        add("  3.  改完参数后回到命令行执行：", _HOWTO_NOTE, None)
+        add(
+            f"          excel-codegen render -c <配置>.yaml -x {config.excel.output} --write-excel",
+            _HOWTO_MONO,
+            _HOWTO_FILL,
+        )
+        add("      只想导出代码文件就换成 --outdir <目录>；只预览不写回则什么参数都不加。", _HOWTO_NOTE, None)
     if config.scripts_enabled:
         stem = Path(config.excel.output).stem
         add(

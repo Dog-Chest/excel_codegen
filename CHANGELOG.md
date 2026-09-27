@@ -29,8 +29,15 @@
 9 个 `abs_fpi/probes/probe_*.yaml`（记录的是快照模式下的行为）、若干测试夹具。
 `examples/example_formula.yaml` 那两行 `engine: "excel"` 现在只是"写出来更清楚"。
 
-新增 `tests/test_engine_default.py` 10 项（默认值 / 默认写公式 / 显式 snapshot /
-建表期报错 / 报错里给出路 / 示例与默认值一致）。
+**`init` 生成完就是可用的工作簿**：默认 `--prerender`，建完骨架顺手把输出写一遍 ——
+公式模式下输出表里是活公式，于是"一条命令生成 → 打开 Excel 干活"，不用再跑
+`render --write-excel`。参数还是默认值、暂时过不了取值约束 / `asserts` 时**跳过预填并说明原因**
+（骨架照常生成，`init` 不失败）。HOWTO 表第 3 步也按引擎改写：全公式时说"改完直接看输出表，
+不用跑命令"。新增 `--no-prerender` 只要骨架。
+
+新增 `tests/test_engine_default.py` 13 项（默认值 / 默认写公式 / 显式 snapshot /
+建表期报错 / 报错里给出路 / `init` 预填与 `--no-prerender` / 预填尽力而为 /
+示例与默认值一致）。
 
 ### 1. 行列风格：`excel.local_direction`
 
@@ -123,7 +130,7 @@
 新增 `tests/test_nastran_case_control.py` 17 项 + `tests/test_renderer.py` 2 项 +
 `tests/test_formula_eval.py` 1 项。
 `examples/generated_nastran/` 是示例工作簿的实测产物（含拼好的 `case_control.deck`）。
-**测试 268 → 323 项。**
+**测试 268 → 326 项。**
 
 ---
 

@@ -182,3 +182,97 @@ def test_shipped_formula_example_needs_no_engine_line(tmp_path: Path) -> None:
     )
     without = load_config(stripped)
     assert [t.engine for t in without.templates] == [t.engine for t in config.templates]
+
+
+# --------------------------------------------------------------------------- #
+# init 生成完就能用（不用再跑第二条命令）
+# --------------------------------------------------------------------------- #
+def _cli():
+    from typer.testing import CliRunner
+
+    from excel_codegen.cli import app
+
+    return CliRunner(), app
+
+
+def test_init_prefills_the_output_so_the_workbook_is_ready(tmp_path: Path) -> None:
+    """`init` 之后直接打开 Excel 就能用：输出表里已经是活公式，check 也立刻一致。"""
+    path = _write(tmp_path, '  - name: t\n    output_sheet: "Output"\n    code: |\n      L = {{ L }}\n')
+    book = tmp_path / "t.xlsx"
+    runner, app = _cli()
+
+    result = runner.invoke(app, ["init", "-c", str(path), "-o", str(book), "--cases", "2"])
+    assert result.exit_code == 0, result.output
+    assert "已写入公式" in result.output
+    assert "不用再跑命令" in result.output
+
+    workbook = load_workbook(book)
+    try:
+        value = workbook["Output"]["B2"].value
+        assert isinstance(value, str) and value.startswith("=") and "INDEX" in value
+    finally:
+        workbook.close()
+
+    # 生成完就一致 —— 不需要先手跑一次 render
+    result = runner.invoke(app, ["check", "-c", str(path), "-x", str(book)])
+    assert result.exit_code == 0, result.output
+
+
+def test_init_can_skip_prefill(tmp_path: Path) -> None:
+    """--no-prerender：只要骨架（例如想先自己填一遍参数）。"""
+    path = _write(tmp_path, '  - name: t\n    output_sheet: "Output"\n    code: |\n      L = {{ L }}\n')
+    book = tmp_path / "t.xlsx"
+    runner, app = _cli()
+
+    result = runner.invoke(app, ["init", "-c", str(path), "-o", str(book), "--cases", "2", "--no-prerender"])
+    assert result.exit_code == 0, result.output
+    assert "还没有写输出" in result.output
+
+    workbook = load_workbook(book)
+    try:
+        assert workbook["Output"]["B2"].value is None
+    finally:
+        workbook.close()
+
+
+def test_init_prefill_is_best_effort(tmp_path: Path) -> None:
+    """默认值过不了跨变量校验时**不能**让 init 失败：骨架照给，只跳过预填并说明原因。"""
+    body = (
+        "variables:\n"
+        "  global: []\n"
+        "  local:\n"
+        "    - name: inner\n"
+        "      type: float\n"
+        "      default: 30\n"
+        "    - name: outer\n"
+        "      type: float\n"
+        "      default: 10\n"
+        "asserts:\n"
+        '  - "inner.value <= outer.value"\n'  # 默认值 30 > 10，填表时才会被发现
+        'templates:\n  - name: t\n    output_sheet: "Output"\n    code: |\n'
+        "      inner={{ inner }} outer={{ outer }}\n"
+    )
+    path = tmp_path / "p.yaml"
+    path.write_text(
+        'version: 1\nexcel:\n  output: "t.xlsx"\n  template_sheet: null\n  howto_sheet: null\n'
+        '  sheets:\n    global: "Global Parameter"\n    local: "Local Parameter"\n    outputs: ["Output"]\n' + body,
+        encoding="utf-8",
+    )
+    book = tmp_path / "t.xlsx"
+    runner, app = _cli()
+
+    result = runner.invoke(app, ["init", "-c", str(path), "-o", str(book), "--cases", "1"])
+    assert result.exit_code == 0, result.output
+    assert "跳过预填输出" in result.output
+    assert book.exists()
+    # 骨架照样能用：填好参数之后 render 会过
+    workbook = load_workbook(book)
+    try:
+        sheet = workbook["Local Parameter"]
+        rows = {sheet.cell(row=r, column=1).value: r for r in range(2, sheet.max_row + 1)}
+        sheet.cell(row=rows["outer"], column=5, value=40)
+        workbook.save(book)
+    finally:
+        workbook.close()
+    result = runner.invoke(app, ["render", "-c", str(path), "-x", str(book), "--write-excel"])
+    assert result.exit_code == 0, result.output

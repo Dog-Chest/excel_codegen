@@ -271,10 +271,16 @@ def test_cli_check_reports_stale_and_fresh(tmp_path: Path, config_text: str) -> 
 
 
 def test_cli_check_detects_missing_render(tmp_path: Path, config_text: str) -> None:
-    """从没渲染过的工作簿：check 要报"没有记录"，并以 1 退出。"""
+    """从没渲染过的工作簿：check 要报"没有记录"，并以 1 退出。
+
+    （``init`` 默认会顺手预填输出，所以要显式 ``--no-prerender`` 才拿得到"纯骨架"。）
+    """
     config_path = write_config(tmp_path, config_text)
     excel_path = tmp_path / "template.xlsx"
-    runner.invoke(app, ["init", "--config", str(config_path), "--output", str(excel_path)])
+    runner.invoke(
+        app,
+        ["init", "--config", str(config_path), "--output", str(excel_path), "--no-prerender"],
+    )
 
     result = runner.invoke(app, ["check", "--config", str(config_path), "--excel", str(excel_path)])
     assert result.exit_code == 1

@@ -125,6 +125,83 @@ def _parse_cases(value: str) -> int | list[str]:
     return names
 
 
+def _prefill_output(
+    project: ProjectConfig,
+    target: Path,
+    *,
+    template_sheet: bool = True,
+    howto_sheet: bool = True,
+) -> str:
+    """建完表顺手把输出也写一遍，返回"给用户看的一句话"。
+
+    为什么要它：本工具的用法是"生成一次工作簿，之后就在 Excel 里干活"。公式模式下
+    输出表里是活公式，所以**建完就能用**，不该再让人跑第二条命令。
+
+    参数还是 YAML 默认值，可能暂时过不了取值约束 / ``asserts``（比如"舱高不能超过型深"，
+    而默认值恰好不合）。这时**不能**让 ``init`` 失败 —— 骨架照常给，只是跳过预填并说明原因。
+    """
+    from .renderer import render_all
+
+    try:
+        output = render_all(project, target)
+        # `init --no-howto` 时别把 HOWTO 表写回来（write_results 会照着配置建）
+        write_results(
+            target,
+            project,
+            output.results,
+            command="excel-codegen init",
+            update_howto=howto_sheet,
+        )
+        _drop_suppressed_sheets(project, target, template_sheet=template_sheet, howto_sheet=howto_sheet)
+    except CodeGenError as exc:
+        first = str(exc).strip().splitlines()[0]
+        console.print(
+            Panel(
+                f"[yellow]跳过预填输出[/]：{first}\n"
+                "（多半是默认值还没填全 / 过不了取值约束或 asserts —— 骨架已生成，"
+                "填好参数后跑 render --write-excel 即可）",
+                border_style="yellow",
+            )
+        )
+        return "骨架（预填被跳过，见上方提示）"
+
+    formulas = sum(1 for item in project.templates if item.engine == "excel")
+    if formulas == len(project.templates):
+        return "已写入公式 —— 打开 Excel 改参数即自动重算，不用再跑命令 ✓"
+    if formulas == 0:
+        return "已写入文本快照 —— 改参数后要重跑 render --write-excel"
+    return f"已写入（其中 {formulas} 个模板是公式，其余是快照）"
+
+
+def _drop_suppressed_sheets(
+    project: ProjectConfig,
+    target: Path,
+    *,
+    template_sheet: bool,
+    howto_sheet: bool,
+) -> None:
+    """``init --no-template-sheet`` / ``--no-howto`` 时，把预填过程中建回来的表删掉。
+
+    ``write_results`` 是照着**配置**记录元信息的（它不知道本次 ``init`` 关掉了哪张表），
+    所以这里按命令行开关收尾 —— 否则"我不想生成说明表"会被预填偷偷推翻。
+    """
+    unwanted = []
+    if not template_sheet and project.excel.template_sheet:
+        unwanted.append(project.excel.template_sheet)
+    if not howto_sheet and project.excel.howto_sheet:
+        unwanted.append(project.excel.howto_sheet)
+    if not unwanted:
+        return
+    workbook = load_workbook_file(target)
+    try:
+        for name in unwanted:
+            if name in workbook.sheetnames:
+                workbook.remove(workbook[name])
+        workbook.save(target)
+    finally:
+        workbook.close()
+
+
 def _case_axis_label(project: ProjectConfig) -> str:
     """工况轴的说法：横向是"Case 列"，纵向是"Case 行"。"""
     return "Case 列" if project.excel.local_direction == "horizontal" else "Case 行"
@@ -203,8 +280,18 @@ def init_command(
         "--scripts/--no-scripts",
         help="是否在工作簿旁边生成一键刷新脚本（<工作簿名>_render.bat / .sh）",
     ),
+    prerender: bool = typer.Option(
+        True,
+        "--prerender/--no-prerender",
+        help="建完表就先把输出写进去（默认打开：公式模式下打开工作簿即可用）",
+    ),
 ) -> None:
-    """根据 YAML 生成 Excel 参数填写模板。"""
+    """根据 YAML 生成 Excel 参数填写模板。
+
+    默认（``--prerender``）建完骨架就把输出也写一遍 —— 公式模式下输出表里是活公式，
+    于是"生成完就能打开 Excel 干活"，不需要再跑一条命令。参数没填全、
+    暂时过不了约束/asserts 时会跳过这一步并提示（骨架照常生成）。
+    """
     try:
         spec = _parse_cases(cases)
         project = _load_project(config)
@@ -223,6 +310,10 @@ def init_command(
     except (ValueError, OSError) as exc:
         raise _fail(exc) from exc
 
+    prefill_note = "（还没有写输出）"
+    if prerender:
+        prefill_note = _prefill_output(project, target, template_sheet=template_sheet, howto_sheet=howto_sheet)
+
     table = Table(title="Excel 模板已生成", show_header=True, header_style="bold cyan")
     table.add_column("项目", style="bold")
     table.add_column("内容")
@@ -233,6 +324,7 @@ def init_command(
     table.add_row(_case_axis_label(project), ", ".join(_case_names_of(spec)))
     table.add_row("说明表", project.excel.howto_sheet or "（未生成）")
     table.add_row("模板数", str(len(project.templates)))
+    table.add_row("输出内容", prefill_note)
     console.print(table)
     console.print(
         Panel(

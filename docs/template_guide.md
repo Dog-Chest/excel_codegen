@@ -486,7 +486,7 @@ A25: cases         B25: Case1
 
 ### 6.5 HOWTO 表（第一张）
 
-`init` 生成、`render --write-excel` 刷新（`--no-howto` / `excel.howto_sheet: null` 可关闭）。
+`init` 生成（会连同输出一起预填）、`render --write-excel` 刷新（`--no-howto` / `excel.howto_sheet: null` 可关闭）。
 里面写的是"打开这个文件的人需要知道的事"：
 
 - 三步怎么用（Global 填 B 列 / Local 从 E 列起填 Case / 改完回命令行跑哪条命令）；

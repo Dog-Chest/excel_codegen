@@ -28,13 +28,13 @@
 ## 快速开始
 
 ```bash
-# 1) 生成 Excel 表单（模板不写 engine 时默认就是公式模式）
+# 生成 Excel（模板不写 engine 时默认就是公式模式；建完表就顺手把输出也写好了）
 uv run excel-codegen init -c examples/example_formula.yaml -o examples/template_formula.xlsx --cases 2
 
-# 2) 打开 Excel 填参数：Global Parameter 的 B 列、Local Parameter 的 E/F 列
-#    Output 表里是公式 —— 改完参数**它自己就重算了**，不需要第 3 步
+# 打开它填参数：Global Parameter 的 B 列、Local Parameter 的 E/F 列
+# Output 表里是活公式 —— 改完参数**它自己就重算了**，不需要任何命令
 
-# 3) 只有「要把代码导成文件」时才需要命令行
+# 只有「要把代码导成文件」时才回到命令行
 uv run excel-codegen render -c examples/example_formula.yaml -x examples/template_formula.xlsx \
     --outdir examples/generated_formula
 ```
@@ -122,7 +122,7 @@ pip install -e ".[dev]"
 ## 开发
 
 ```bash
-uv run pytest --cov          # 323 项用例 + 覆盖率门槛（85%）
+uv run pytest --cov          # 326 项用例 + 覆盖率门槛（85%）
 uv run ruff check .          # lint
 uv run ruff format --check . # 格式
 uv run mypy                  # 类型检查

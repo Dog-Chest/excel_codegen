@@ -7,7 +7,12 @@
 
 ## `excel-codegen init`
 
-生成 Excel 表单骨架。
+生成 Excel 表单。
+
+默认（`--prerender`）建完骨架就**顺手把输出也写一遍** —— 公式模式下输出表里是活公式，
+所以"`init` 完就能打开 Excel 干活"，不需要再跑一条 `render --write-excel`。
+参数还是 YAML 默认值、暂时过不了取值约束或 `asserts` 时会**跳过预填并说明原因**
+（骨架照常生成，`init` 不会因此失败）。
 
 | 选项 | 说明 | 默认 |
 | --- | --- | --- |
@@ -19,6 +24,7 @@
 | `--howto / --no-howto` | 是否生成 `HOWTO` 说明表（放在第一张） | 生成 |
 | `--comments / --no-comments` | 是否给「变量名」那一格加 **Excel 批注**（描述 / 单位 / 类型 / 约束 / 前缀后缀 / 派生表达式 / 模板里怎么引用） | 生成 |
 | `--scripts / --no-scripts` | 是否在工作簿旁边生成**一键刷新脚本** `<工作簿名>_render.bat` / `.sh`（指南 §6.6） | 生成 |
+| `--prerender / --no-prerender` | 建完表就把输出写进去（公式模式下工作簿因此开箱可用）；`--no-prerender` 只要骨架 | 预填 |
 
 ## `excel-codegen render`
 
