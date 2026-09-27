@@ -130,6 +130,9 @@ class VariableDef(BaseModel):
 
     name: str
     description: str = ""
+    #: 单位（纯文档，只写进 Excel 批注与 `validate` 的清单；**不会**出现在生成的文本里）。
+    #: 单位要进生成结果请用 ``suffix``（``suffix: " m"`` → ``340 m``）。
+    unit: str = ""
     default: Any = ""
     prefix: str = ""
     suffix: str = ""
@@ -162,7 +165,7 @@ class VariableDef(BaseModel):
             raise ValueError(f"变量名 {name!r} 是保留字（渲染时由程序注入），请改名")
         return name
 
-    @field_validator("description", "prefix", "suffix", mode="before")
+    @field_validator("description", "unit", "prefix", "suffix", mode="before")
     @classmethod
     def _to_str(cls, value: Any) -> str:
         return "" if value is None else to_text(value)

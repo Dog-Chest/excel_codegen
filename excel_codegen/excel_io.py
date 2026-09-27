@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
@@ -134,6 +135,7 @@ def create_template(
     overwrite: bool = False,
     include_template_sheet: bool | None = None,
     include_howto_sheet: bool | None = None,
+    include_comments: bool = True,
     base_dir: str | Path | None = None,
 ) -> Path:
     """按配置生成 Excel 模板文件。
@@ -142,6 +144,7 @@ def create_template(
     :param overwrite: 目标文件已存在时是否覆盖。
     :param include_template_sheet: ``None`` 时遵循配置；``True/False`` 强制生成/不生成隐藏 Template 表。
     :param include_howto_sheet: ``None`` 时遵循配置；``True/False`` 强制生成/不生成 HOWTO 说明表。
+    :param include_comments: 是否给"变量名"那一格加批注（描述 / 单位 / 约束 / 前缀后缀 / 派生表达式）。
     :param base_dir: 解析 ``template_file`` 相对路径的基准目录，默认使用 ``config.source_dir``。
     """
     target = Path(path)
@@ -162,8 +165,8 @@ def create_template(
 
     global_name = config.excel.sheets.global_
     local_name = config.excel.sheets.local
-    _build_global_sheet(workbook.create_sheet(global_name), config)
-    _build_local_sheet(workbook.create_sheet(local_name), config, case_names)
+    _build_global_sheet(workbook.create_sheet(global_name), config, comments=include_comments)
+    _build_local_sheet(workbook.create_sheet(local_name), config, case_names, comments=include_comments)
 
     for name in config.excel.sheets.outputs:
         workbook.create_sheet(name)
@@ -216,10 +219,12 @@ def _normalise_case_names(cases: int | Sequence[str]) -> list[str]:
     return names
 
 
-def _build_global_sheet(worksheet: Worksheet, config: ProjectConfig) -> None:
+def _build_global_sheet(worksheet: Worksheet, config: ProjectConfig, *, comments: bool = True) -> None:
     _write_headers(worksheet, GLOBAL_HEADERS)
     for row, variable in enumerate(config.global_variables, start=2):
-        worksheet.cell(row=row, column=_GLOBAL_COL["name"], value=variable.name)
+        name_cell = worksheet.cell(row=row, column=_GLOBAL_COL["name"], value=variable.name)
+        if comments:
+            _attach_comment(name_cell, variable, where="Global 表 B 列（所有 Case 共用）")
         if variable.is_derived:
             _write_derived_cell(
                 worksheet.cell(row=row, column=_GLOBAL_COL["value"]),
@@ -239,10 +244,18 @@ def _build_global_sheet(worksheet: Worksheet, config: ProjectConfig) -> None:
     worksheet.freeze_panes = "A2"
 
 
-def _build_local_sheet(worksheet: Worksheet, config: ProjectConfig, case_names: Sequence[str]) -> None:
+def _build_local_sheet(
+    worksheet: Worksheet,
+    config: ProjectConfig,
+    case_names: Sequence[str],
+    *,
+    comments: bool = True,
+) -> None:
     _write_headers(worksheet, list(LOCAL_HEADERS) + list(case_names))
     for row, variable in enumerate(config.local_variables, start=2):
-        worksheet.cell(row=row, column=_LOCAL_COL["name"], value=variable.name)
+        name_cell = worksheet.cell(row=row, column=_LOCAL_COL["name"], value=variable.name)
+        if comments:
+            _attach_comment(name_cell, variable, where="Local 表 E 列起（一个 Case 一列）")
         worksheet.cell(row=row, column=_LOCAL_COL["description"], value=_described(variable))
         worksheet.cell(row=row, column=_LOCAL_COL["prefix"], value=variable.prefix)
         worksheet.cell(row=row, column=_LOCAL_COL["suffix"], value=variable.suffix)
@@ -264,6 +277,42 @@ def _build_local_sheet(worksheet: Worksheet, config: ProjectConfig, case_names: 
         column = FIRST_CASE_COLUMN + offset
         worksheet.column_dimensions[column_index_to_letter(column)].width = max(16, min(36, len(name) + 14))
     worksheet.freeze_panes = "E2"
+
+
+def _variable_comment(variable: VariableDef, *, where: str) -> str:
+    """变量名那格的批注正文：把"这一格填什么"一次说清。"""
+    lines: list[str] = []
+    if variable.description:
+        lines.append(variable.description)
+        lines.append("")
+    if variable.is_derived:
+        lines.append(f"自动计算：{variable.derived}")
+        lines.append("不用手填；改了它引用的输入后会自动重算。")
+    else:
+        lines.append(f"填写位置：{where}")
+    if variable.unit:
+        lines.append(f"单位：{variable.unit}")
+    lines.append(f"类型：{variable.type}")
+    if variable.has_constraints:
+        lines.append(f"约束：{variable.constraint_text}")
+    if variable.prefix or variable.suffix:
+        lines.append(f"前缀 / 后缀：{variable.prefix!r} / {variable.suffix!r}")
+    if to_text(variable.default) != "":
+        lines.append(f"默认值：{to_text(variable.default)}")
+    lines.append(f"模板里引用：{{{{ {variable.name} }}}}")
+    return "\n".join(lines)
+
+
+def _attach_comment(cell, variable: VariableDef, *, where: str) -> None:
+    """给"变量名"那一格加批注。
+
+    只加在名字格（A 列）而不是每个取值格：取值格已经有数据有效性的输入提示，
+    而 A 列是冻结的、永远可见 —— 鼠标一放就知道这是什么、该填什么、有没有约束。
+    """
+    comment = Comment(_variable_comment(variable, where=where), "excel_codegen")
+    comment.width = 340
+    comment.height = 190
+    cell.comment = comment
 
 
 def _add_value_validation(worksheet: Worksheet, variable: VariableDef, cells: Sequence[str]) -> None:

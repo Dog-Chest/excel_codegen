@@ -17,6 +17,7 @@
 | `-f, --force` | 目标文件已存在时覆盖 | 否 |
 | `--template-sheet / --no-template-sheet` | 是否生成隐藏的 `Template` 表（保存模板原文与元信息） | 生成 |
 | `--howto / --no-howto` | 是否生成 `HOWTO` 说明表（放在第一张） | 生成 |
+| `--comments / --no-comments` | 是否给「变量名」那一格加 **Excel 批注**（描述 / 单位 / 类型 / 约束 / 前缀后缀 / 派生表达式 / 模板里怎么引用） | 生成 |
 
 ## `excel-codegen render`
 

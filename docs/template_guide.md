@@ -67,6 +67,7 @@ Jinja2 语法速查、Excel 表结构与填写规则、输出布局、导出代�
 | --- | --- | --- | --- |
 | `name` | str | — | **必填**。必须是合法标识符 `[A-Za-z_][A-Za-z0-9_]*`，不能是保留名 `case_name` / `template_name` |
 | `description` | str | `""` | 写在 Excel 的描述列，纯注释 |
+| `unit` | str | `""` | 单位，**纯文档**：只写进 Excel 批注与 `validate` 清单，不会出现在生成结果里（要进结果请用 `suffix`） |
 | `default` | any | `""` | 默认值：Excel 单元格留空时使用；`init` 时预填进单元格。**与 `derived` 互斥** |
 | `prefix` | str | `""` | 组合值前缀（写入 Excel 的 Prefix 列，可在 Excel 中覆盖） |
 | `suffix` | str | `""` | 组合值后缀 |

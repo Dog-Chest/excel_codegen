@@ -7,6 +7,34 @@
 
 ---
 
+## 未发布（0.7.0）
+
+发布 PyPI 之前的一轮打磨。按交付顺序记录。
+
+### 0. 发布前必修
+
+| 问题 | 证据与修法 |
+| --- | --- |
+| **sdist 里的测试是坏的** | setuptools 默认只收 `test*.py`，把 `tests/conftest.py` 漏了 —— 解包后 `pytest` 全部 ERROR（`fixture 'config_text' not found`）；`examples/` 与 `docs/` 也不在 sdist 里，而 README 的快速开始指着 `examples/example.yaml`。新增 `MANIFEST.in`（测试带全 + examples/docs 带上 + `prune abs_fpi`）。验证：解包后 195 项全过、示例配置 validate 通过 |
+| **HOWTO 表印着过时的话** | 「公式只做占位符替换」—— 0.6.0 之后公式模式支持行内 `{% if %}` 了，这句会直接印到用户的工作簿上 |
+| **`Documentation` 是占位符** | 填上真地址，并补 `Repository` / `Changelog` / `Issues` |
+| **两个公式求值器让人困惑** | 给 `abs_fpi/verify_excel_engine.py` 的 docstring 加开头警告：它是项目侧的**独立复核**工具；使用者要找的是 `check --values`（文法更全） |
+
+**CI 加了一条守卫**：每次推送都构建 sdist、解包、跑测试、校验示例配置 —— 上面第 1 条坏过一次，不能坏第二次。
+
+### 3. Excel 批注：把"这一格填什么"写在变量名上
+
+`VariableDef` 新增 `unit` 字段（纯文档）；`init` 给**变量名那一格（A 列）**加批注，
+内容是：描述 / 填写位置 / 单位 / 类型 / 约束 / 前缀后缀 / 默认值 / **模板里怎么引用**
+（`{{ draft }}`）；派生参数的批注改说「自动计算：<表达式>，不用手填」。
+
+只加在名字格而不是每个取值格：取值格已经有数据有效性的输入提示，而 A 列是冻结的、
+永远可见。`--comments/--no-comments` 可关。
+
+新增 `tests/test_comments.py` 7 项。
+
+---
+
 ## 0.6.0 — 取值约束 / `extends` / 行内 `{% if %}` / 质量护栏（2026-09-27）
 
 四个功能 + 一道质量闸，共 4 个提交（① 取值约束 → ③ `extends` → ④ 行内 `{% if %}` →
