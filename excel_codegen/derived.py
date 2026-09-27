@@ -26,11 +26,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping, MutableMapping, Sequence
+from collections.abc import Iterable, Mapping, MutableMapping, Sequence
+from typing import Any
 
 from jinja2 import Environment, TemplateError, TemplateSyntaxError, UndefinedError, meta, nodes
 
-from .formula import lookup_expr
 from .jinja_env import build_environment
 from .models import ProjectConfig, VariableDef
 from .utils import RenderError, to_text
@@ -79,9 +79,7 @@ def expression_names(expression: str, *, env: Environment | None = None) -> set[
     try:
         ast = environment.parse("{{ " + expression + " }}")
     except TemplateSyntaxError as exc:
-        raise DerivedError(
-            f"派生表达式语法错误（第 {exc.lineno} 行）：{exc.message}；表达式：{expression!r}"
-        ) from exc
+        raise DerivedError(f"派生表达式语法错误（第 {exc.lineno} 行）：{exc.message}；表达式：{expression!r}") from exc
     return set(meta.find_undeclared_variables(ast))
 
 
@@ -125,7 +123,7 @@ def _find_cycle(deps: Mapping[str, set[str]]) -> list[str]:
 
     def walk(node: str) -> list[str] | None:
         if node in visiting:
-            return visiting[visiting.index(node):] + [node]
+            return [*visiting[visiting.index(node) :], node]
         if node in seen:
             return None
         visiting.append(node)
@@ -168,8 +166,7 @@ def evaluate_derived(
         for name in sorted(expression_names(expression, env=environment)):
             if name in forbidden:
                 raise DerivedError(
-                    f"派生参数 {variable.name!r}（{scope}）引用了 {name!r}：{forbidden[name]}；"
-                    f"表达式：{expression!r}"
+                    f"派生参数 {variable.name!r}（{scope}）引用了 {name!r}：{forbidden[name]}；表达式：{expression!r}"
                 )
         context[variable.name] = _evaluate(expression, context, env=environment, variable=variable)
 
@@ -185,8 +182,7 @@ def _evaluate(
         compiled = env.compile_expression(expression, undefined_to_none=False)
     except TemplateSyntaxError as exc:
         raise DerivedError(
-            f"派生参数 {variable.name!r} 的表达式语法错误（第 {exc.lineno} 行）：{exc.message}；"
-            f"表达式：{expression!r}"
+            f"派生参数 {variable.name!r} 的表达式语法错误（第 {exc.lineno} 行）：{exc.message}；表达式：{expression!r}"
         ) from exc
     try:
         return compiled(**context)
@@ -198,7 +194,7 @@ def _evaluate(
         ) from exc
     except TemplateError as exc:
         raise DerivedError(f"派生参数 {variable.name!r} 求值失败：{exc}；表达式：{expression!r}") from exc
-    except Exception as exc:  # noqa: BLE001 - 表达式里的任意 Python 异常
+    except Exception as exc:
         raise DerivedError(
             f"派生参数 {variable.name!r} 求值失败：{type(exc).__name__}: {exc}；表达式：{expression!r}"
         ) from exc
@@ -210,8 +206,18 @@ def _evaluate(
 _BINOPS = {"+": "+", "-": "-", "*": "*", "/": "/", "**": "^"}
 #: Jinja 的比较运算用的是名字（gt / lteq …），不是符号
 _COMPARE = {
-    "eq": "=", "ne": "<>", "gt": ">", "lt": "<", "gteq": ">=", "lteq": "<=",
-    "==": "=", "!=": "<>", ">=": ">=", "<=": "<=", ">": ">", "<": "<",
+    "eq": "=",
+    "ne": "<>",
+    "gt": ">",
+    "lt": "<",
+    "gteq": ">=",
+    "lteq": "<=",
+    "==": "=",
+    "!=": "<>",
+    ">=": ">=",
+    "<=": "<=",
+    ">": ">",
+    "<": "<",
 }
 #: 表达式里的函数 -> Excel 函数。``int`` 用 ``TRUNC``：Python 的 ``int()`` 向零截断，
 #: 而 Excel 的 ``INT()`` 是向下取整（``int(-2.5)`` 在两边会差 1）。
@@ -246,15 +252,11 @@ def to_excel(
     try:
         ast = environment.parse("{{ " + expression + " }}")
     except TemplateSyntaxError as exc:
-        raise DerivedError(
-            f"派生参数 {name!r} 的表达式语法错误：{exc.message}；表达式：{expression!r}"
-        ) from exc
+        raise DerivedError(f"派生参数 {name!r} 的表达式语法错误：{exc.message}；表达式：{expression!r}") from exc
     body = getattr(ast, "body", [])
     if len(body) != 1 or not isinstance(body[0], nodes.Output) or len(body[0].nodes) != 1:
         raise DerivedError(f"派生参数 {name!r} 的表达式不是单个表达式：{expression!r}")
-    return _translate(
-        body[0].nodes[0], name=name, resolve=resolve, env=environment, condition=condition
-    )
+    return _translate(body[0].nodes[0], name=name, resolve=resolve, env=environment, condition=condition)
 
 
 def _translate(node, *, name: str, resolve, env: Environment, condition: bool) -> str:
@@ -267,9 +269,7 @@ def _translate(node, *, name: str, resolve, env: Environment, condition: bool) -
         # 该怎么把一个"取值 / 前缀"映射成单元格引用。老的回调只收一个参数，用 TypeError 兜住。
         inner = node.node
         if not isinstance(inner, nodes.Name):
-            raise DerivedNotTranslatable(
-                f"表达式 {name!r} 里的 .{node.attr} 只能接在变量名后面"
-            )
+            raise DerivedNotTranslatable(f"表达式 {name!r} 里的 .{node.attr} 只能接在变量名后面")
         try:
             return resolve(inner.name, node.attr)
         except TypeError as exc:
@@ -279,8 +279,7 @@ def _translate(node, *, name: str, resolve, env: Environment, condition: bool) -
             ) from exc
     if isinstance(node, nodes.Concat):
         return "&".join(
-            f"({_translate(item, name=name, resolve=resolve, env=env, condition=False)})"
-            for item in node.nodes
+            f"({_translate(item, name=name, resolve=resolve, env=env, condition=False)})" for item in node.nodes
         )
     # ⚠ and / or 必须排在 BinExpr **前面**：jinja2 里 ``And`` / ``Or`` 是 ``BinExpr`` 的子类，
     # 先命中 BinExpr 分支的话它们会被当成"不支持的运算符"（这段曾经是死代码，见 0.6.0 修复）。
@@ -301,9 +300,7 @@ def _translate(node, *, name: str, resolve, env: Environment, condition: bool) -
         if operator == "%":
             return f"MOD({left},{right})"
         if operator == "//":
-            raise DerivedNotTranslatable(
-                f"派生参数 {name!r} 用了 //（整除）：Excel 没有等价运算，请改用 / 或 round()"
-            )
+            raise DerivedNotTranslatable(f"派生参数 {name!r} 用了 //（整除）：Excel 没有等价运算，请改用 / 或 round()")
         if operator not in _BINOPS:
             raise DerivedNotTranslatable(f"派生参数 {name!r} 用了不支持的运算符 {operator!r}")
         return f"({left}{_BINOPS[operator]}{right})"
@@ -314,8 +311,8 @@ def _translate(node, *, name: str, resolve, env: Environment, condition: bool) -
     if isinstance(node, nodes.Not):
         if not condition:
             raise DerivedNotTranslatable(f"派生参数 {name!r} 的 not 只能用在条件表达式里")
-        inner = _translate(node.node, name=name, resolve=resolve, env=env, condition=True)
-        return f"NOT({inner})"
+        inner_excel = _translate(node.node, name=name, resolve=resolve, env=env, condition=True)
+        return f"NOT({inner_excel})"
     if isinstance(node, nodes.Compare):
         return _translate_compare(node, name=name, resolve=resolve, env=env)
     if isinstance(node, nodes.CondExpr):
@@ -380,13 +377,9 @@ def _translate_call(node, *, name: str, resolve, env: Environment) -> str:
         )
     if function_name not in _FUNCS:
         raise DerivedNotTranslatable(
-            f"派生参数 {name!r} 调用了 {function_name}()，Excel 侧没有对应函数"
-            "（支持 min/max/abs/int/float）"
+            f"派生参数 {name!r} 调用了 {function_name}()，Excel 侧没有对应函数（支持 min/max/abs/int/float）"
         )
-    arguments = [
-        _translate(argument, name=name, resolve=resolve, env=env, condition=False)
-        for argument in node.args
-    ]
+    arguments = [_translate(argument, name=name, resolve=resolve, env=env, condition=False) for argument in node.args]
     excel_function = _FUNCS[function_name]
     if excel_function is None:  # float()：Excel 里数字就是数字
         if len(arguments) != 1:

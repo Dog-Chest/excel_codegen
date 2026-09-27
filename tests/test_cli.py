@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import re
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -19,10 +20,9 @@ runner = CliRunner()
 def output_of(result) -> str:
     """兼容不同 click 版本的 stdout/stderr 合并方式。"""
     text = result.output or ""
-    try:
+    # click 8.1 在 mix_stderr 模式下不允许访问 stderr
+    with suppress(ValueError, AttributeError):
         text += result.stderr or ""
-    except (ValueError, AttributeError):  # click 8.1 在 mix_stderr 模式下不允许访问
-        pass
     return text
 
 
@@ -413,8 +413,7 @@ def test_cli_formula_mode_check_semantics(tmp_path: Path) -> None:
     runner.invoke(app, ["init", "--config", str(config_path), "--output", str(excel_path)])
     runner.invoke(
         app,
-        ["render", "--config", str(config_path), "--excel", str(excel_path),
-         "--write-excel", "--no-show"],
+        ["render", "--config", str(config_path), "--excel", str(excel_path), "--write-excel", "--no-show"],
     )
 
     result = runner.invoke(app, ["check", "--config", str(config_path), "--excel", str(excel_path)])
@@ -448,8 +447,7 @@ def test_cli_formula_mode_check_semantics(tmp_path: Path) -> None:
     # 重跑一次写回 → 恢复一致
     runner.invoke(
         app,
-        ["render", "--config", str(config_path), "--excel", str(excel_path),
-         "--write-excel", "--no-show"],
+        ["render", "--config", str(config_path), "--excel", str(excel_path), "--write-excel", "--no-show"],
     )
     result = runner.invoke(app, ["check", "--config", str(config_path), "--excel", str(excel_path)])
     assert result.exit_code == 0, output_of(result)
@@ -469,8 +467,7 @@ def test_cli_formula_mode_validate_and_howto(tmp_path: Path) -> None:
     workbook = load_workbook(excel_path)
     try:
         howto = "\n".join(
-            str(cell.value) for (cell,) in workbook["HOWTO"].iter_rows(min_col=1, max_col=1)
-            if cell.value
+            str(cell.value) for (cell,) in workbook["HOWTO"].iter_rows(min_col=1, max_col=1) if cell.value
         )
         assert "engine: excel" in howto
         assert "公式·自动重算" in howto
@@ -534,8 +531,7 @@ def test_cli_check_verifies_formula_values(tmp_path: Path) -> None:
     runner.invoke(app, ["init", "--config", str(config_path), "--output", str(excel_path), "--cases", "2"])
     runner.invoke(
         app,
-        ["render", "--config", str(config_path), "--excel", str(excel_path),
-         "--write-excel", "--no-show"],
+        ["render", "--config", str(config_path), "--excel", str(excel_path), "--write-excel", "--no-show"],
     )
     result = runner.invoke(app, ["check", "--config", str(config_path), "--excel", str(excel_path)])
     assert result.exit_code == 0, output_of(result)
@@ -578,9 +574,7 @@ def test_cli_check_verifies_formula_values(tmp_path: Path) -> None:
         monkeypatch.setattr(cli_module, "evaluate_template_values", broken)
 
         # 关掉值校验就只剩公式文本比对：这种情况它看不见
-        result = runner.invoke(
-            app, ["check", "--config", str(config_path), "--excel", str(clean), "--no-values"]
-        )
+        result = runner.invoke(app, ["check", "--config", str(config_path), "--excel", str(clean), "--no-values"])
         assert result.exit_code == 0, output_of(result)
 
         # 打开值校验就被抓出来

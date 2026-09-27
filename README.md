@@ -99,12 +99,19 @@ pip install -e ".[dev]"
 ## 开发
 
 ```bash
-uv run pytest                      # 107 项用例
-uv run pytest --cov=excel_codegen
+uv run pytest --cov          # 194 项用例 + 覆盖率门槛（85%）
+uv run ruff check .          # lint
+uv run ruff format --check . # 格式
+uv run mypy                  # 类型检查
 ```
 
 CI（[配置](.github/workflows/ci.yml)）在 **Windows / macOS / Linux × Python 3.11 / 3.13**
-上各跑一遍。支持下限是 **3.11**，开发默认 3.12；改下限的规矩见 [`docs/setup.md`](docs/setup.md)。
+上把上面四条各跑一遍。支持下限是 **3.11**，开发默认 3.12；改下限的规矩见 [`docs/setup.md`](docs/setup.md)。
+
+> 质量护栏都在 `pyproject.toml` 里：`[tool.ruff]` 的 `target-version = "py311"` 会拦住
+> "3.12 才支持、但下限写的是 3.11"的语法（真发生过一次：f-string 表达式里写引号在 3.11 是
+> 语法错误，而在本地 3.12 上跑得好好的），`[tool.coverage.report]` 的 `fail_under = 85`
+> 让覆盖率掉了就直接红。
 
 ## License
 

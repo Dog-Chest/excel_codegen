@@ -9,12 +9,9 @@
 
 from __future__ import annotations
 
-import io
 import os
 import shutil
 import sys
-import traceback
-from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -60,7 +57,7 @@ def show_outdir(cfg, path, tag: str) -> None:
 # --------------------------------------------------------------------------- #
 def probe_suffix() -> None:
     banner("探针 A  prefix / suffix 的首尾空格   (FINDINGS #2 · probe_suffix.yaml)")
-    print("YAML 写的是 suffix: \" m\" / \" kg/m^3\"（带前导空格）")
+    print('YAML 写的是 suffix: " m" / " kg/m^3"（带前导空格）')
     cfg, path = fresh("probe_suffix.yaml")
     print("YAML 里的 suffix :", [(d.name, d.suffix) for d in cfg.global_variables])
     ws = load_workbook(path)["Global Parameter"]
@@ -81,8 +78,10 @@ def probe_value() -> None:
     out = render_all(cfg, path)
     for name in ("L", "g", "Li", "La"):
         v = out.global_values[name]
-        print(f"  {name:3s} type={[d.type for d in cfg.global_variables if d.name == name][0]:5s} "
-              f"value={v.value!r}  str(v)={str(v)!r}  repr(v.value)={v.value!r}")
+        print(
+            f"  {name:3s} type={[d.type for d in cfg.global_variables if d.name == name][0]:5s} "
+            f"value={v.value!r}  str(v)={str(v)!r}  repr(v.value)={v.value!r}"
+        )
     v = out.cases[0].values["draft"]
     print(f"  draft type=float value={v.value!r}  str(v)={str(v)!r}")
     print()
@@ -116,8 +115,7 @@ def probe_twosets() -> None:
         head = [sh.cell(row=1, column=c).value for c in range(2, 6)]
         print(f"  {sheet:9s} 表头行 = {[h for h in head if h]}")
     wb.close()
-    print("  -> 不用 case_filter 时仍是交叉积（4 个结果）；"
-          "加一行 case_filter 即可只出该模板适用的 Case（见探针 J）。")
+    print("  -> 不用 case_filter 时仍是交叉积（4 个结果）；加一行 case_filter 即可只出该模板适用的 Case（见探针 J）。")
 
 
 def probe_casefilter() -> None:
@@ -198,8 +196,10 @@ def probe_dupkey() -> None:
     banner("探针 E  YAML 同一个键写两遍   (FINDINGS #6 · probe_dupkey.yaml)")
     try:
         cfg = load_config(HERE / "probe_dupkey.yaml")
-        print(f"  load_config 没有报错；global 变量数 = {len(cfg.global_variables)}，"
-              f"local 变量数 = {len(cfg.local_variables)}")
+        print(
+            f"  load_config 没有报错；global 变量数 = {len(cfg.global_variables)}，"
+            f"local 变量数 = {len(cfg.local_variables)}"
+        )
         print(f"  global 名字 = {cfg.global_names}")
         path = HERE / cfg.excel.output
         if path.exists():
@@ -226,7 +226,10 @@ def probe_gbk() -> None:
     env.pop("PYTHONUTF8", None)
     proc = subprocess.run(
         [sys.executable, "-m", "excel_codegen", "validate", "-c", "probe_suffix.yaml"],
-        cwd=str(HERE), capture_output=True, env=env,
+        cwd=str(HERE),
+        capture_output=True,
+        env=env,
+        check=False,
     )
     tail = (proc.stdout or b"").decode("gbk", "replace").strip().splitlines()
     print("  用 PYTHONIOENCODING=gbk 真跑一次 validate：")
@@ -243,7 +246,13 @@ def probe_cli_writeback() -> None:
     def run(*args: str) -> tuple[int, list[str]]:
         proc = subprocess.run(
             [sys.executable, "-m", "excel_codegen", *args],
-            cwd=str(HERE), capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
+            cwd=str(HERE),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            check=False,
         )
         lines = [line for line in (proc.stdout or "").splitlines() if line.strip()]
         return proc.returncode, lines
@@ -274,8 +283,7 @@ def probe_case_shrink() -> None:
     out = render_all(cfg, path)
     write_results(path, cfg, out.results)
     ws = load_workbook(path)["Output"]
-    print("  3 个 Case 渲染后 D 列（第 3 列）：",
-          [ws.cell(row=r, column=4).value for r in range(1, 11)])
+    print("  3 个 Case 渲染后 D 列（第 3 列）：", [ws.cell(row=r, column=4).value for r in range(1, 11)])
 
     only = [out.cases[0].name, out.cases[1].name]
     out2 = render_all(cfg, path, only_cases=only)
@@ -303,9 +311,23 @@ def probe_cli_cases() -> None:
     import subprocess
 
     proc = subprocess.run(
-        [sys.executable, "-m", "excel_codegen", "init", "-c", "probe_suffix.yaml",
-         "--cases", "case_alpha,case_beta", "--force"],
-        cwd=str(HERE), capture_output=True, text=True, encoding="utf-8", errors="replace",
+        [
+            sys.executable,
+            "-m",
+            "excel_codegen",
+            "init",
+            "-c",
+            "probe_suffix.yaml",
+            "--cases",
+            "case_alpha,case_beta",
+            "--force",
+        ],
+        cwd=str(HERE),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
     )
     tail = (proc.stderr or proc.stdout).strip().splitlines()
     print("    " + "\n    ".join(tail[-4:]))
@@ -326,8 +348,9 @@ def probe_template_sheet() -> None:
     out = render_all(cfg, path)
     write_results(path, cfg, out.results)
     wb = load_workbook(path)
-    print(f"  write-excel 之后: Template 表 state = {wb['Template'].sheet_state!r}, "
-          f"表内行数 = {wb['Template'].max_row}")
+    print(
+        f"  write-excel 之后: Template 表 state = {wb['Template'].sheet_state!r}, 表内行数 = {wb['Template'].max_row}"
+    )
     wb.close()
 
 
@@ -338,8 +361,7 @@ def probe_vertical_shrink() -> None:
     out = render_all(cfg, path)
     write_results(path, cfg, out.results)
     ws = load_workbook(path)["Output"]
-    print("  8 个 Case 之后 A 列行 1..10：",
-          [ws.cell(row=r, column=1).value for r in range(1, 11)])
+    print("  8 个 Case 之后 A 列行 1..10：", [ws.cell(row=r, column=1).value for r in range(1, 11)])
 
     out2 = render_all(cfg, path, only_cases=[out.cases[0].name])
     write_results(path, cfg, out2.results)
@@ -353,8 +375,7 @@ def probe_vertical_shrink() -> None:
 def main() -> int:
     import excel_codegen
 
-    print(f"excel_codegen {excel_codegen.__version__} 探针复测"
-          "（探针标题里的 FINDINGS 编号指向 0.1.0 的原始报告）")
+    print(f"excel_codegen {excel_codegen.__version__} 探针复测（探针标题里的 FINDINGS 编号指向 0.1.0 的原始报告）")
     probe_suffix()
     probe_value()
     probe_twosets()

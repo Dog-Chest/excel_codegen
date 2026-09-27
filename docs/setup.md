@@ -107,6 +107,11 @@ EXCEL_CODEGEN_VENV=/data/venvs/ecg ./setup.sh    # 也可以自己指定环境�
 | --- | --- | --- |
 | **支持的底线** | **3.11** | `pyproject.toml` 的 `requires-python` |
 | **CI 真正测的** | 3.11（底线）+ 3.13 | `.github/workflows/ci.yml` 的矩阵 |
+
+> `[tool.ruff]` 的 `target-version` 也写的是 `py311`，与 `requires-python` **必须一致**：
+> 它负责拦住"3.12 才支持、但下限写 3.11"的语法。这条护栏是真起过作用的 ——
+> 有一次 f-string 表达式里写了引号（3.12 才允许），本地 3.12 跑得好好的，
+> 一 push 到 3.11 就是语法错误。
 | **开发默认** | **3.12** | `.python-version`（uv 据此挑解释器，本机没有会自动下载） |
 
 三条规矩：

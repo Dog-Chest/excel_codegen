@@ -27,7 +27,8 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Mapping, Protocol, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any, Protocol
 
 from .utils import RenderError, column_index_to_letter, to_text
 
@@ -68,7 +69,7 @@ def tokenize(text: str) -> list[tuple[str, str]]:
     while index < len(text):
         match = _TOKEN_RE.match(text, index)
         if not match:
-            raise FormulaEvalError(f"不能识别的公式片段: {text[index:index + 30]!r}")
+            raise FormulaEvalError(f"不能识别的公式片段: {text[index : index + 30]!r}")
         index = match.end()
         if match.lastgroup == "space":
             continue
@@ -82,7 +83,7 @@ def tokenize(text: str) -> list[tuple[str, str]]:
 class Cell:
     """单元格引用（或 INDEX 的结果）：值 + 是否真空白（``ISBLANK`` 用）。"""
 
-    __slots__ = ("value", "blank", "where")
+    __slots__ = ("blank", "value", "where")
 
     def __init__(self, value: Any, blank: bool, where: str = "") -> None:
         self.value = value
@@ -96,7 +97,7 @@ class Cell:
 class ColRef:
     """整列引用（只作为 ``INDEX`` / ``MATCH`` 的参数出现）。"""
 
-    __slots__ = ("sheet", "column")
+    __slots__ = ("column", "sheet")
 
     def __init__(self, sheet: str, column: str) -> None:
         self.sheet = sheet
@@ -126,7 +127,7 @@ def format_number(value: Any, fmt: str) -> str:
     except (TypeError, ValueError):
         return str(value)
     if fmt == "0":
-        return str(int(round(number)))
+        return str(round(number))
     if fmt.startswith("0."):
         decimals = len(fmt) - 2
         text = f"{number:.{decimals}f}".rstrip("0").rstrip(".")
@@ -178,13 +179,9 @@ class WorkbookReader:
         value = worksheet.cell(row=row, column=column).value
         if isinstance(value, str) and value.startswith("="):
             if self.evaluate is None:
-                raise FormulaEvalError(
-                    f"{sheet}!{column_index_to_letter(column)}{row} 是公式，但没有可用的求值器"
-                )
+                raise FormulaEvalError(f"{sheet}!{column_index_to_letter(column)}{row} 是公式，但没有可用的求值器")
             if key in self._active:
-                raise FormulaEvalError(
-                    f"{sheet}!{column_index_to_letter(column)}{row} 出现循环引用"
-                )
+                raise FormulaEvalError(f"{sheet}!{column_index_to_letter(column)}{row} 出现循环引用")
             self._active.add(key)
             try:
                 result = (self.evaluate(value), False)
@@ -221,6 +218,10 @@ class Evaluator:
         self.reader = reader
         #: 小写表名 -> 真实表名（Excel 的表名匹配不区分大小写）
         self.sheets = {name.strip().lower(): name for name in sheet_names.values()}
+        #: 当前词法单元与游标。**可重入**：参数格里本身是公式时，
+        #: 嵌套求值会保存/恢复这一对，所以这里要先有个初值。
+        self.tokens: list[tuple[str, str]] = []
+        self.index = 0
         bind = getattr(reader, "bind_evaluator", None)
         if callable(bind):
             bind(self.evaluate)  # 让"公式格里的公式"也能递归求值
@@ -230,13 +231,13 @@ class Evaluator:
         if not isinstance(formula, str) or not formula.startswith("="):
             return as_text(formula)
         # 可重入：嵌套求值（参数格本身是公式）会递归调用本方法
-        saved = (getattr(self, "tokens", None), getattr(self, "index", 0))
+        saved = (self.tokens, self.index)
         self.tokens = tokenize(formula[1:])
         self.index = 0
         try:
             value = self.comparison()
             if self.index != len(self.tokens):
-                raise FormulaEvalError(f"公式没有解析完: {self.tokens[self.index:]}")
+                raise FormulaEvalError(f"公式没有解析完: {self.tokens[self.index :]}")
             return as_text(self._scalar(value))
         finally:
             self.tokens, self.index = saved
@@ -305,7 +306,11 @@ class Evaluator:
         while self._peek("+") or self._peek("-"):
             operator = self._next()[1]
             right = self.multiplicative()
-            left = self._number(left) + self._number(right) if operator == "+" else self._number(left) - self._number(right)
+            left = (
+                self._number(left) + self._number(right)
+                if operator == "+"
+                else self._number(left) - self._number(right)
+            )
         return left
 
     def multiplicative(self):

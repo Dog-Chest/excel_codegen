@@ -24,26 +24,25 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent                      # abs_fpi/
+ROOT = HERE.parent  # abs_fpi/
 PROJECT = ROOT / "abs_fpi.yaml"
 BOOK = ROOT / "ABS_FPI_load_cases.xlsx"
 PY = Path(sys.executable)
 
 
 def run(args: list[str]) -> tuple[int, str]:
-    proc = subprocess.run(args, capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", cwd=str(ROOT))
+    proc = subprocess.run(
+        args, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(ROOT), check=False
+    )
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
 def verify(book: Path) -> tuple[int, str]:
-    return run([str(PY), str(ROOT / "verify_excel_engine.py"),
-                str(PROJECT), str(book)])
+    return run([str(PY), str(ROOT / "verify_excel_engine.py"), str(PROJECT), str(book)])
 
 
 def check(book: Path) -> tuple[int, str]:
-    return run([str(PY), "-m", "excel_codegen", "check",
-                "-c", str(PROJECT), "-x", str(book)])
+    return run([str(PY), "-m", "excel_codegen", "check", "-c", str(PROJECT), "-x", str(book)])
 
 
 def banner(text: str) -> None:
@@ -61,19 +60,22 @@ def main() -> int:
     shutil.copy(BOOK, n1)
     wb = load_workbook(n1)
     ws = wb["Local Parameter"]
-    ws.insert_rows(6)                       # 在变量行之间插一行
+    ws.insert_rows(6)  # 在变量行之间插一行
     ws.cell(row=6, column=1, value="probe_inserted")
     ws.cell(row=6, column=2, value="探针插入的变量行（无取值 → 回落默认值）")
     wb.save(n1)
     wb.close()
     code, out = verify(n1)
-    print(f"  verify_excel_engine.py → exit {code}   "
-          f"{'公式仍然按变量名找到了新位置 ✓' if code == 0 else '失败（见下）'}")
+    print(
+        f"  verify_excel_engine.py → exit {code}   {'公式仍然按变量名找到了新位置 ✓' if code == 0 else '失败（见下）'}"
+    )
     if code:
         print("   " + "\n   ".join(out.strip().splitlines()[-6:]))
     code2, out2 = check(n1)
-    print(f"  excel-codegen check    → exit {code2}   "
-          f"{'（插变量行不影响公式文本，所以 check 也不该报过期）' if code2 == 0 else '报过期'}")
+    print(
+        f"  excel-codegen check    → exit {code2}   "
+        f"{'（插变量行不影响公式文本，所以 check 也不该报过期）' if code2 == 0 else '报过期'}"
+    )
     if code2:
         print("   " + "\n   ".join(out2.strip().splitlines()[-6:]))
 
@@ -83,18 +85,19 @@ def main() -> int:
     shutil.copy(BOOK, n2)
     wb = load_workbook(n2)
     ws = wb["Local Parameter"]
-    ws.insert_cols(6)                       # 在第一个 Case 列之后插一列
+    ws.insert_cols(6)  # 在第一个 Case 列之后插一列
     ws.cell(row=1, column=6, value="probe_inserted_case")
     wb.save(n2)
     wb.close()
     code, out = verify(n2)
-    print(f"  verify_excel_engine.py → exit {code}   "
-          f"{'（居然还对？）' if code == 0 else '公式已过期 ✓（求值出来的代码与参数不一致）'}")
+    print(
+        f"  verify_excel_engine.py → exit {code}   "
+        f"{'（居然还对？）' if code == 0 else '公式已过期 ✓（求值出来的代码与参数不一致）'}"
+    )
     for line in out.strip().splitlines()[-8:]:
         print("   " + line)
     code2, out2 = check(n2)
-    print(f"  excel-codegen check    → exit {code2}   "
-          f"{'没发现' if code2 == 0 else '发现过期 ✓（可放进 CI）'}")
+    print(f"  excel-codegen check    → exit {code2}   {'没发现' if code2 == 0 else '发现过期 ✓（可放进 CI）'}")
     for line in out2.strip().splitlines():
         if "ERROR" in line or "不同" in line or "参数指纹" in line or "输出指纹" in line:
             print("   " + line.strip())

@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from openpyxl import load_workbook
 
 from excel_codegen.excel_io import create_template, write_results
@@ -99,9 +98,7 @@ def test_build_context_local_overrides_global() -> None:
 # 渲染
 # --------------------------------------------------------------------------- #
 def test_render_template_prefix_value_suffix_variants() -> None:
-    template = make_template(
-        "{{ port }}|{{ port.value }}|{{ port.prefix }}|{{ port.suffix }}|{{ baud }}"
-    )
+    template = make_template("{{ port }}|{{ port.value }}|{{ port.prefix }}|{{ port.suffix }}|{{ baud }}")
     context = {
         "port": VarValue("A", "GPIO", "_PORT"),
         "baud": VarValue(115200.0),
@@ -176,9 +173,7 @@ def test_render_all_only_cases(workbook_path: Path, project: ProjectConfig) -> N
         render_all(project, workbook_path, only_cases=["Case9"])
 
 
-def test_render_all_uses_user_filled_values(
-    workbook_path: Path, project: ProjectConfig
-) -> None:
+def test_render_all_uses_user_filled_values(workbook_path: Path, project: ProjectConfig) -> None:
     from openpyxl import load_workbook
 
     workbook = load_workbook(workbook_path)
@@ -204,22 +199,16 @@ def test_render_all_reports_missing_excel(tmp_path: Path, project: ProjectConfig
 # --------------------------------------------------------------------------- #
 # 导出
 # --------------------------------------------------------------------------- #
-def test_export_files_uses_filename_pattern(
-    tmp_path: Path, project: ProjectConfig, workbook_path: Path
-) -> None:
+def test_export_files_uses_filename_pattern(tmp_path: Path, project: ProjectConfig, workbook_path: Path) -> None:
     output = render_all(project, workbook_path, only_cases=["Case1"])
     written = export_files(project, output.results, tmp_path / "generated")
 
     names = sorted(path.name for path in written)
     assert names == ["uart_init_Case1.c", "uart_summary_Case1.md"]
-    assert (tmp_path / "generated" / "uart_init_Case1.c").read_text(encoding="utf-8").startswith(
-        "// Case: Case1"
-    )
+    assert (tmp_path / "generated" / "uart_init_Case1.c").read_text(encoding="utf-8").startswith("// Case: Case1")
 
 
-def test_export_files_default_naming_and_overwrite_guard(
-    tmp_path: Path, config_text: str
-) -> None:
+def test_export_files_default_naming_and_overwrite_guard(tmp_path: Path, config_text: str) -> None:
     config_path = tmp_path / "c.yaml"
     config_path.write_text(config_text, encoding="utf-8")
     config = load_config(config_path)
@@ -286,7 +275,7 @@ def test_value_attribute_is_normalised_like_combined(tmp_path: Path, config_text
         workbook.close()
 
     output = render_all(project, excel_path)
-    line = [item for item in output.results["uart_init"][0].lines if item.startswith("// value:")][0]
+    line = next(item for item in output.results["uart_init"][0].lines if item.startswith("// value:"))
     assert line == "// value: 340 / 340 / STM32F103"
 
     # 直接测环境：bool / None / 大数 的行为也是确定的
@@ -381,9 +370,7 @@ def test_case_filter_errors_are_reported() -> None:
     with pytest.raises(RenderError, match="case_filter 语法错误"):
         compile_case_filter(bad_syntax)
 
-    missing = TemplateDef.model_validate(
-        {"name": "tpl", "code": "x", "case_filter": "nope == 'EXT'"}
-    )
+    missing = TemplateDef.model_validate({"name": "tpl", "code": "x", "case_filter": "nope == 'EXT'"})
     expression = compile_case_filter(missing)
     with pytest.raises(RenderError, match="case_filter 求值失败"):
         case_matches(expression, {"case_name": "Case1"}, template_name="tpl")

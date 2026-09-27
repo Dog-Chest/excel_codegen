@@ -45,8 +45,9 @@ Prefix+Value+Suffix 的组合值 —— 这样 ``draft > 20`` 才是数值比较
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
 from jinja2 import TemplateSyntaxError, nodes
 
@@ -73,9 +74,7 @@ MAX_FORMULA_CHARS = 8000
 LONG_FORMULA_WARN = 3000
 
 #: 一次匹配出 ``{{ 表达式 }}`` / ``{% 标签 %}`` / ``{# 注释 #}``
-_TAG_RE = re.compile(
-    r"\{\{(?P<expr>.*?)\}\}|\{%(?P<tag>.*?)%\}|\{#(?P<comment>.*?)#\}", re.DOTALL
-)
+_TAG_RE = re.compile(r"\{\{(?P<expr>.*?)\}\}|\{%(?P<tag>.*?)%\}|\{#(?P<comment>.*?)#\}", re.DOTALL)
 _EXPR_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?$")
 
 
@@ -85,6 +84,7 @@ class _Token:
 
     kind: str
     value: str
+
 
 #: 与 excel_io 的列约定一致
 _GLOBAL_COLUMNS = {"value": 2, "prefix": 4, "suffix": 5}
@@ -314,7 +314,7 @@ class _Compiler:
         cursor = 0
         for match in _TAG_RE.finditer(line):
             if match.start() > cursor:
-                tokens.append(_Token("text", line[cursor:match.start()]))
+                tokens.append(_Token("text", line[cursor : match.start()]))
             if match.group("expr") is not None:
                 tokens.append(_Token("expr", match.group("expr")))
             elif match.group("tag") is not None:
@@ -324,9 +324,7 @@ class _Compiler:
             tokens.append(_Token("text", line[cursor:]))
 
         for token in tokens:
-            if token.kind == "text" and any(
-                mark in token.value for mark in ("{{", "}}", "{%", "%}", "{#", "#}")
-            ):
+            if token.kind == "text" and any(mark in token.value for mark in ("{{", "}}", "{%", "%}", "{#", "#}")):
                 raise FormulaError(
                     f"模板 {self.template_name!r} 的标记没有闭合：{token.value.strip()[:40]!r}；"
                     f"行内容：{line.strip()!r}"
@@ -349,23 +347,18 @@ class _Compiler:
 
         expression = source.strip()
         if not expression:
-            raise FormulaError(
-                f"模板 {self.template_name!r} 的 {{{{ if }}}} 后面没有条件；行内容：{line.strip()!r}"
-            )
+            raise FormulaError(f"模板 {self.template_name!r} 的 {{{{ if }}}} 后面没有条件；行内容：{line.strip()!r}")
 
         env = build_environment()
         try:
             ast = env.parse("{{ " + expression + " }}")
         except TemplateSyntaxError as exc:
             raise FormulaError(
-                f"模板 {self.template_name!r} 的 {{{{ if }}}} 条件语法错误：{exc.message}；"
-                f"条件：{expression!r}"
+                f"模板 {self.template_name!r} 的 {{{{ if }}}} 条件语法错误：{exc.message}；条件：{expression!r}"
             ) from exc
         body = getattr(ast, "body", [])
         if len(body) != 1 or not isinstance(body[0], nodes.Output) or len(body[0].nodes) != 1:
-            raise FormulaError(
-                f"模板 {self.template_name!r} 的 {{{{ if }}}} 条件必须是单个表达式：{expression!r}"
-            )
+            raise FormulaError(f"模板 {self.template_name!r} 的 {{{{ if }}}} 条件必须是单个表达式：{expression!r}")
         node = body[0].nodes[0]
         self._require_attribute_access(node, expression, line)
 
@@ -387,13 +380,17 @@ class _Compiler:
             return excel
         if isinstance(node, (nodes.Name, nodes.Getattr)):
             # 按真假判断：数值比 0，其余比空串（与 Python 侧 bool(value) 的直觉一致）
-            return f"({excel}<>{'0' if self._is_numeric_node(node) else '\"\"'})"
+            # 注意别把引号写进 f-string 的表达式里 —— 那是 Python 3.12 才允许的语法，
+            # 而本项目的支持下限是 3.11（ruff 的 target-version 会拦住，见 pyproject.toml）。
+            compared = "0" if self._is_numeric_node(node) else '""'
+            return f"({excel}<>{compared})"
         if isinstance(node, nodes.Const):
             numeric = isinstance(node.value, (int, float)) and not isinstance(node.value, bool)
-            return f"({excel}<>{'0' if numeric else '\"\"'})"
+            compared = "0" if numeric else '""'
+            return f"({excel}<>{compared})"
         raise FormulaError(
             f"模板 {self.template_name!r} 的 {{{{ if }}}} 条件必须是比较或逻辑表达式"
-            f"（例如 draft.value > 20、kind.value == \"EXT\"、not flag.value），"
+            f'（例如 draft.value > 20、kind.value == "EXT"、not flag.value），'
             f"或直接写一个值按真假判断；当前条件：{expression!r}"
         )
 
@@ -418,14 +415,17 @@ class _Compiler:
         """条件里的变量必须带属性；裸变量（除 ``case_name`` / ``template_name``）直接报错。"""
 
         def walk(current, parent) -> None:
-            if isinstance(current, nodes.Name) and not isinstance(parent, nodes.Getattr):
-                if current.name not in self._CONDITION_SPECIAL_NAMES:
-                    raise FormulaError(
-                        f"模板 {self.template_name!r} 的 {{{{ if }}}} 条件里裸写了变量 "
-                        f"{current.name!r}：请指明要比较哪一部分 —— 数值比较写 "
-                        f"{current.name}.value（快照模式里裸变量是 VarValue 对象，"
-                        f"拿它跟数字比会直接报错）；条件：{expression!r}"
-                    )
+            if (
+                isinstance(current, nodes.Name)
+                and not isinstance(parent, nodes.Getattr)
+                and current.name not in self._CONDITION_SPECIAL_NAMES
+            ):
+                raise FormulaError(
+                    f"模板 {self.template_name!r} 的 {{{{ if }}}} 条件里裸写了变量 "
+                    f"{current.name!r}：请指明要比较哪一部分 —— 数值比较写 "
+                    f"{current.name}.value（快照模式里裸变量是 VarValue 对象，"
+                    f"拿它跟数字比会直接报错）；条件：{expression!r}"
+                )
             for child in current.iter_child_nodes():
                 walk(child, current)
 
@@ -483,9 +483,7 @@ class _Compiler:
                         parts.append(_quote_text(token.value))
                 elif token.kind == "expr":
                     try:
-                        parts.append(
-                            self.expression(token.value, case_column=case_column, line=line)
-                        )
+                        parts.append(self.expression(token.value, case_column=case_column, line=line))
                     except FormulaError as exc:
                         # 统一带上出错的行，方便在几十行的模板里定位
                         raise FormulaError(f"{exc}；行内容：{line.strip()!r}") from exc
@@ -500,7 +498,7 @@ class _Compiler:
 
         def parse_if() -> str:
             nonlocal index
-            condition_source = tokens[index - 1].value[len("if"):].strip()
+            condition_source = tokens[index - 1].value[len("if") :].strip()
             then_expr = parse_block(("else", "elif", "endif"))
             else_expr = '""'
             if tokens[index].value.split()[0] == "else":
@@ -525,9 +523,9 @@ def compile_line(
     relative_case_column: bool = True,
 ) -> str:
     """编译单独一行（主要给测试用）。"""
-    return _Compiler(
-        config, template_name, relative_case_column=relative_case_column
-    ).line(line, case_column=case_column)
+    return _Compiler(config, template_name, relative_case_column=relative_case_column).line(
+        line, case_column=case_column
+    )
 
 
 def compile_formulas(
@@ -543,16 +541,11 @@ def compile_formulas(
     """
     text = template.source_code if source is None else source
     if not text.strip():
-        raise FormulaError(
-            f"模板 {template.name!r} 没有可编译的源码（内联 code 为空且未提供 template_file 内容）"
-        )
+        raise FormulaError(f"模板 {template.name!r} 没有可编译的源码（内联 code 为空且未提供 template_file 内容）")
     compiler = _Compiler(
         config,
         template.name,
         relative_case_column=template.direction == "horizontal",
     )
     lines = text.splitlines()
-    return [
-        [compiler.line(line, case_column=column) for line in lines]
-        for column in case_columns
-    ]
+    return [[compiler.line(line, case_column=column) for line in lines] for column in case_columns]

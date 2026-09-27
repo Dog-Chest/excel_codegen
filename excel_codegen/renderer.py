@@ -6,9 +6,10 @@ Jinja2 环境与 ``pvs`` / ``wrap`` 过滤器在 :mod:`excel_codegen.jinja_env` 
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Mapping, Sequence
+from typing import Any
 
 from jinja2 import Environment, TemplateError, TemplateSyntaxError, UndefinedError, meta
 
@@ -73,9 +74,7 @@ def validate_template(
     try:
         environment.parse(source)
     except TemplateSyntaxError as exc:
-        raise RenderError(
-            f"模板 {template.name!r} 语法错误：第 {exc.lineno} 行: {exc.message}"
-        ) from exc
+        raise RenderError(f"模板 {template.name!r} 语法错误：第 {exc.lineno} 行: {exc.message}") from exc
     compile_case_filter(template, env=environment)
 
 
@@ -96,9 +95,7 @@ def collect_variables(
             filter_ast = environment.parse("{{ " + template.case_filter + " }}")
             names |= set(meta.find_undeclared_variables(filter_ast))
     except TemplateSyntaxError as exc:
-        raise RenderError(
-            f"模板 {template.name!r} 语法错误：第 {exc.lineno} 行: {exc.message}"
-        ) from exc
+        raise RenderError(f"模板 {template.name!r} 语法错误：第 {exc.lineno} 行: {exc.message}") from exc
     return names
 
 
@@ -118,9 +115,14 @@ class FilterValue(str):
     所以过滤器上下文用的是本类。
     """
 
-    __slots__ = ("value", "prefix", "suffix")
+    __slots__ = ("prefix", "suffix", "value")
 
-    def __new__(cls, variable: VarValue) -> "FilterValue":
+    # 属性由 __new__ 填；显式标注是为了让类型检查看得见（__slots__ 本身不带类型信息）
+    prefix: str
+    suffix: str
+    value: Any
+
+    def __new__(cls, variable: VarValue) -> FilterValue:
         instance = super().__new__(cls, str(variable))
         instance.value = variable.value
         instance.prefix = variable.prefix
@@ -133,10 +135,7 @@ class FilterValue(str):
 
 def filter_context(context: Mapping[str, Any]) -> dict[str, Any]:
     """把渲染上下文里的 :class:`VarValue` 换成 :class:`FilterValue`（供 case_filter 使用）。"""
-    return {
-        key: FilterValue(value) if isinstance(value, VarValue) else value
-        for key, value in context.items()
-    }
+    return {key: FilterValue(value) if isinstance(value, VarValue) else value for key, value in context.items()}
 
 
 def compile_case_filter(template: TemplateDef, *, env: Environment | None = None):
@@ -148,9 +147,7 @@ def compile_case_filter(template: TemplateDef, *, env: Environment | None = None
         # undefined_to_none=False：变量缺失时报错，而不是静默判为 False
         return environment.compile_expression(template.case_filter, undefined_to_none=False)
     except TemplateSyntaxError as exc:
-        raise RenderError(
-            f"模板 {template.name!r} 的 case_filter 语法错误：第 {exc.lineno} 行: {exc.message}"
-        ) from exc
+        raise RenderError(f"模板 {template.name!r} 的 case_filter 语法错误：第 {exc.lineno} 行: {exc.message}") from exc
 
 
 def case_matches(
@@ -169,10 +166,9 @@ def case_matches(
             f"模板 {template_name!r} 的 case_filter 求值失败: {exc}"
             "（表达式里引用的变量必须能在 Global / Local 表中取到）"
         ) from exc
-    except Exception as exc:  # noqa: BLE001 - 表达式里的任意 Python 异常
+    except Exception as exc:
         raise RenderError(
-            f"模板 {template_name!r} 的 case_filter 求值失败: {exc}"
-            "（数值比较请写 x.value，例如 draft.value > 20）"
+            f"模板 {template_name!r} 的 case_filter 求值失败: {exc}（数值比较请写 x.value，例如 draft.value > 20）"
         ) from exc
 
 
@@ -206,9 +202,7 @@ def render_template(
     try:
         compiled = environment.from_string(source)
     except TemplateSyntaxError as exc:
-        raise RenderError(
-            f"模板 {template.name!r} 语法错误：第 {exc.lineno} 行: {exc.message}"
-        ) from exc
+        raise RenderError(f"模板 {template.name!r} 语法错误：第 {exc.lineno} 行: {exc.message}") from exc
 
     data = dict(context)
     data["template_name"] = template.name
@@ -272,9 +266,7 @@ def render_all(
     try:
         check_required_sheets(workbook, config)
         global_values = read_global_values(workbook, config, warnings=read_warnings)
-        cases = read_cases(
-            workbook, config, global_values=global_values, warnings=read_warnings
-        )
+        cases = read_cases(workbook, config, global_values=global_values, warnings=read_warnings)
     finally:
         workbook.close()
 
@@ -286,9 +278,7 @@ def render_all(
         by_name = {case.name: case for case in cases}
         missing = [name for name in wanted if name not in by_name]
         if missing:
-            raise ExcelError(
-                f"Excel 中不存在这些 Case: {', '.join(missing)}（可用: {', '.join(by_name)}）"
-            )
+            raise ExcelError(f"Excel 中不存在这些 Case: {', '.join(missing)}（可用: {', '.join(by_name)}）")
         cases = [by_name[name] for name in wanted]
 
     environment = env or build_environment()
@@ -375,9 +365,7 @@ def export_files(
                 raise RenderError(f"模板 {template.name!r} 的 filename 渲染失败: {exc}") from exc
             file_name = safe_filename(raw_name)
             if not file_name:
-                raise RenderError(
-                    f"模板 {template.name!r} 在 Case {result.case_name!r} 下生成了空文件名"
-                )
+                raise RenderError(f"模板 {template.name!r} 在 Case {result.case_name!r} 下生成了空文件名")
             target = directory / file_name
             if target.exists() and not overwrite:
                 raise RenderError(f"目标文件已存在: {target}（需要覆盖请去掉 --no-overwrite）")

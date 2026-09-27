@@ -32,6 +32,7 @@ Python 渲染结果（``render_all``）逐行比对。两边一致 ⇒ 公式模
 from __future__ import annotations
 
 import argparse
+import contextlib
 import re
 import sys
 from pathlib import Path
@@ -44,7 +45,6 @@ sys.path.insert(0, str(HERE))
 
 from excel_codegen import load_config, render_all  # noqa: E402
 from excel_codegen.utils import parse_cell, to_text  # noqa: E402
-
 
 # --------------------------------------------------------------------------- #
 # 词法
@@ -72,7 +72,7 @@ def tokenize(text: str) -> list[tuple[str, str]]:
     while i < len(text):
         m = _TOKEN_RE.match(text, i)
         if not m:
-            raise FormulaError(f"不能识别的公式片段: {text[i:i + 30]!r}")
+            raise FormulaError(f"不能识别的公式片段: {text[i : i + 30]!r}")
         i = m.end()
         kind = m.lastgroup
         if kind == "space":
@@ -87,7 +87,7 @@ def tokenize(text: str) -> list[tuple[str, str]]:
 class Cell:
     """一个单元格引用（或 INDEX 的结果）：值 + 是否真空白（ISBLANK 用）。"""
 
-    __slots__ = ("value", "blank", "where")
+    __slots__ = ("blank", "value", "where")
 
     def __init__(self, value: Any, blank: bool, where: str = ""):
         self.value = value
@@ -104,7 +104,7 @@ class Cell:
 class ColRef:
     """整列引用，只作为 INDEX / MATCH 的参数出现。"""
 
-    __slots__ = ("sheet", "column")
+    __slots__ = ("column", "sheet")
 
     def __init__(self, sheet: str, column: str):
         self.sheet = sheet
@@ -132,7 +132,7 @@ def as_text(value: Any) -> str:
 class Evaluator:
     def __init__(self, workbook, sheet_names: dict[str, str]):
         self.wb = workbook
-        self.sheets = sheet_names          # 小写名 -> 真实表名
+        self.sheets = sheet_names  # 小写名 -> 真实表名
         # 变量名 -> {表名: 行号}
         self._name_rows: dict[str, dict[str, int]] = {}
 
@@ -162,9 +162,7 @@ class Evaluator:
             c = c * 26 + (ord(ch) - 64)
         value = ws.cell(row=row, column=c).value
         if isinstance(value, str) and value.startswith("="):
-            raise FormulaError(
-                f"{sheet_name}!{column}{row} 本身是公式，本求值器只读参数表的值"
-            )
+            raise FormulaError(f"{sheet_name}!{column}{row} 本身是公式，本求值器只读参数表的值")
         return Cell(value, value is None or value == "", f"{sheet_name}!{column}{row}")
 
     # -- 解析 -------------------------------------------------------------- #
@@ -176,10 +174,8 @@ class Evaluator:
         self._offset = relative_column_offset
         value = self.comparison()
         if self.i != len(self.tokens):
-            raise FormulaError(f"公式没有解析完: {self.tokens[self.i:]}")
-        return value if isinstance(value, str) else as_text(
-            value.value if isinstance(value, Cell) else value
-        )
+            raise FormulaError(f"公式没有解析完: {self.tokens[self.i :]}")
+        return value if isinstance(value, str) else as_text(value.value if isinstance(value, Cell) else value)
 
     # 比较层（工具会生成 `REF=""` 这种条件）
     def comparison(self):
@@ -243,7 +239,7 @@ class Evaluator:
                 self._expect(",")
                 ref = self.comparison()
                 self._expect(",")
-                self.comparison()      # 0
+                self.comparison()  # 0
                 self._expect(")")
                 if not isinstance(ref, ColRef):
                     raise FormulaError("MATCH 的第二个参数不是整列引用")
@@ -269,7 +265,7 @@ class Evaluator:
             self._next()
             if self._peek("$"):
                 self._next()
-            k2, t2 = self._next()
+            _k2, t2 = self._next()
             if t2.upper() != col.upper():
                 raise FormulaError(f"只支持整列引用，不支持列区间 {col}:{t2}")
             return ColRef(sheet, col.upper())
@@ -336,7 +332,7 @@ def format_number(value: Any, fmt: str) -> str:
     except (TypeError, ValueError):
         return str(value)
     if fmt == "0":
-        return str(int(round(number)))
+        return str(round(number))
     if fmt.startswith("0."):
         decimals = len(fmt) - 2
         text = f"{number:.{decimals}f}".rstrip("0").rstrip(".")
@@ -389,8 +385,9 @@ def evaluate_block(wb, cfg, template, n_cases: int) -> list[list[str]]:
     return blocks
 
 
-def check_workbook(yaml_path: Path, book_path: Path, *, change: str | None = None,
-                   verbose: bool = True) -> tuple[int, int]:
+def check_workbook(
+    yaml_path: Path, book_path: Path, *, change: str | None = None, verbose: bool = True
+) -> tuple[int, int]:
     """返回 ``(检查数, 失败数)``。"""
     cfg = load_config(yaml_path)
     checks = failures = 0
@@ -428,10 +425,8 @@ def check_workbook(yaml_path: Path, book_path: Path, *, change: str | None = Non
             raise SystemExit(f"工作簿里找不到变量 {var}")
         sheet, r = target
         numeric = None
-        try:
+        with contextlib.suppress(ValueError):
             numeric = float(value)
-        except ValueError:
-            pass
         wb[sheet].cell(row=r, column=2, value=numeric if numeric is not None else value)
         wb.save(book_path)
         wb.close()
@@ -448,12 +443,13 @@ def check_workbook(yaml_path: Path, book_path: Path, *, change: str | None = Non
             if not results:
                 continue
             if verbose:
-                print(f"  [公式] {template.name}  {len(results)} 个 Case  "
-                      f"→ {template.output_sheet} @ {template.start_cell}")
+                print(
+                    f"  [公式] {template.name}  {len(results)} 个 Case  "
+                    f"→ {template.output_sheet} @ {template.start_cell}"
+                )
             got_blocks = evaluate_block(wb, cfg, template, len(results))
-            for res, got in zip(results, got_blocks):
-                cmp(f"{template.name} / {res.case_name}（公式 vs Python）",
-                    got, res.lines)
+            for res, got in zip(results, got_blocks, strict=False):
+                cmp(f"{template.name} / {res.case_name}（公式 vs Python）", got, res.lines)
     finally:
         wb.close()
     return checks, failures
@@ -463,8 +459,7 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="验证 engine: excel 的公式算出来的代码对不对")
     ap.add_argument("yaml", type=Path)
     ap.add_argument("excel", type=Path)
-    ap.add_argument("--change", default=None,
-                    help="额外做一次'改参数不改工作簿公式'的验证，例如 --change L=400")
+    ap.add_argument("--change", default=None, help="额外做一次'改参数不改工作簿公式'的验证，例如 --change L=400")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(argv)
 
@@ -475,6 +470,7 @@ def main(argv: list[str]) -> int:
     if args.change:
         import shutil
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmp:
             copy = Path(tmp) / args.excel.name
             shutil.copy(args.excel, copy)
@@ -490,4 +486,3 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-

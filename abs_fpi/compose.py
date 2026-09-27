@@ -57,8 +57,7 @@ def read_manifest(path: Path) -> dict:
         return yaml.safe_load(handle)
 
 
-def merge_variables(target: dict, incoming: list[dict], *, scope: str, source: str,
-                    warnings: list[str]) -> None:
+def merge_variables(target: dict, incoming: list[dict], *, scope: str, source: str, warnings: list[str]) -> None:
     by_name = {item["name"]: item for item in target[scope]}
     for item in incoming:
         name = item["name"]
@@ -105,8 +104,7 @@ def compose(manifest_path: Path) -> Path:
             items = (raw.get("variables") or {}).get(scope) or []
             for item in items:
                 item["_source"] = rel
-            merge_variables(merged["variables"], items, scope=scope, source=rel,
-                            warnings=warnings)
+            merge_variables(merged["variables"], items, scope=scope, source=rel, warnings=warnings)
 
         for tpl in raw.get("templates") or []:
             tpl = dict(tpl)
@@ -163,9 +161,11 @@ def compose(manifest_path: Path) -> Path:
 
     for w in warnings:
         print(f"  ! {w}")
-    print(f"wrote {out_path.name}: {len(project['variables']['global'])} 全局 / "
-          f"{len(project['variables']['local'])} 局部变量, {len(project['templates'])} 模板 "
-          f"→ {', '.join(outputs)}")
+    print(
+        f"wrote {out_path.name}: {len(project['variables']['global'])} 全局 / "
+        f"{len(project['variables']['local'])} 局部变量, {len(project['templates'])} 模板 "
+        f"→ {', '.join(outputs)}"
+    )
     return out_path
 
 

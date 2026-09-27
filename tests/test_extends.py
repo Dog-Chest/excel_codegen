@@ -16,13 +16,13 @@ from excel_codegen import create_template, load_config, render_all
 from excel_codegen.utils import ConfigError
 
 HEAD = "version: 1\n"
-GLOBAL_L = "  global:\n    - name: L\n      type: float\n      default: 300\n      suffix: \" m\"\n"
+GLOBAL_L = '  global:\n    - name: L\n      type: float\n      default: 300\n      suffix: " m"\n'
 NO_VARS = "variables:\n  global: []\n  local: []\n"
 NO_TEMPLATES = "templates: []\n"
 
 #: 项目文件里默认给一个局部变量和一个模板 —— 合并后的配置必须至少各有一个才合法
 DEFAULT_LOCAL = "  local:\n    - name: kind\n      default: EXT\n"
-DEFAULT_TEMPLATES = "  - name: own\n    output_sheet: \"Code\"\n    code: |\n      // own {{ kind }}\n"
+DEFAULT_TEMPLATES = '  - name: own\n    output_sheet: "Code"\n    code: |\n      // own {{ kind }}\n'
 
 
 def write(path: Path, text: str) -> Path:
@@ -71,12 +71,12 @@ def test_merges_variables_and_templates(tmp_path: Path) -> None:
     write(
         tmp_path / "a.yaml",
         HEAD + "variables:\n" + GLOBAL_L + "  local:\n    - name: kind\n      default: EXT\n"
-        "templates:\n  - name: code_a\n    output_sheet: \"Code\"\n    code: |\n      // a {{ L }}\n",
+        'templates:\n  - name: code_a\n    output_sheet: "Code"\n    code: |\n      // a {{ L }}\n',
     )
     write(
         tmp_path / "b.yaml",
         HEAD + "variables:\n" + GLOBAL_L + "    - name: g\n      type: float\n      default: 9.81\n"
-        "  local: []\ntemplates:\n  - name: code_b\n    output_sheet: \"Code\"\n    code: |\n      // b {{ g }}\n",
+        '  local: []\ntemplates:\n  - name: code_b\n    output_sheet: "Code"\n    code: |\n      // b {{ g }}\n',
     )
     path = project(
         tmp_path / "project.yaml",
@@ -100,7 +100,7 @@ def test_identical_variable_in_two_files_is_deduped(tmp_path: Path) -> None:
 
 
 def test_identical_template_in_two_files_is_deduped(tmp_path: Path) -> None:
-    body = "templates:\n  - name: same\n    output_sheet: \"Code\"\n    code: |\n      // x\n"
+    body = 'templates:\n  - name: same\n    output_sheet: "Code"\n    code: |\n      // x\n'
     for name in ("a.yaml", "b.yaml"):
         write(tmp_path / name, HEAD + NO_VARS + body)
     config = load_config(project(tmp_path / "project.yaml", extends=["a.yaml", "b.yaml"]))
@@ -126,7 +126,7 @@ def test_strict_field_conflict_is_rejected(tmp_path: Path) -> None:
     write(
         tmp_path / "b.yaml",
         HEAD + "variables:\n  global:\n    - name: L\n      type: float\n      default: 300\n"
-        "      suffix: \" [m]\"\n  local: []\ntemplates: []\n",
+        '      suffix: " [m]"\n  local: []\ntemplates: []\n',
     )
     with pytest.raises(ConfigError) as excinfo:
         load_config(project(tmp_path / "project.yaml", extends=["a.yaml", "b.yaml"]))
@@ -134,16 +134,32 @@ def test_strict_field_conflict_is_rejected(tmp_path: Path) -> None:
 
 
 def test_constraint_conflict_is_rejected(tmp_path: Path) -> None:
-    write(tmp_path / "a.yaml", HEAD + "variables:\n  global:\n    - name: d\n      min: 0\n      max: 50\n  local: []\n" + NO_TEMPLATES)
-    write(tmp_path / "b.yaml", HEAD + "variables:\n  global:\n    - name: d\n      min: 0\n      max: 60\n  local: []\n" + NO_TEMPLATES)
+    write(
+        tmp_path / "a.yaml",
+        HEAD + "variables:\n  global:\n    - name: d\n      min: 0\n      max: 50\n  local: []\n" + NO_TEMPLATES,
+    )
+    write(
+        tmp_path / "b.yaml",
+        HEAD + "variables:\n  global:\n    - name: d\n      min: 0\n      max: 60\n  local: []\n" + NO_TEMPLATES,
+    )
     with pytest.raises(ConfigError) as excinfo:
         load_config(project(tmp_path / "project.yaml", extends=["a.yaml", "b.yaml"]))
     assert "max" in str(excinfo.value)
 
 
 def test_loose_field_conflict_only_warns(tmp_path: Path) -> None:
-    write(tmp_path / "a.yaml", HEAD + "variables:\n  global:\n    - name: d\n      default: 1\n      description: A\n  local: []\n" + NO_TEMPLATES)
-    write(tmp_path / "b.yaml", HEAD + "variables:\n  global:\n    - name: d\n      default: 2\n      description: B\n  local: []\n" + NO_TEMPLATES)
+    write(
+        tmp_path / "a.yaml",
+        HEAD
+        + "variables:\n  global:\n    - name: d\n      default: 1\n      description: A\n  local: []\n"
+        + NO_TEMPLATES,
+    )
+    write(
+        tmp_path / "b.yaml",
+        HEAD
+        + "variables:\n  global:\n    - name: d\n      default: 2\n      description: B\n  local: []\n"
+        + NO_TEMPLATES,
+    )
     config = load_config(project(tmp_path / "project.yaml", extends=["a.yaml", "b.yaml"]))
     assert count_warnings(config, "default") == 1
     assert count_warnings(config, "description") == 1
@@ -151,8 +167,14 @@ def test_loose_field_conflict_only_warns(tmp_path: Path) -> None:
 
 
 def test_template_name_clash_with_different_body_is_rejected(tmp_path: Path) -> None:
-    write(tmp_path / "a.yaml", HEAD + NO_VARS + "templates:\n  - name: t\n    output_sheet: \"Code\"\n    code: |\n      // one\n")
-    write(tmp_path / "b.yaml", HEAD + NO_VARS + "templates:\n  - name: t\n    output_sheet: \"Code\"\n    code: |\n      // two\n")
+    write(
+        tmp_path / "a.yaml",
+        HEAD + NO_VARS + 'templates:\n  - name: t\n    output_sheet: "Code"\n    code: |\n      // one\n',
+    )
+    write(
+        tmp_path / "b.yaml",
+        HEAD + NO_VARS + 'templates:\n  - name: t\n    output_sheet: "Code"\n    code: |\n      // two\n',
+    )
     with pytest.raises(ConfigError) as excinfo:
         load_config(project(tmp_path / "project.yaml", extends=["a.yaml", "b.yaml"]))
     assert "模板" in str(excinfo.value)
@@ -201,7 +223,7 @@ def test_template_file_resolves_relative_to_declaring_file(tmp_path: Path) -> No
     write(
         tmp_path / "rules" / "a.yaml",
         HEAD + "variables:\n" + GLOBAL_L + "  local: []\ntemplates:\n  - name: sub\n"
-        "    output_sheet: \"Code\"\n    template_file: \"tpl/body.j2\"\n",
+        '    output_sheet: "Code"\n    template_file: "tpl/body.j2"\n',
     )
     config = load_config(project(tmp_path / "project.yaml", extends=["rules/a.yaml"]))
 
@@ -217,7 +239,7 @@ def test_root_template_file_still_resolves_relative_to_root(tmp_path: Path) -> N
     path = project(
         tmp_path / "project.yaml",
         extends=["a.yaml"],
-        templates="  - name: own\n    output_sheet: \"Code\"\n    template_file: \"top.j2\"\n",
+        templates='  - name: own\n    output_sheet: "Code"\n    template_file: "top.j2"\n',
     )
     config = load_config(path)
     assert config.templates[0].source_dir is None  # 根自己的模板不特殊标记，走 config.source_dir

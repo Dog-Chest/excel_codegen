@@ -16,8 +16,7 @@ from excel_codegen.derived import (
     ordered_derived,
     to_excel,
 )
-from excel_codegen.excel_io import create_template, read_cases, read_global_values, write_results
-from excel_codegen.formula_eval import evaluate_formula
+from excel_codegen.excel_io import create_template, write_results
 from excel_codegen.models import ProjectConfig, VariableDef, load_config
 from excel_codegen.renderer import render_all
 from excel_codegen.utils import VarValue
@@ -114,9 +113,7 @@ def test_unknown_name_is_reported() -> None:
 def test_global_cannot_reference_local() -> None:
     globals_ = [VariableDef.model_validate({"name": "a", "derived": "localvar * 2"})]
     with pytest.raises(DerivedError, match="不能引用 local"):
-        evaluate_derived(
-            globals_, {}, scope="global", forbidden={"localvar": "global 不能引用 local"}
-        )
+        evaluate_derived(globals_, {}, scope="global", forbidden={"localvar": "global 不能引用 local"})
 
 
 def test_derived_arithmetic_uses_pure_values() -> None:
@@ -165,6 +162,20 @@ def test_round_is_deliberately_not_translated() -> None:
         to_excel("x | round(2)", name="t", resolve=lambda name: name)
 
 
+def test_resolver_reports_undefined_name_as_derived_error(project: ProjectConfig) -> None:
+    """resolver 遇到不认识的变量名要抛 DerivedError。
+
+    回归用例：``excel_io`` 一度用了 ``DerivedError`` 却没导入 —— 这条错误路径会先炸
+    ``NameError``，用户看到的是一句莫名其妙的报错而不是"只能引用 global 变量"的提示。
+    """
+    from excel_codegen.excel_io import _global_resolver, _local_resolver
+
+    with pytest.raises(DerivedError, match="只能引用 global"):
+        _global_resolver(project)("nope")
+    with pytest.raises(DerivedError, match="未定义的变量"):
+        _local_resolver(project, 5)("nope")
+
+
 def test_syntax_error_is_not_swallowed() -> None:
     with pytest.raises(DerivedError):  # 语法错必须冒出来，不能当成"翻译不了"降级
         to_excel("a *", name="t", resolve=lambda name: name)
@@ -179,7 +190,7 @@ def test_create_template_writes_live_formulas(derived_config: ProjectConfig, tmp
     try:
         global_sheet = workbook["Global Parameter"]
         assert global_sheet["B4"].data_type == "f"  # rho_g：派生格是公式
-        assert "MATCH(\"rho\"" in global_sheet["B4"].value
+        assert 'MATCH("rho"' in global_sheet["B4"].value
         assert global_sheet["B2"].data_type == "n"  # rho：输入格还是数值
         assert "自动计算" in global_sheet["C4"].value
 
@@ -232,9 +243,7 @@ def test_excel_formula_matches_python_render(derived_config: ProjectConfig, tmp_
     workbook = load_workbook(path)
     try:
         template = derived_config.templates[0]
-        got = evaluate_template_values(
-            workbook, derived_config, template, [case.name for case in output.cases]
-        )
+        got = evaluate_template_values(workbook, derived_config, template, [case.name for case in output.cases])
         for result in output.results["pressure"]:
             assert got[result.case_name] == result.lines
     finally:
@@ -281,9 +290,7 @@ def test_write_results_refreshes_untranslatable_derived(
     assert any("h_s" not in w for w in warnings) or not warnings  # 刷新过程不报错即可
 
 
-def test_derived_cell_is_read_as_value_by_evaluator(
-    derived_config: ProjectConfig, tmp_path: Path
-) -> None:
+def test_derived_cell_is_read_as_value_by_evaluator(derived_config: ProjectConfig, tmp_path: Path) -> None:
     """派生格本身是公式时，求值器要能递归算出来（公式引用公式）。"""
     path = create_template(derived_config, tmp_path / "d.xlsx", cases=1)
     output = render_all(derived_config, path)

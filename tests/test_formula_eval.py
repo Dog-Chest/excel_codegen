@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from openpyxl import load_workbook
@@ -98,14 +99,14 @@ class FakeReader:
 class _Cfg:
     """只给 sheet_names_of 用。"""
 
-    class excel:  # noqa: N801
-        class sheets:  # noqa: N801
-            global_ = "Global Parameter"
-            local = "Local Parameter"
-            outputs = ["Output"]
+    class excel:
+        class sheets:
+            global_: ClassVar[str] = "Global Parameter"
+            local: ClassVar[str] = "Local Parameter"
+            outputs: ClassVar[list[str]] = ["Output"]
 
-        template_sheet = None
-        howto_sheet = None
+        template_sheet: ClassVar[str | None] = None
+        howto_sheet: ClassVar[str | None] = None
 
 
 @pytest.fixture()
@@ -136,12 +137,12 @@ def test_literals_and_concat(reader: FakeReader) -> None:
         ('=IF(2>=2,"y","n")', "y"),
         ('=IF(2<=1,"y","n")', "n"),
         ('=IF(2<>3,"y","n")', "y"),
-        ('=IF("B">"A","y","n")', "y"),          # 文本按字典序比
+        ('=IF("B">"A","y","n")', "y"),  # 文本按字典序比
         ('=IF("A"<"B","y","n")', "y"),
-        ('=AND((3>2),("A"="A"))', "TRUE"),       # 行内 {% if %} 的 and
+        ('=AND((3>2),("A"="A"))', "TRUE"),  # 行内 {% if %} 的 and
         ('=OR((1>2),("A"="A"))', "TRUE"),
-        ('=NOT(1>2)', "TRUE"),
-        ('=AND((1>2),(2>3))', "FALSE"),
+        ("=NOT(1>2)", "TRUE"),
+        ("=AND((1>2),(2>3))", "FALSE"),
         ('=IF(AND((1>2),(2>3)),"y","n")', "n"),
     ],
 )
@@ -154,7 +155,7 @@ def test_isblank_and_if_fallback(reader: FakeReader) -> None:
     # 空单元格：ISBLANK 为真 → 回落默认值
     assert (
         evaluate_formula(
-            '=IF(ISBLANK(INDEX(\'Global Parameter\'!D:D,MATCH("baud",\'Global Parameter\'!A:A,0))),"",'
+            "=IF(ISBLANK(INDEX('Global Parameter'!D:D,MATCH(\"baud\",'Global Parameter'!A:A,0))),\"\","
             "INDEX('Global Parameter'!D:D,MATCH(\"baud\",'Global Parameter'!A:A,0)))",
             reader=reader,
             config=_Cfg,
@@ -164,7 +165,7 @@ def test_isblank_and_if_fallback(reader: FakeReader) -> None:
     # 非空单元格：取原值
     assert (
         evaluate_formula(
-            '=IF(ISBLANK(INDEX(\'Local Parameter\'!C:C,MATCH("port",\'Local Parameter\'!A:A,0))),"X",'
+            "=IF(ISBLANK(INDEX('Local Parameter'!C:C,MATCH(\"port\",'Local Parameter'!A:A,0))),\"X\","
             "INDEX('Local Parameter'!C:C,MATCH(\"port\",'Local Parameter'!A:A,0)))",
             reader=reader,
             config=_Cfg,
@@ -174,8 +175,7 @@ def test_isblank_and_if_fallback(reader: FakeReader) -> None:
     # 默认值分支
     assert (
         evaluate_formula(
-            '=IF(ISBLANK(INDEX(\'Global Parameter\'!Z:Z,MATCH("baud",\'Global Parameter\'!A:A,0))),'
-            "115200,1)",
+            "=IF(ISBLANK(INDEX('Global Parameter'!Z:Z,MATCH(\"baud\",'Global Parameter'!A:A,0))),115200,1)",
             reader=reader,
             config=_Cfg,
         )
@@ -186,20 +186,15 @@ def test_isblank_and_if_fallback(reader: FakeReader) -> None:
 def test_text_formats(reader: FakeReader) -> None:
     assert evaluate_formula('=TEXT(115200,"0")', reader=reader, config=_Cfg) == "115200"
     assert evaluate_formula('=TEXT(340.0,"0")', reader=reader, config=_Cfg) == "340"
-    assert (
-        evaluate_formula('=TEXT(20.559,"0.############")', reader=reader, config=_Cfg) == "20.559"
-    )
+    assert evaluate_formula('=TEXT(20.559,"0.############")', reader=reader, config=_Cfg) == "20.559"
     assert evaluate_formula('=TEXT(8.0,"0.############")', reader=reader, config=_Cfg) == "8"
 
 
 def test_direct_references_and_bool_literals(reader: FakeReader) -> None:
     # 相对列 / 绝对列的写法都要能解析（值本身按地址取）
-    assert (
-        evaluate_formula("='Local Parameter'!E$2&'Local Parameter'!$E$2", reader=reader, config=_Cfg)
-        == "AA"
-    )
-    assert evaluate_formula("=IF(TRUE,\"y\",\"n\")", reader=reader, config=_Cfg) == "y"
-    assert evaluate_formula("=IF(FALSE,\"y\",\"n\")", reader=reader, config=_Cfg) == "n"
+    assert evaluate_formula("='Local Parameter'!E$2&'Local Parameter'!$E$2", reader=reader, config=_Cfg) == "AA"
+    assert evaluate_formula('=IF(TRUE,"y","n")', reader=reader, config=_Cfg) == "y"
+    assert evaluate_formula('=IF(FALSE,"y","n")', reader=reader, config=_Cfg) == "n"
 
 
 def test_unsupported_things_raise(reader: FakeReader) -> None:
@@ -208,8 +203,9 @@ def test_unsupported_things_raise(reader: FakeReader) -> None:
     with pytest.raises(FormulaEvalError, match="本身是公式"):
         FakeReader({"S": {"A1": "=1+1"}}, {"S": {}}).cell_value("S", 1, 1)
     with pytest.raises(FormulaEvalError, match="没有变量"):
-        evaluate_formula('=INDEX(\'Local Parameter\'!E:E,MATCH("nope",\'Local Parameter\'!$A:$A,0))',
-                         reader=reader, config=_Cfg)
+        evaluate_formula(
+            "=INDEX('Local Parameter'!E:E,MATCH(\"nope\",'Local Parameter'!$A:$A,0))", reader=reader, config=_Cfg
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -234,9 +230,7 @@ def test_formula_values_equal_python_render(formula_workbook) -> None:
     try:
         for template in config.templates:
             results = expected.results[template.name]
-            got = evaluate_template_values(
-                workbook, config, template, [result.case_name for result in results]
-            )
+            got = evaluate_template_values(workbook, config, template, [result.case_name for result in results])
             for result in results:
                 assert got[result.case_name] == result.lines, (
                     template.name,

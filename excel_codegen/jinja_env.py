@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from jinja2 import Environment, StrictUndefined
+from jinja2 import Environment, StrictUndefined, Undefined
 
 from .utils import to_text
 
@@ -63,7 +63,7 @@ def build_environment(
     """
     finalize = options.pop("finalize", finalize_value)
     environment = Environment(
-        undefined=StrictUndefined if strict else None,
+        undefined=StrictUndefined if strict else Undefined,
         trim_blocks=trim_blocks,
         lstrip_blocks=lstrip_blocks,
         keep_trailing_newline=keep_trailing_newline,

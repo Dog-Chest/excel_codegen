@@ -20,7 +20,7 @@ from excel_codegen.excel_io import (
     write_results,
 )
 from excel_codegen.models import FIRST_CASE_COLUMN, ProjectConfig, RenderResult, load_config
-from excel_codegen.utils import ConfigError, ExcelError, VarValue
+from excel_codegen.utils import ConfigError, ExcelError
 
 
 # --------------------------------------------------------------------------- #
@@ -45,9 +45,7 @@ def test_create_template_layout(tmp_path: Path, project: ProjectConfig) -> None:
         assert "只读参考" in str(workbook["Template"]["A1"].value)
         # HOWTO 表放在第一张，写清"下一步跑什么"（FINDINGS #8.2）
         howto = workbook["HOWTO"]
-        howto_text = "\n".join(
-            str(cell.value) for (cell,) in howto.iter_rows(min_col=1, max_col=1) if cell.value
-        )
+        howto_text = "\n".join(str(cell.value) for (cell,) in howto.iter_rows(min_col=1, max_col=1) if cell.value)
         assert "怎么用" in howto_text
         assert "render" in howto_text and "--write-excel" in howto_text
         assert "check" in howto_text
@@ -74,9 +72,7 @@ def test_create_template_layout(tmp_path: Path, project: ProjectConfig) -> None:
 
         # Template 隐藏表保存了模板原文
         template_text = "\n".join(
-            str(row[0].value)
-            for row in workbook["Template"].iter_rows(min_col=2, max_col=2)
-            if row[0].value
+            str(row[0].value) for row in workbook["Template"].iter_rows(min_col=2, max_col=2) if row[0].value
         )
         assert "UART_Init" in template_text
         assert "uart_summary" in template_text
@@ -85,9 +81,7 @@ def test_create_template_layout(tmp_path: Path, project: ProjectConfig) -> None:
 
 
 def test_create_template_custom_case_names(tmp_path: Path, project: ProjectConfig) -> None:
-    path = create_template(
-        project, tmp_path / "t.xlsx", cases=["UART1", "UART2"], include_template_sheet=False
-    )
+    path = create_template(project, tmp_path / "t.xlsx", cases=["UART1", "UART2"], include_template_sheet=False)
     workbook = load_workbook(path)
     try:
         assert "Template" not in workbook.sheetnames
@@ -114,9 +108,7 @@ def test_create_template_rejects_invalid_case_count(project: ProjectConfig, tmp_
 # --------------------------------------------------------------------------- #
 # 读取
 # --------------------------------------------------------------------------- #
-def test_read_global_values_blank_cell_falls_back_to_default(
-    workbook_path: Path, project: ProjectConfig
-) -> None:
+def test_read_global_values_blank_cell_falls_back_to_default(workbook_path: Path, project: ProjectConfig) -> None:
     workbook = load_workbook(workbook_path)
     try:
         sheet = workbook["Global Parameter"]
@@ -277,9 +269,7 @@ def test_write_results_vertical(project: ProjectConfig, tmp_path: Path) -> None:
 def test_prefix_suffix_keep_leading_space(tmp_path: Path, config_text: str) -> None:
     """FINDINGS #2：suffix: " m" 不能被 strip 成 "m"（否则 `340 m` 变 `340m`）。"""
     config_path = tmp_path / "spaces.yaml"
-    config_path.write_text(
-        config_text.replace('suffix: "_PORT"', 'suffix: " m"'), encoding="utf-8"
-    )
+    config_path.write_text(config_text.replace('suffix: "_PORT"', 'suffix: " m"'), encoding="utf-8")
     project = load_config(config_path)
     path = create_template(project, tmp_path / "t.xlsx", cases=1)
 
@@ -330,9 +320,7 @@ def test_rerender_clears_older_longer_output(project: ProjectConfig, tmp_path: P
 def test_vertical_rerender_clears_extra_cases(project: ProjectConfig, tmp_path: Path) -> None:
     """FINDINGS #5 症状 B：vertical 布局 8 Case 减到 1 个，旧 Case 行不能残留。"""
     path = create_template(project, tmp_path / "t.xlsx", cases=8)
-    many = [
-        RenderResult("uart_summary", f"Case{index}", f"line {index}") for index in range(1, 9)
-    ]
+    many = [RenderResult("uart_summary", f"Case{index}", f"line {index}") for index in range(1, 9)]
     write_results(path, project, {"uart_summary": many})
     write_results(path, project, {"uart_summary": many[:1]})
 
@@ -356,9 +344,7 @@ def test_write_results_records_fingerprints(project: ProjectConfig, tmp_path: Pa
     workbook = load_workbook(path)
     try:
         metadata = read_metadata(workbook, project)
-        expected_input = input_fingerprint(
-            read_global_values(workbook, project), read_cases(workbook, project)
-        )
+        expected_input = input_fingerprint(read_global_values(workbook, project), read_cases(workbook, project))
         assert metadata["参数指纹"] == expected_input
         assert metadata["输出指纹"] == output_fingerprint(results)
         assert metadata["case 数"] == "1"
@@ -366,8 +352,7 @@ def test_write_results_records_fingerprints(project: ProjectConfig, tmp_path: Pa
         assert metadata["时间"]
         # HOWTO 表也要有人读的那一份
         howto = "\n".join(
-            str(cell.value) for (cell,) in workbook["HOWTO"].iter_rows(min_col=1, max_col=1)
-            if cell.value
+            str(cell.value) for (cell,) in workbook["HOWTO"].iter_rows(min_col=1, max_col=1) if cell.value
         )
         assert metadata["参数指纹"] in howto
         assert "尚未渲染" not in howto
@@ -450,9 +435,7 @@ def test_read_metadata_howto_fallback_uses_same_keys(tmp_path: Path, config_text
         assert metadata["参数指纹"] == input_fingerprint(
             read_global_values(workbook, project), read_cases(workbook, project)
         )
-        assert metadata["输出指纹"] == output_fingerprint(
-            {"uart_init": [RenderResult("uart_init", "Case1", "a")]}
-        )
+        assert metadata["输出指纹"] == output_fingerprint({"uart_init": [RenderResult("uart_init", "Case1", "a")]})
     finally:
         workbook.close()
 

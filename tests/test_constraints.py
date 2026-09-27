@@ -65,11 +65,11 @@ def _config(tmp_path: Path, globals_: str, locals_: str = "    []"):
         ("    - name: v\n      min: 5\n      max: 1\n", "大于"),
         ("    - name: v\n      type: string\n      min: 1\n", "不能加 min"),
         ("    - name: v\n      min: 1\n      default: 0\n", "default"),
-        ("    - name: v\n      derived: \"1 + 1\"\n      min: 0\n", "派生参数"),
+        ('    - name: v\n      derived: "1 + 1"\n      min: 0\n', "派生参数"),
         ("    - name: v\n      choices: []\n", "不能是空列表"),
         ("    - name: v\n      choices: [A, A]\n", "重复"),
         ("    - name: v\n      choices: A\n", "必须是列表"),
-        ("    - name: v\n      pattern: \"[\"\n", "正则"),
+        ('    - name: v\n      pattern: "["\n', "正则"),
         ("    - name: v\n      min: abc\n", "必须是数字"),
         ("    - name: v\n      min: true\n", "必须是数字"),
     ],
@@ -116,7 +116,7 @@ def test_value_problem_matches_by_text() -> None:
 
 def test_value_problem_numeric_edges() -> None:
     variable = VariableDef(name="d", type="float", min=0, max=50)
-    assert variable.value_problem(0) is None      # 边界值算通过
+    assert variable.value_problem(0) is None  # 边界值算通过
     assert variable.value_problem(50) is None
     assert variable.value_problem(-0.1) is not None
     assert "下限" in (variable.value_problem(-1) or "")
@@ -181,7 +181,7 @@ def test_derived_variables_get_no_validation(tmp_path: Path) -> None:
     config = _config(
         tmp_path,
         "    - name: draft\n      type: float\n      default: 20\n"
-        "    - name: half\n      type: float\n      derived: \"draft / 2\"\n",
+        '    - name: half\n      type: float\n      derived: "draft / 2"\n',
     )
     path = create_template(config, tmp_path / "template.xlsx", cases=2, overwrite=True)
     book = load_workbook(path)
@@ -194,7 +194,7 @@ def test_derived_variables_get_no_validation(tmp_path: Path) -> None:
 
 def test_pattern_only_variable_gets_no_validation(tmp_path: Path) -> None:
     """Excel 的数据有效性没有正则 —— 只有 pattern 时不写校验（但工具侧照查）。"""
-    config = _config(tmp_path, "    - name: mcu\n      default: STM32F103\n      pattern: \"STM32.*\"\n")
+    config = _config(tmp_path, '    - name: mcu\n      default: STM32F103\n      pattern: "STM32.*"\n')
     path = create_template(config, tmp_path / "template.xlsx", cases=2, overwrite=True)
     book = load_workbook(path)
     try:
@@ -206,7 +206,7 @@ def test_pattern_only_variable_gets_no_validation(tmp_path: Path) -> None:
 
 
 def test_choices_with_comma_is_rejected(tmp_path: Path) -> None:
-    config = _config(tmp_path, "    - name: v\n      choices: [\"A,B\", C]\n      default: C\n")
+    config = _config(tmp_path, '    - name: v\n      choices: ["A,B", C]\n      default: C\n')
     with pytest.raises(ExcelError) as excinfo:
         create_template(config, tmp_path / "template.xlsx", cases=2, overwrite=True)
     assert "逗号" in str(excinfo.value)
@@ -314,7 +314,7 @@ def test_cli_validate_and_check_exit_nonzero(tmp_path: Path) -> None:
     from excel_codegen.cli import app
     from tests.test_cli import output_of
 
-    config, excel = _end_to_end(tmp_path)
+    _config, excel = _end_to_end(tmp_path)
     _set_cell(excel, "Local Parameter", "E2", "FOO")  # kind 在第 2 行、E 列
 
     runner = CliRunner()

@@ -35,13 +35,23 @@ dependencies = [
 
 [project.optional-dependencies]
 # pip 用户：pip install -e ".[dev]"
-dev = ["pytest>=7.4", "pytest-cov>=4.1"]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
 
 # PEP 735 依赖组：uv 默认就会装（`uv run pytest` / `uv sync` 不需要任何额外参数），
 # 这是"换一台机器 / 换一个系统零配置跑起来"的关键。内容与上面的 dev extra 保持一致；
 # 改一处记得改另一处（pip 侧用 extra，uv 侧用依赖组，两边都不能少）。
 [dependency-groups]
-dev = ["pytest>=7.4", "pytest-cov>=4.1"]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
 
 [project.scripts]
 excel-codegen = "excel_codegen.cli:app"
@@ -53,6 +63,70 @@ excel-codegen = "excel_codegen.cli:app"
 [tool.setuptools.packages.find]
 include = ["excel_codegen*"]
 namespaces = false
+
+# --------------------------------------------------------------------------- #
+# 质量护栏
+# --------------------------------------------------------------------------- #
+[tool.ruff]
+# **必须与 requires-python 一致**：ruff 会据此拦住"3.12 才支持、但下限写 3.11"的语法。
+# 真的发生过一次：f-string 表达式里写引号在 3.11 是语法错误，本地 3.12 却跑得好好的。
+target-version = "py311"
+line-length = 120
+extend-exclude = [".venv", "dist", "build"]
+
+[tool.ruff.lint]
+# 显式列出规则集（不依赖 ruff 的默认值，免得升级时行为漂移）。
+select = [
+    "E4", "E7", "E9",   # pycodestyle：语法与明显的结构错误
+    "F",                # pyflakes：未使用的导入/变量、未定义的名字
+    "I",                # isort：导入顺序
+    "UP",               # pyupgrade：过时的写法（配合 target-version）
+    "B",                # flake8-bugbear：常见陷阱
+    "SIM",              # flake8-simplify
+    "RUF",              # ruff 自有的规则
+    "PLW1510",          # subprocess.run 必须显式写 check=
+]
+ignore = [
+    # Typer 的标准写法就是把 typer.Option(...) 放在默认值里
+    "B008",
+    # 行长由 ruff format 负责，不再单独报
+    "E501",
+    # 本项目是中文项目：全角标点是有意为之，不是"歧义字符"
+    "RUF001", "RUF002", "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试里大量使用 pytest.raises / 局部导入，允许未使用参数等
+"tests/*" = ["B011"]
+# 探针脚本是"最小复现"，故意写得直白
+"abs_fpi/probes/*" = ["SIM", "UP", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["excel_codegen"]
+# 不要求每个函数都写注解（这个项目注解已经不少，但没必要卡住），但**检查已注解的代码**
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_configs = true
+no_implicit_optional = true
+ignore_missing_imports = true
+# pydantic 的 model_validator(mode="after") 返回 Self，mypy 偶尔会绕不过来
+disable_error_code = ["misc"]
+
+[tool.coverage.run]
+source = ["excel_codegen"]
+branch = true
+
+[tool.coverage.report]
+# 覆盖率门槛：低于这个数 CI 直接红。当前实测 87%，留一点余量。
+fail_under = 85
+show_missing = true
+skip_covered = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

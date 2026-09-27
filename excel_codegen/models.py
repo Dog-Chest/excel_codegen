@@ -223,7 +223,7 @@ class VariableDef(BaseModel):
         return text
 
     @model_validator(mode="after")
-    def _check_derived(self) -> "VariableDef":
+    def _check_derived(self) -> VariableDef:
         if self.derived and to_text(self.default) != "":
             raise ValueError(
                 f"变量 {self.name!r} 同时写了 derived 与 default —— 派生参数的值由表达式算出来，"
@@ -232,10 +232,8 @@ class VariableDef(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _check_constraints(self) -> "VariableDef":
-        constrained = (
-            self.min is not None or self.max is not None or self.choices or self.pattern
-        )
+    def _check_constraints(self) -> VariableDef:
+        constrained = self.min is not None or self.max is not None or self.choices or self.pattern
         if not constrained:
             return self
         if self.is_derived:
@@ -244,9 +242,7 @@ class VariableDef(BaseModel):
                 "请在表达式里约束（例如 max(x, 0)），或把它改成填写型变量"
             )
         if self.min is not None and self.max is not None and self.min > self.max:
-            raise ValueError(
-                f"变量 {self.name!r} 的 min({_number_text(self.min)}) 大于 max({_number_text(self.max)})"
-            )
+            raise ValueError(f"变量 {self.name!r} 的 min({_number_text(self.min)}) 大于 max({_number_text(self.max)})")
         if (self.min is not None or self.max is not None) and self.type in ("string", "bool", "raw"):
             raise ValueError(
                 f"变量 {self.name!r} 的 type 是 {self.type!r}，不能加 min / max —— "
@@ -265,9 +261,7 @@ class VariableDef(BaseModel):
 
     @property
     def has_constraints(self) -> bool:
-        return bool(
-            self.min is not None or self.max is not None or self.choices or self.pattern
-        )
+        return bool(self.min is not None or self.max is not None or self.choices or self.pattern)
 
     @property
     def constraint_text(self) -> str:
@@ -367,7 +361,8 @@ class ExcelConfig(BaseModel):
     #: 工作簿里的"使用说明"表（放在第一张）。写清三步、命令、生成时间与指纹；
     #: 由 create_template 生成、write_results 刷新。设为 null 则不生成。
     howto_sheet: str | None = "HOWTO"
-    sheets: ExcelSheets = Field(default_factory=ExcelSheets)
+    # pydantic 的 default_factory 接受类本身；mypy 对它的签名判断过严，这里显式放行
+    sheets: ExcelSheets = Field(default_factory=ExcelSheets)  # type: ignore[arg-type]
 
     @field_validator("output")
     @classmethod
@@ -455,7 +450,7 @@ class TemplateDef(BaseModel):
         return to_text(value).strip().upper()
 
     @model_validator(mode="after")
-    def _check_source(self) -> "TemplateDef":
+    def _check_source(self) -> TemplateDef:
         if not (self.code and self.code.strip()) and not self.template_file:
             raise ValueError("必须提供 code（内联模板）或 template_file（外部模板文件）之一")
         if self.filename and not self.filename.strip():
@@ -490,7 +485,7 @@ class ProjectConfig(BaseModel):
     load_warnings: list[str] = Field(default_factory=list, exclude=True)
 
     @model_validator(mode="after")
-    def _validate_config(self) -> "ProjectConfig":
+    def _validate_config(self) -> ProjectConfig:
         if self.version < 1:
             raise ValueError("version 必须 >= 1")
         if not self.templates:
@@ -523,14 +518,8 @@ class ProjectConfig(BaseModel):
             ("excel.howto_sheet", self.excel.howto_sheet),
         ):
             if sheet_name and sheet_name in used:
-                raise ValueError(
-                    f"{label} {sheet_name!r} 与 Global / Local / Output 表名冲突，请改名或设为 null"
-                )
-        if (
-            self.excel.template_sheet
-            and self.excel.howto_sheet
-            and self.excel.template_sheet == self.excel.howto_sheet
-        ):
+                raise ValueError(f"{label} {sheet_name!r} 与 Global / Local / Output 表名冲突，请改名或设为 null")
+        if self.excel.template_sheet and self.excel.howto_sheet and self.excel.template_sheet == self.excel.howto_sheet:
             raise ValueError(
                 f"excel.template_sheet 与 excel.howto_sheet 不能同名（都是 {self.excel.template_sheet!r}）"
             )
@@ -580,9 +569,7 @@ def _construct_mapping_strict(loader: yaml.SafeLoader, node: yaml.MappingNode, d
         try:
             duplicated = key in mapping
         except TypeError as exc:  # 不可哈希的复杂键
-            raise ConfigError(
-                f"YAML 键非法（不可哈希）: 第 {key_node.start_mark.line + 1} 行"
-            ) from exc
+            raise ConfigError(f"YAML 键非法（不可哈希）: 第 {key_node.start_mark.line + 1} 行") from exc
         if duplicated:
             raise ConfigError(
                 f"YAML 键重复: {key!r}（第 {key_node.start_mark.line + 1} 行）"
@@ -592,9 +579,7 @@ def _construct_mapping_strict(loader: yaml.SafeLoader, node: yaml.MappingNode, d
     return mapping
 
 
-_StrictLoader.add_constructor(
-    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping_strict
-)
+_StrictLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping_strict)
 
 
 def _read_yaml_mapping(path: Path) -> dict:
@@ -625,7 +610,14 @@ def _read_yaml_mapping(path: Path) -> dict:
 #: extends 合并时，同名变量之间**必须逐字一致**的字段 —— 它们决定生成出来的文本。
 #: 和 ``abs_fpi/compose.py`` 的 STRICT_FIELDS 是同一套判据，只是把取值约束也纳入了。
 EXTENDS_STRICT_FIELDS: tuple[str, ...] = (
-    "prefix", "suffix", "type", "derived", "min", "max", "choices", "pattern",
+    "prefix",
+    "suffix",
+    "type",
+    "derived",
+    "min",
+    "max",
+    "choices",
+    "pattern",
 )
 #: 这些字段不一致只告警（不同规则集的示例工况本来就不同），保留先出现的那个。
 EXTENDS_LOOSE_FIELDS: tuple[str, ...] = ("default", "description")
@@ -681,8 +673,12 @@ def _merge_into(
                 origins.setdefault(f"{scope}:{name}", origin)
                 continue
             _merge_variable(
-                existing, item, scope=scope, origin=origin,
-                first_seen=origins.get(f"{scope}:{name}", origin), warnings=warnings,
+                existing,
+                item,
+                scope=scope,
+                origin=origin,
+                first_seen=origins.get(f"{scope}:{name}", origin),
+                warnings=warnings,
             )
 
     for template in raw.get("templates") or []:
@@ -690,9 +686,7 @@ def _merge_into(
             merged["templates"].append(template)
             continue
         name = template.get("name")
-        same = next(
-            (t for t in merged["templates"] if isinstance(t, dict) and t.get("name") == name), None
-        )
+        same = next((t for t in merged["templates"] if isinstance(t, dict) and t.get("name") == name), None)
         if same is not None:
             if yaml.safe_dump(same, sort_keys=True, allow_unicode=True) != yaml.safe_dump(
                 template, sort_keys=True, allow_unicode=True
@@ -719,9 +713,7 @@ def _load_with_extends(
     raw = _read_yaml_mapping(config_path)
     parents = raw.get("extends") or []
     if not isinstance(parents, list) or not all(isinstance(p, str) for p in parents):
-        raise ConfigError(
-            f"extends 必须是文件路径的列表，例如 extends: [rules/a.yaml, rules/b.yaml]: {config_path}"
-        )
+        raise ConfigError(f"extends 必须是文件路径的列表，例如 extends: [rules/a.yaml, rules/b.yaml]: {config_path}")
 
     merged: dict = {"variables": {"global": [], "local": []}, "templates": []}
     origins: dict[str, Path] = {}
@@ -730,18 +722,18 @@ def _load_with_extends(
         parent_path = (origin_dir / relative).resolve()
         if not parent_path.exists():
             raise ConfigError(f"extends 指向的文件不存在: {parent_path}（写在 {config_path}）")
-        parent_raw, parent_origins = _load_with_extends(
-            parent_path, chain=(*chain, resolved), warnings=warnings
-        )
+        parent_raw, parent_origins = _load_with_extends(parent_path, chain=(*chain, resolved), warnings=warnings)
         _merge_into(
-            merged, origins, parent_raw,
-            origin=parent_path.parent, is_root=False, warnings=warnings,
+            merged,
+            origins,
+            parent_raw,
+            origin=parent_path.parent,
+            is_root=False,
+            warnings=warnings,
         )
         origins.update(parent_origins)
 
-    _merge_into(
-        merged, origins, raw, origin=origin_dir, is_root=True, warnings=warnings
-    )
+    _merge_into(merged, origins, raw, origin=origin_dir, is_root=True, warnings=warnings)
     merged["version"] = raw.get("version", 1)
     merged["excel"] = raw.get("excel", {})
     return merged, origins
@@ -767,9 +759,7 @@ def load_config(path: str | Path) -> ProjectConfig:
     try:
         config = ProjectConfig.model_validate(raw)
     except ValidationError as exc:
-        raise ConfigError(
-            f"配置校验失败 {config_path}:\n{format_validation_error(exc)}"
-        ) from exc
+        raise ConfigError(f"配置校验失败 {config_path}:\n{format_validation_error(exc)}") from exc
 
     config.source_dir = config_path.resolve().parent
     config.load_warnings = warnings
@@ -780,7 +770,6 @@ def load_config(path: str | Path) -> ProjectConfig:
         if origin is not None and origin != config.source_dir:
             template.source_dir = origin
     return config
-
 
 
 # --------------------------------------------------------------------------- #

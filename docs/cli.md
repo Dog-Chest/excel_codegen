@@ -69,19 +69,26 @@
 
 ```python
 from excel_codegen import (
-    load_config, create_template, render_all, write_results, export_files,
-    build_environment, input_fingerprint, output_fingerprint, read_metadata,
+    load_config,
+    create_template,
+    render_all,
+    write_results,
+    export_files,
+    build_environment,
+    input_fingerprint,
+    output_fingerprint,
+    read_metadata,
 )
 
-config = load_config("examples/example.yaml")          # 读取并校验 YAML
+config = load_config("examples/example.yaml")  # 读取并校验 YAML
 create_template(config, "template.xlsx", cases=3, overwrite=True)
 
-output = render_all(config, "template.xlsx")           # 读取填写的参数并渲染
-write_results("template.xlsx", config, output.results) # 写回 Output 表 + 指纹
-files = export_files(config, output.results, "generated/")   # 导出代码文件
+output = render_all(config, "template.xlsx")  # 读取填写的参数并渲染
+write_results("template.xlsx", config, output.results)  # 写回 Output 表 + 指纹
+files = export_files(config, output.results, "generated/")  # 导出代码文件
 
-print(output.results["uart_init"][0].text)             # 取某个模板某个 Case 的文本
-print(output.skipped)                                  # case_filter 跳过了哪些 Case
+print(output.results["uart_init"][0].text)  # 取某个模板某个 Case 的文本
+print(output.skipped)  # case_filter 跳过了哪些 Case
 print(input_fingerprint(output.global_values, output.cases))
 ```
 

@@ -9,8 +9,9 @@ stdout/stderr 加上 ``errors="backslashreplace"`` 兜底 —— 成功路径绝
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
+from contextlib import suppress
 from pathlib import Path
-from typing import Optional, Sequence
 
 import typer
 from rich.console import Console
@@ -19,6 +20,8 @@ from rich.syntax import Syntax
 from rich.table import Table
 
 from . import __version__
+from .derived import expression_names
+from .derived import validate_config as derived_validate_config
 from .excel_io import (
     case_column_map,
     check_required_sheets,
@@ -33,8 +36,6 @@ from .excel_io import (
     template_source,
     write_results,
 )
-from .derived import expression_names
-from .derived import validate_config as derived_validate_config
 from .formula import LONG_FORMULA_WARN, compile_formulas
 from .formula_eval import FormulaEvalError, evaluate_template_values
 from .models import FIRST_CASE_COLUMN, ProjectConfig, RenderResult, load_config
@@ -55,10 +56,9 @@ def _make_streams_forgiving() -> None:
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is None:
             continue
-        try:
+        # 宿主环境千奇百怪：不支持就静默跳过，别让"打日志"把命令搞崩
+        with suppress(ValueError, OSError):  # pragma: no cover - 取决于宿主环境
             reconfigure(errors="backslashreplace")
-        except (ValueError, OSError):  # pragma: no cover - 取决于宿主环境
-            pass
 
 
 _make_streams_forgiving()
@@ -98,7 +98,7 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-def _resolve_excel_path(config: ProjectConfig, excel: Optional[Path]) -> Path:
+def _resolve_excel_path(config: ProjectConfig, excel: Path | None) -> Path:
     """--excel 优先；否则使用配置里的 excel.output（相对当前工作目录）。"""
     if excel is not None:
         return Path(excel)
@@ -125,12 +125,10 @@ def _case_names_of(spec: int | list[str]) -> list[str]:
     return [f"Case{index}" for index in range(1, spec + 1)] if isinstance(spec, int) else list(spec)
 
 
-def _open_excel(project: ProjectConfig, excel: Optional[Path]) -> Path:
+def _open_excel(project: ProjectConfig, excel: Path | None) -> Path:
     path = _resolve_excel_path(project, excel)
     if not path.exists():
-        raise ExcelError(
-            f"Excel 文件不存在: {path}（请先运行 `excel-codegen init` 生成模板并填写参数）"
-        )
+        raise ExcelError(f"Excel 文件不存在: {path}（请先运行 `excel-codegen init` 生成模板并填写参数）")
     return path
 
 
@@ -161,7 +159,7 @@ def init_command(
         readable=True,
         help="YAML 配置文件路径",
     ),
-    output: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(
         None, "--output", "-o", help="输出的 Excel 模板路径（默认取配置中的 excel.output）"
     ),
     cases: str = typer.Option(
@@ -237,22 +235,12 @@ def render_command(
         readable=True,
         help="YAML 配置文件路径",
     ),
-    excel: Optional[Path] = typer.Option(
-        None, "--excel", "-x", help="已填写的 Excel 模板（默认取配置中的 excel.output）"
-    ),
-    write_excel: bool = typer.Option(
-        False, "--write-excel", "-w", help="把渲染结果写入 Excel 的 Output 表"
-    ),
-    outdir: Optional[Path] = typer.Option(
-        None, "--outdir", "-d", help="把渲染结果导出为代码文件到该目录"
-    ),
-    case: Optional[list[str]] = typer.Option(
-        None, "--case", help="只渲染指定 Case（可重复传入）"
-    ),
+    excel: Path | None = typer.Option(None, "--excel", "-x", help="已填写的 Excel 模板（默认取配置中的 excel.output）"),
+    write_excel: bool = typer.Option(False, "--write-excel", "-w", help="把渲染结果写入 Excel 的 Output 表"),
+    outdir: Path | None = typer.Option(None, "--outdir", "-d", help="把渲染结果导出为代码文件到该目录"),
+    case: list[str] | None = typer.Option(None, "--case", help="只渲染指定 Case（可重复传入）"),
     show: bool = typer.Option(True, "--show/--no-show", help="在终端打印渲染结果"),
-    overwrite: bool = typer.Option(
-        True, "--overwrite/--no-overwrite", help="导出文件已存在时是否覆盖"
-    ),
+    overwrite: bool = typer.Option(True, "--overwrite/--no-overwrite", help="导出文件已存在时是否覆盖"),
 ) -> None:
     """读取填好的 Excel + YAML，渲染模板并输出到 Excel / 代码文件 / 终端。"""
     try:
@@ -276,9 +264,7 @@ def render_command(
                 warnings=output_warnings,
             )
         if outdir is not None:
-            written_files = export_files(
-                project, output.results, outdir, overwrite=overwrite
-            )
+            written_files = export_files(project, output.results, outdir, overwrite=overwrite)
     except CodeGenError as exc:
         raise _fail(exc) from exc
     except (ValueError, OSError) as exc:
@@ -334,9 +320,7 @@ def validate_command(
         readable=True,
         help="YAML 配置文件路径",
     ),
-    excel: Optional[Path] = typer.Option(
-        None, "--excel", "-x", help="同时校验填写的 Excel 模板是否存在且结构正确"
-    ),
+    excel: Path | None = typer.Option(None, "--excel", "-x", help="同时校验填写的 Excel 模板是否存在且结构正确"),
 ) -> None:
     """校验 YAML 配置（以及可选地校验 Excel 结构），不产生任何输出。"""
     warnings: list[str] = []
@@ -374,9 +358,7 @@ def validate_command(
                     case_columns=[FIRST_CASE_COLUMN],
                     source=template_source(template, project.source_dir),
                 )
-                longest = max(
-                    (len(line) for case in compiled for line in case), default=0
-                )
+                longest = max((len(line) for case in compiled for line in case), default=0)
                 if longest > LONG_FORMULA_WARN:
                     warnings.append(
                         f"模板 {template.name!r} 的最长公式 {longest} 字符"
@@ -391,9 +373,7 @@ def validate_command(
                 ", ".join(sorted(used)) or "-",
             )
             if template.case_filter:
-                console.print(
-                    f"  [dim]{template.name}：case_filter = {template.case_filter}[/]"
-                )
+                console.print(f"  [dim]{template.name}：case_filter = {template.case_filter}[/]")
         console.print(template_table)
 
         if formula_templates:
@@ -431,9 +411,7 @@ def validate_command(
 
         overlap = sorted(set(project.global_names) & set(project.local_names))
         if overlap:
-            warnings.append(
-                f"变量名同时出现在 global 与 local: {', '.join(overlap)}（local 会覆盖 global）"
-            )
+            warnings.append(f"变量名同时出现在 global 与 local: {', '.join(overlap)}（local 会覆盖 global）")
 
         # "定义了却没人用"是"改了参数没生效"的常见来源，单独提示
         # （派生表达式里引用到的名字也算"被用到"，否则每个派生链都会误报）
@@ -443,11 +421,7 @@ def validate_command(
         for variable in [*project.global_variables, *project.local_variables]:
             if variable.is_derived:
                 referenced |= expression_names(variable.derived or "", env=environment)
-        unused = [
-            name
-            for name in [*project.global_names, *project.local_names]
-            if name not in referenced
-        ]
+        unused = [name for name in [*project.global_names, *project.local_names] if name not in referenced]
         if unused:
             warnings.append(
                 f"YAML 定义了但没有被任何模板引用的变量: {', '.join(unused)}"
@@ -484,8 +458,7 @@ def validate_command(
                 excel_table.add_row("上次渲染", metadata.get("时间", "-"))
                 excel_table.add_row(
                     "参数指纹",
-                    f"{metadata.get('参数指纹', '-')}"
-                    f"（当前 {input_fingerprint(global_values, cases)}）",
+                    f"{metadata.get('参数指纹', '-')}（当前 {input_fingerprint(global_values, cases)}）",
                 )
             else:
                 excel_table.add_row("上次渲染", "（无记录：还没跑过 render --write-excel）")
@@ -533,15 +506,6 @@ def _read_row(worksheet, row: int, start_column: int) -> list[str]:
     return [to_text(worksheet.cell(row=row, column=column).value) for column in range(start_column, last + 1)]
 
 
-def _first_difference(actual: list[str], expected: list[str]) -> str:
-    for index in range(min(len(actual), len(expected))):
-        if actual[index] != expected[index]:
-            return f"第 {index + 1} 行不同：表里 {actual[index]!r}，应为 {expected[index]!r}"
-    if len(actual) != len(expected):
-        return f"行数不同：表里 {len(actual)} 行，应为 {len(expected)} 行"
-    return "内容不同"
-
-
 def _expected_lines(
     workbook,
     project: ProjectConfig,
@@ -561,9 +525,7 @@ def _expected_lines(
     columns = case_column_map(workbook, project)
     missing = [result.case_name for result in results if result.case_name not in columns]
     if missing:
-        raise ExcelError(
-            f"模板 {template.name!r} 使用公式模式，但 Local 表里找不到这些 Case 列: {', '.join(missing)}"
-        )
+        raise ExcelError(f"模板 {template.name!r} 使用公式模式，但 Local 表里找不到这些 Case 列: {', '.join(missing)}")
     source = template_source(template, project.source_dir)
     per_case = compile_formulas(
         template,
@@ -572,7 +534,7 @@ def _expected_lines(
         source=source,
     )
     labels = {case_name: source.splitlines() for case_name in (r.case_name for r in results)}
-    return {result.case_name: lines for result, lines in zip(results, per_case)}, labels
+    return {result.case_name: lines for result, lines in zip(results, per_case, strict=False)}, labels
 
 
 def _describe_line(index: int, labels: Sequence[str] | None) -> str:
@@ -632,8 +594,7 @@ def _output_differences(
         column, row = parse_cell(template.start_cell)
         if not results:
             problems.append(
-                f"{template.name}: 当前没有任何 Case 匹配 case_filter，"
-                f"{template.output_sheet} 表里的旧内容无法核对"
+                f"{template.name}: 当前没有任何 Case 匹配 case_filter，{template.output_sheet} 表里的旧内容无法核对"
             )
             continue
         expected, labels = _expected_lines(workbook, project, template, results)
@@ -641,9 +602,7 @@ def _output_differences(
         evaluated: dict[str, list[str]] | None = None
         if template.engine == "excel" and verify_values:
             try:
-                evaluated = evaluate_template_values(
-                    workbook, project, template, [r.case_name for r in results]
-                )
+                evaluated = evaluate_template_values(workbook, project, template, [r.case_name for r in results])
             except FormulaEvalError as exc:
                 notes.append(f"{template.name}: 公式值校验已跳过 —— {exc}")
 
@@ -667,9 +626,7 @@ def _output_differences(
                     else result.case_name
                 )
             if header != result.case_name:
-                problems.append(
-                    f"{label}：Case 表头是 {header!r}，应为 {result.case_name!r}"
-                )
+                problems.append(f"{label}：Case 表头是 {header!r}，应为 {result.case_name!r}")
             want = expected[result.case_name]
             formulas_match = actual == want
             if not formulas_match:
@@ -704,9 +661,7 @@ def check_command(
         readable=True,
         help="YAML 配置文件路径",
     ),
-    excel: Optional[Path] = typer.Option(
-        None, "--excel", "-x", help="要检查的 Excel（默认取配置中的 excel.output）"
-    ),
+    excel: Path | None = typer.Option(None, "--excel", "-x", help="要检查的 Excel（默认取配置中的 excel.output）"),
     verify_values: bool = typer.Option(
         True,
         "--values/--no-values",
@@ -721,9 +676,7 @@ def check_command(
         workbook = load_workbook_file(excel_path)
         try:
             recorded = read_metadata(workbook, project)
-            problems, notes = _output_differences(
-                workbook, project, fresh, verify_values=verify_values
-            )
+            problems, notes = _output_differences(workbook, project, fresh, verify_values=verify_values)
         finally:
             workbook.close()
         now_input = input_fingerprint(fresh.global_values, fresh.cases)
@@ -746,9 +699,7 @@ def check_command(
     drift_note = ""
     if drift:
         drift_note = (
-            "   ← 参数改过了（快照模板需要重跑）"
-            if snapshot_names
-            else "   ← 参数改过了；公式模板会自动重算，无需重跑"
+            "   ← 参数改过了（快照模板需要重跑）" if snapshot_names else "   ← 参数改过了；公式模板会自动重算，无需重跑"
         )
 
     table = Table(title="过期检查", header_style="bold cyan")
@@ -757,34 +708,27 @@ def check_command(
     table.add_row("配置文件", str(config))
     table.add_row("Excel", str(excel_path))
     table.add_row("上次渲染时间", recorded.get("时间", "（无记录）"))
-    table.add_row("模板引擎", "公式: " + (", ".join(formula_names) or "（无）")
-                  + " ｜ 快照: " + (", ".join(snapshot_names) or "（无）"))
+    table.add_row(
+        "模板引擎",
+        "公式: " + (", ".join(formula_names) or "（无）") + " ｜ 快照: " + (", ".join(snapshot_names) or "（无）"),
+    )
     table.add_row("参数指纹", f"记录 {recorded_input or '（无）'} / 当前 {now_input}" + drift_note)
     table.add_row("输出指纹", f"记录 {recorded_output or '（无）'} / 当前 {now_output}")
     console.print(table)
 
     if not recorded:
-        _warn(
-            "这个工作簿里没有渲染记录（没跑过 `render --write-excel`？）。"
-            "下面按内容逐行比对。"
-        )
+        _warn("这个工作簿里没有渲染记录（没跑过 `render --write-excel`？）。下面按内容逐行比对。")
     if formula_names and not snapshot_names:
         console.print(
             "[cyan]i[/] 全部模板都是公式模式：改参数不需要重跑；"
             "check 会同时比「公式是否与当前 YAML 一致」和「公式算出来的文本是否与 Python 渲染一致」。"
         )
     if formula_names and verify_values:
-        console.print(
-            "[cyan]i[/] 值校验已开启（--no-values 可关闭）：公式在 Python 里算了一遍再比对。"
-        )
+        console.print("[cyan]i[/] 值校验已开启（--no-values 可关闭）：公式在 Python 里算了一遍再比对。")
     if problems:
-        error_console.print("[bold red]ERROR[/] 输出表已过期，共 "
-                            f"{len(problems)} 处不一致：")
+        error_console.print(f"[bold red]ERROR[/] 输出表已过期，共 {len(problems)} 处不一致：")
         for problem in problems:
             error_console.print(f"    {problem}")
-        error_console.print(
-            "    → 跑一次 `excel-codegen render -c "
-            f"{config} -x {excel_path} --write-excel` 刷新"
-        )
+        error_console.print(f"    → 跑一次 `excel-codegen render -c {config} -x {excel_path} --write-excel` 刷新")
         raise typer.Exit(code=1)
     console.print("[bold green]OK[/] 输出表与当前参数一致")

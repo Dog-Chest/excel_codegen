@@ -69,14 +69,14 @@ def compile_code(config: ProjectConfig, code: str | None = None) -> list[str]:
 # 编译形态
 # --------------------------------------------------------------------------- #
 def test_if_else_is_compiled_to_if(tmp_path: Path) -> None:
-    config = make_config(tmp_path, 'x = {% if flag.value == 1 %}A{% else %}B{% endif %};')
+    config = make_config(tmp_path, "x = {% if flag.value == 1 %}A{% else %}B{% endif %};")
     formula = compile_code(config)[0]
     assert formula.startswith('="x = "&IF(')
     assert formula.endswith('"A","B")&";"')
 
 
 def test_if_without_else_falls_back_to_empty(tmp_path: Path) -> None:
-    config = make_config(tmp_path, 'x = {% if flag.value == 1 %}A{% endif %};')
+    config = make_config(tmp_path, "x = {% if flag.value == 1 %}A{% endif %};")
     assert compile_code(config)[0].endswith('"A","")&";"')
 
 
@@ -97,11 +97,11 @@ def test_condition_can_use_prefix(tmp_path: Path) -> None:
 def test_nested_if(tmp_path: Path) -> None:
     config = make_config(
         tmp_path,
-        "x{% if flag.value == 1 %}{% if kind.value == \"EXT\" %}both{% else %}flag only{% endif %}{% endif %}",
+        'x{% if flag.value == 1 %}{% if kind.value == "EXT" %}both{% else %}flag only{% endif %}{% endif %}',
     )
     formula = compile_code(config)[0]
-    assert '"both","flag only"' in formula   # 内层 IF 的两个分支
-    assert formula.count("<>") == 0          # 条件都是显式比较，没有真假包装
+    assert '"both","flag only"' in formula  # 内层 IF 的两个分支
+    assert formula.count("<>") == 0  # 条件都是显式比较，没有真假包装
 
 
 def test_jinja_comment_is_dropped(tmp_path: Path) -> None:
@@ -114,8 +114,7 @@ def test_jinja_comment_is_dropped(tmp_path: Path) -> None:
 def test_case_name_and_template_name_are_allowed_bare(tmp_path: Path) -> None:
     config = make_config(
         tmp_path,
-        'a = {% if case_name == "C1" %}first{% endif %}\n'
-        'b = {% if template_name == "demo" %}yes{% endif %}',
+        'a = {% if case_name == "C1" %}first{% endif %}\nb = {% if template_name == "demo" %}yes{% endif %}',
     )
     formulas = compile_code(config)
     assert "'Local Parameter'!E$1=\"C1\"" in formulas[0]
@@ -155,8 +154,7 @@ def test_truthiness_wrap_depends_on_type(tmp_path: Path) -> None:
     """数值变量比 0，文本变量比空串 —— 与 Python 侧 ``bool(value)`` 的直觉一致。"""
     config = make_config(
         tmp_path,
-        "a = {% if flag.value %}x{% endif %}\n"
-        "b = {% if kind.value %}x{% endif %}",
+        "a = {% if flag.value %}x{% endif %}\nb = {% if kind.value %}x{% endif %}",
     )
     formulas = compile_code(config)
     assert "<>0)" in formulas[0]
@@ -297,7 +295,5 @@ def test_check_verifies_if_formulas(tmp_path: Path) -> None:
 
     from excel_codegen.cli import app
 
-    result = CliRunner().invoke(
-        app, ["check", "-c", str(tmp_path / "if.yaml"), "-x", str(excel)]
-    )
+    result = CliRunner().invoke(app, ["check", "-c", str(tmp_path / "if.yaml"), "-x", str(excel)])
     assert result.exit_code == 0, result.output

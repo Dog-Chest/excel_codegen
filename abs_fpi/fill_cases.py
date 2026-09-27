@@ -27,16 +27,37 @@ LOCAL_SHEET = "Local Parameter"
 # --------------------------------------------------------------------------- #
 EXTERNAL: dict[str, dict[str, object]] = {
     "EXT-T20.559-mu90-kf+1": {
-        "draft": 20.559, "mu_deg": 90, "k_c": 1.0, "k_f0": 1.0, "k_u": 1.1,
-        "beta_EPS": 0.733, "beta_EPP": 0.733, "k_esf": 1.1, "x_o": 51,
+        "draft": 20.559,
+        "mu_deg": 90,
+        "k_c": 1.0,
+        "k_f0": 1.0,
+        "k_u": 1.1,
+        "beta_EPS": 0.733,
+        "beta_EPP": 0.733,
+        "k_esf": 1.1,
+        "x_o": 51,
     },
     "EXT-T15-mu0-kf-1": {
-        "draft": 15, "mu_deg": 0, "k_c": 0.5, "k_f0": -1.0, "k_u": 1.1,
-        "beta_EPS": 0.733, "beta_EPP": 0.733, "k_esf": 1.1, "x_o": 51,
+        "draft": 15,
+        "mu_deg": 0,
+        "k_c": 0.5,
+        "k_f0": -1.0,
+        "k_u": 1.1,
+        "beta_EPS": 0.733,
+        "beta_EPP": 0.733,
+        "k_esf": 1.1,
+        "x_o": 51,
     },
     "EXT-T15-mu90-kf+1": {
-        "draft": 15, "mu_deg": 90, "k_c": 1.0, "k_f0": 1.0, "k_u": 1.1,
-        "beta_EPS": 0.733, "beta_EPP": 0.733, "k_esf": 1.1, "x_o": 51,
+        "draft": 15,
+        "mu_deg": 90,
+        "k_c": 1.0,
+        "k_f0": 1.0,
+        "k_u": 1.1,
+        "beta_EPS": 0.733,
+        "beta_EPP": 0.733,
+        "k_esf": 1.1,
+        "x_o": 51,
     },
 }
 
@@ -48,24 +69,63 @@ EXTERNAL: dict[str, dict[str, object]] = {
 # WBT6 / WBT7 / COT1 三个舱的原始数据见 Rules/gen.js 的 INT_TANKS。
 # --------------------------------------------------------------------------- #
 _WBT6 = {
-    "rho_tank": 1025, "l_tank": 42, "b_tank": 32, "h_tank": 32,
-    "eta_deck": 0, "eta_overflow": 0, "C_dp": 1, "C_ru": 1, "p_vp": 0,
-    "GM_full_in": 0, "k_r_in": 0, "tank_is_ballast": 1, "member_11_17": 0,
+    "rho_tank": 1025,
+    "l_tank": 42,
+    "b_tank": 32,
+    "h_tank": 32,
+    "eta_deck": 0,
+    "eta_overflow": 0,
+    "C_dp": 1,
+    "C_ru": 1,
+    "p_vp": 0,
+    "GM_full_in": 0,
+    "k_r_in": 0,
+    "tank_is_ballast": 1,
+    "member_11_17": 0,
 }
 _WBT7 = {
-    "rho_tank": 1025, "l_tank": 14.5, "b_tank": 10.15, "h_tank": 32,
-    "eta_deck": 0, "eta_overflow": 0, "C_dp": 1, "C_ru": 1, "p_vp": 0,
-    "GM_full_in": 0, "k_r_in": 0, "tank_is_ballast": 1, "member_11_17": 0,
+    "rho_tank": 1025,
+    "l_tank": 14.5,
+    "b_tank": 10.15,
+    "h_tank": 32,
+    "eta_deck": 0,
+    "eta_overflow": 0,
+    "C_dp": 1,
+    "C_ru": 1,
+    "p_vp": 0,
+    "GM_full_in": 0,
+    "k_r_in": 0,
+    "tank_is_ballast": 1,
+    "member_11_17": 0,
 }
 _COT1 = {
-    "rho_tank": 900, "l_tank": 42, "b_tank": 32, "h_tank": 32,
-    "eta_deck": 0, "eta_overflow": 0, "C_dp": 1, "C_ru": 1, "p_vp": 0.21,
-    "GM_full_in": 0, "k_r_in": 0, "tank_is_ballast": 0, "member_11_17": 1,
+    "rho_tank": 900,
+    "l_tank": 42,
+    "b_tank": 32,
+    "h_tank": 32,
+    "eta_deck": 0,
+    "eta_overflow": 0,
+    "C_dp": 1,
+    "C_ru": 1,
+    "p_vp": 0.21,
+    "GM_full_in": 0,
+    "k_r_in": 0,
+    "tank_is_ballast": 0,
+    "member_11_17": 1,
 }
 _COMMON = {
-    "k_u": 1.1, "k_esf": 1.1, "w_v": 0.75, "w_l": 0.25, "w_t": 0.75,
-    "beta_VAC": 0.660, "beta_LAC": 0.758, "beta_TAC": 0.557,
-    "beta_PMO": 0.686, "beta_RMO": 0.492, "delta_b": 0, "delta_h": 0,
+    "k_u": 1.1,
+    "k_esf": 1.1,
+    "w_v": 0.75,
+    "w_l": 0.25,
+    "w_t": 0.75,
+    "beta_VAC": 0.660,
+    "beta_LAC": 0.758,
+    "beta_TAC": 0.557,
+    "beta_PMO": 0.686,
+    "beta_RMO": 0.492,
+    "delta_b": 0,
+    "delta_h": 0,
 }
 
 
@@ -125,9 +185,7 @@ def _write(path: Path, cases: dict[str, dict[str, object]], *, header: bool = Tr
                 )
         for name, value in values.items():
             sheet.cell(row=row_of[name], column=column, value=value).alignment = _TOP
-        sheet.column_dimensions[get_column_letter(column)].width = max(
-            16, min(36, len(case_name) + 6)
-        )
+        sheet.column_dimensions[get_column_letter(column)].width = max(16, min(36, len(case_name) + 6))
 
     workbook.save(path)
     print(f"{path.name}: 写入 {len(cases)} 个工况 -> " + ", ".join(cases))

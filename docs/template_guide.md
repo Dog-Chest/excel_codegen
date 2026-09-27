@@ -212,12 +212,12 @@ ERROR 参数取值不满足变量声明的约束，共 2 处：
 
 ```python
 VarValue(value="A", prefix="GPIO", suffix="_PORT")
-str(v)        # "GPIOA_PORT"   组合值 = prefix + value + suffix
-v.value       # "A"            纯值（保留原始类型）
-v.prefix      # "GPIO"
-v.suffix      # "_PORT"
-v.text        # "A"            纯值的字符串形式
-v.is_empty    # False          值/前缀/后缀全空时为 True
+str(v)  # "GPIOA_PORT"   组合值 = prefix + value + suffix
+v.value  # "A"            纯值（保留原始类型）
+v.prefix  # "GPIO"
+v.suffix  # "_PORT"
+v.text  # "A"            纯值的字符串形式
+v.is_empty  # False          值/前缀/后缀全空时为 True
 ```
 
 ### 4.2 模板里的四种写法

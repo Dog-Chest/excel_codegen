@@ -54,11 +54,10 @@ def _cell_or(cell_value, default):
         return default
     return to_text(cell_value)
 
+
 # read_global_values（原 316-317 行）
-prefix = _cell_or(worksheet.cell(row=row, column=_GLOBAL_COL["prefix"]).value,
-                  definition.prefix if definition else "")
-suffix = _cell_or(worksheet.cell(row=row, column=_GLOBAL_COL["suffix"]).value,
-                  definition.suffix if definition else "")
+prefix = _cell_or(worksheet.cell(row=row, column=_GLOBAL_COL["prefix"]).value, definition.prefix if definition else "")
+suffix = _cell_or(worksheet.cell(row=row, column=_GLOBAL_COL["suffix"]).value, definition.suffix if definition else "")
 # 后面那两行 `if not prefix and definition:` 的回落逻辑可以删掉
 ```
 
@@ -97,12 +96,12 @@ suffix = _cell_or(worksheet.cell(row=row, column=_GLOBAL_COL["suffix"]).value,
 def _last_used_row(worksheet, top: int, left: int, right: int) -> int:
     """给定列区间内最后一个有内容的行号（用于清理上一次可能更长的渲染）。"""
     last = top - 1
-    for row in worksheet.iter_rows(min_row=top, max_row=worksheet.max_row,
-                                   min_col=left, max_col=right):
+    for row in worksheet.iter_rows(min_row=top, max_row=worksheet.max_row, min_col=left, max_col=right):
         for cell in row:
             if cell.value not in (None, ""):
                 last = max(last, cell.row)
     return last
+
 
 # _write_horizontal
 bottom = max(row + max_lines + 1, _last_used_row(worksheet, top, column, column + len(results) - 1))
@@ -128,7 +127,7 @@ bottom = max(row + len(results) + 1, _last_used_row(worksheet, row, left, worksh
 ```python
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(errors="backslashreplace")   # 任何非 GBK 字符都不再抛异常
+        _stream.reconfigure(errors="backslashreplace")  # 任何非 GBK 字符都不再抛异常
     except Exception:
         pass
 ```
@@ -218,7 +217,7 @@ prefix = to_text(worksheet.cell(row=row, column=_GLOBAL_COL["prefix"]).value).st
 suffix = to_text(worksheet.cell(row=row, column=_GLOBAL_COL["suffix"]).value).strip()
 ...
 if not prefix and definition is not None:
-    prefix = definition.prefix          # ← 只有"strip 完是空"才回落
+    prefix = definition.prefix  # ← 只有"strip 完是空"才回落
 ```
 
 `create_template` 是把 YAML 的 `suffix` **原样**写进单元格的
@@ -360,7 +359,7 @@ def _write_horizontal(worksheet, template, results, column, row):
     max_lines = max(result.line_count for result in results)
     ...
     bottom = row + max_lines + 1
-    last_column = _last_used_column(worksheet, top, bottom, column)   # 只看这几行
+    last_column = _last_used_column(worksheet, top, bottom, column)  # 只看这几行
     _clear_region(worksheet, top, bottom, column, last_column)
 ```
 
@@ -436,6 +435,8 @@ global 名字 = []
 
 ```python
 class _NoDupLoader(yaml.SafeLoader): ...
+
+
 def _no_dup(loader, node, deep=False):
     mapping = {}
     for key_node, value_node in node.value:
@@ -444,6 +445,8 @@ def _no_dup(loader, node, deep=False):
             raise ConfigError(f"YAML 键重复: {key!r}（第 {key_node.start_mark.line + 1} 行）")
         mapping[key] = loader.construct_object(value_node, deep=deep)
     return mapping
+
+
 _NoDupLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _no_dup)
 ```
 
@@ -492,7 +495,7 @@ exit=2
 
 ```python
 if write_excel:
-    summary.add_row("写回 Excel", "是")     # ← 不写回时这一行只是"不出现"
+    summary.add_row("写回 Excel", "是")  # ← 不写回时这一行只是"不出现"
 ```
 
 **实测**（`external.xlsx` 里把 L 改成 500，然后两种跑法）：

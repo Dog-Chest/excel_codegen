@@ -21,10 +21,12 @@ HOWTO（可选，第一张）
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -32,10 +34,10 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 
 from .derived import (
+    DerivedError,
     DerivedNotTranslatable,
     evaluate_derived,
     is_translatable,
-    ordered_derived,
     to_excel,
 )
 from .derived import validate_config as derived_validate_config
@@ -164,7 +166,7 @@ def create_template(
     _build_local_sheet(workbook.create_sheet(local_name), config, case_names)
 
     for name in config.excel.sheets.outputs:
-        worksheet = workbook.create_sheet(name)
+        workbook.create_sheet(name)
 
     sheet_name = config.excel.template_sheet
     if include_template_sheet is False:
@@ -229,9 +231,7 @@ def _build_global_sheet(worksheet: Worksheet, config: ProjectConfig) -> None:
             value_cell.fill = _INPUT_FILL
             value_cell.alignment = _TOP_ALIGN
             _add_value_validation(worksheet, variable, [value_cell.coordinate])
-        worksheet.cell(
-            row=row, column=_GLOBAL_COL["description"], value=_described(variable)
-        )
+        worksheet.cell(row=row, column=_GLOBAL_COL["description"], value=_described(variable))
         worksheet.cell(row=row, column=_GLOBAL_COL["prefix"], value=variable.prefix)
         worksheet.cell(row=row, column=_GLOBAL_COL["suffix"], value=variable.suffix)
     for index, width in enumerate((26, 30, 46, 16, 16), start=1):
@@ -251,9 +251,7 @@ def _build_local_sheet(worksheet: Worksheet, config: ProjectConfig, case_names: 
             column = FIRST_CASE_COLUMN + offset
             cell = worksheet.cell(row=row, column=column)
             if variable.is_derived:
-                _write_derived_cell(
-                    cell, variable, resolve=_local_resolver(config, column)
-                )
+                _write_derived_cell(cell, variable, resolve=_local_resolver(config, column))
             else:
                 cell.value = variable.default
                 cell.fill = _INPUT_FILL
@@ -268,9 +266,7 @@ def _build_local_sheet(worksheet: Worksheet, config: ProjectConfig, case_names: 
     worksheet.freeze_panes = "E2"
 
 
-def _add_value_validation(
-    worksheet: Worksheet, variable: VariableDef, cells: Sequence[str]
-) -> None:
+def _add_value_validation(worksheet: Worksheet, variable: VariableDef, cells: Sequence[str]) -> None:
     """把变量声明的取值约束写成 Excel 的**数据有效性**（下拉列表 / 数值范围）。
 
     这是"挡在输入口"的第一道闸，方便人填；**判据仍然是** :func:`check_value_constraints` ——
@@ -302,6 +298,9 @@ def _add_value_validation(
             )
         validation = DataValidation(type="list", formula1=f'"{joined}"', allow_blank=True)
     else:
+        operator: str
+        low: float | None
+        high: float | None
         if variable.min is not None and variable.max is not None:
             operator, low, high = "between", variable.min, variable.max
         elif variable.min is not None:
@@ -349,8 +348,7 @@ def _global_resolver(config: ProjectConfig):
         definition = globals_by_name.get(name)
         if definition is None:
             raise DerivedError(
-                f"派生表达式引用了 {name!r}：global 的派生参数只能引用 global 变量"
-                "（不能引用 local，也不存在别的表）"
+                f"派生表达式引用了 {name!r}：global 的派生参数只能引用 global 变量（不能引用 local，也不存在别的表）"
             )
         return guarded_lookup(sheet, name, _GLOBAL_COL["value"], definition.default, absolute=True)
 
@@ -367,9 +365,7 @@ def _local_resolver(config: ProjectConfig, case_column: int):
     def resolve(name: str) -> str:
         if name in locals_by_name:
             # 派生格里没有"右拉"语义：列标锁死（表格由工具维护）
-            return guarded_lookup(
-                local_sheet, name, case_column, locals_by_name[name].default, absolute=True
-            )
+            return guarded_lookup(local_sheet, name, case_column, locals_by_name[name].default, absolute=True)
         if name in globals_by_name:
             return guarded_lookup(
                 global_sheet, name, _GLOBAL_COL["value"], globals_by_name[name].default, absolute=True
@@ -485,7 +481,11 @@ def write_howto_sheet(
     add(f"  1.  {config.excel.sheets.global_} 的 B 列：全局变量取值（所有 Case 共用）。", _HOWTO_NOTE, None)
     add(f"  2.  {config.excel.sheets.local} 从 E 列起：每个 Case 一列，右拉复制即可增加。", _HOWTO_NOTE, None)
     add("  3.  改完参数后回到命令行执行：", _HOWTO_NOTE, None)
-    add(f"          excel-codegen render -c <配置>.yaml -x {config.excel.output} --write-excel", _HOWTO_MONO, _HOWTO_FILL)
+    add(
+        f"          excel-codegen render -c <配置>.yaml -x {config.excel.output} --write-excel",
+        _HOWTO_MONO,
+        _HOWTO_FILL,
+    )
     add("      只想导出代码文件就换成 --outdir <目录>；只预览不写回则什么参数都不加。", _HOWTO_NOTE, None)
     add("      想确认表里的代码是不是已经过期：excel-codegen check -c <配置>.yaml", _HOWTO_NOTE, None)
     add("", _HOWTO_NOTE, None)
@@ -586,7 +586,7 @@ def read_metadata(workbook: Workbook, config: ProjectConfig) -> dict[str, str]:
             text = to_text(worksheet.cell(row=row, column=1).value).strip()
             for label in (META_TIME, META_INPUT, META_OUTPUT):
                 if text.startswith(label):
-                    found[label] = text[len(label):].strip()
+                    found[label] = text[len(label) :].strip()
         if found:
             return found
     return {}
@@ -610,9 +610,7 @@ def load_workbook_file(path: str | Path) -> Workbook:
 
 def get_sheet(workbook: Workbook, name: str) -> Worksheet:
     if name not in workbook.sheetnames:
-        raise ExcelError(
-            f"缺少工作表 {name!r}。当前工作表: {', '.join(workbook.sheetnames)}"
-        )
+        raise ExcelError(f"缺少工作表 {name!r}。当前工作表: {', '.join(workbook.sheetnames)}")
     return workbook[name]
 
 
@@ -645,13 +643,9 @@ def _check_header(
     for index, title in enumerate(expected, start=1):
         actual = to_text(worksheet.cell(row=1, column=index).value).strip()
         if actual and actual.lower() != title.lower():
-            raise ExcelError(
-                f"工作表 {sheet_name!r} 第 1 行第 {index} 列表头应为 {title!r}，实际是 {actual!r}"
-            )
+            raise ExcelError(f"工作表 {sheet_name!r} 第 1 行第 {index} 列表头应为 {title!r}，实际是 {actual!r}")
         if not actual and strict:
-            raise ExcelError(
-                f"工作表 {sheet_name!r} 第 1 行第 {index} 列表头为空，应为 {title!r}"
-            )
+            raise ExcelError(f"工作表 {sheet_name!r} 第 1 行第 {index} 列表头为空，应为 {title!r}")
 
 
 def read_global_values(
@@ -679,9 +673,7 @@ def read_global_values(
         if not name:
             continue
         if name in seen:
-            raise ExcelError(
-                f"工作表 {config.excel.sheets.global_!r} 第 {row} 行变量名 {name!r} 重复"
-            )
+            raise ExcelError(f"工作表 {config.excel.sheets.global_!r} 第 {row} 行变量名 {name!r} 重复")
         seen.add(name)
 
         definition = definitions.get(name)
@@ -735,12 +727,11 @@ def _resolve_derived_globals(
         config.global_variables,
         raw_values,
         scope="global 的派生参数",
-        forbidden={item.name: "global 的派生参数不能引用 local 变量（那时还没有当前 Case）"
-                   for item in config.local_variables},
+        forbidden={
+            item.name: "global 的派生参数不能引用 local 变量（那时还没有当前 Case）" for item in config.local_variables
+        },
     )
-    _warn_hand_edited_derived(
-        worksheet, derived, _GLOBAL_COL["value"], raw_values, warnings, label="Global 表"
-    )
+    _warn_hand_edited_derived(worksheet, derived, _GLOBAL_COL["value"], raw_values, warnings, label="Global 表")
     for definition in derived:
         current = values.get(definition.name, VarValue(""))
         computed = _coerce(raw_values[definition.name], definition.type, definition.name)
@@ -759,10 +750,7 @@ def _warn_hand_edited_derived(
     """派生格是公式（或工具写的值）—— 如果用户手工改成了别的值，提醒他会被忽略。"""
     if warnings is None:
         return
-    rows = {
-        to_text(worksheet.cell(row=row, column=1).value).strip(): row
-        for row in range(2, worksheet.max_row + 1)
-    }
+    rows = {to_text(worksheet.cell(row=row, column=1).value).strip(): row for row in range(2, worksheet.max_row + 1)}
     for definition in derived:
         row = rows.get(definition.name)
         if row is None:
@@ -814,9 +802,7 @@ def read_cases(
         if not name:
             continue
         if name in seen:
-            raise ExcelError(
-                f"工作表 {config.excel.sheets.local!r} 第 {row} 行变量名 {name!r} 重复"
-            )
+            raise ExcelError(f"工作表 {config.excel.sheets.local!r} 第 {row} 行变量名 {name!r} 重复")
         seen.add(name)
         definition = definitions.get(name)
         prefix = _text_or(
@@ -854,20 +840,12 @@ def read_cases(
         for definition in config.local_variables:
             if definition.name in values:
                 continue
-            values[definition.name] = VarValue(
-                definition.default, definition.prefix, definition.suffix
-            )
+            values[definition.name] = VarValue(definition.default, definition.prefix, definition.suffix)
             if not definition.is_derived:
-                raw_values[definition.name] = _coerce(
-                    definition.default, definition.type, definition.name
-                )
+                raw_values[definition.name] = _coerce(definition.default, definition.type, definition.name)
 
-        _resolve_derived_locals(
-            worksheet, config, column, case_name, values, raw_values, warnings
-        )
-        cases.append(
-            CaseData(name=case_name, column=column, values=values, explicit_values=explicit)
-        )
+        _resolve_derived_locals(worksheet, config, column, case_name, values, raw_values, warnings)
+        cases.append(CaseData(name=case_name, column=column, values=values, explicit_values=explicit))
     return cases
 
 
@@ -889,7 +867,11 @@ def _resolve_derived_locals(
         scope=f"Case {case_name!r} 的 local 派生参数",
     )
     _warn_hand_edited_derived(
-        worksheet, derived, column, raw_values, warnings,
+        worksheet,
+        derived,
+        column,
+        raw_values,
+        warnings,
         label=f"Local 表 Case {case_name!r}",
     )
     for definition in derived:
@@ -1077,10 +1059,7 @@ def _formula_blocks(
         case_columns=[case_columns[result.case_name] for result in results],
         source=source,
     )
-    return [
-        _Block(case_name=result.case_name, lines=lines)
-        for result, lines in zip(results, per_case)
-    ]
+    return [_Block(case_name=result.case_name, lines=lines) for result, lines in zip(results, per_case, strict=False)]
 
 
 def _row_of(worksheet: Worksheet, variable: str) -> int | None:
@@ -1201,12 +1180,10 @@ def write_results(
                 _write_vertical(worksheet, template, blocks, column, row)
 
         if formula_written:
-            # 让 Excel / WPS 打开文件时立刻重算，而不是显示上一次的缓存值
-            try:
-                # 公式模式下必须重算（openpyxl 默认恰好也是 True，这里显式写死，不依赖上游默认）
+            # 让 Excel / WPS 打开文件时立刻重算，而不是显示上一次的缓存值。
+            # 公式模式下必须重算（openpyxl 默认恰好也是 True，这里显式写死，不依赖上游默认）
+            with suppress(AttributeError):  # pragma: no cover - 老版本 openpyxl 兜底
                 workbook.calculation.fullCalcOnLoad = True
-            except AttributeError:  # pragma: no cover - 老版本 openpyxl 兜底
-                pass
 
         metadata = {
             META_TIME: datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1225,9 +1202,12 @@ def write_results(
             metadata["cases"] = ", ".join(_case_names(rendered)) or "（无）"
 
         # 派生参数的格子也刷新一遍：能写公式就写公式（改输入自动重算）
-        if values is not None and cases is not None:
-            if refresh_derived_cells(workbook, config, values, cases, warnings=warnings):
-                formula_written = True
+        if (
+            values is not None
+            and cases is not None
+            and refresh_derived_cells(workbook, config, values, cases, warnings=warnings)
+        ):
+            formula_written = True
 
         _record_metadata(workbook, config, metadata, command=command, update_howto=update_howto)
         workbook.save(target)

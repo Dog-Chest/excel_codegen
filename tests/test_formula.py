@@ -9,7 +9,7 @@ from openpyxl import load_workbook
 
 from excel_codegen.excel_io import create_template, write_results
 from excel_codegen.formula import FormulaError, compile_formulas, compile_line
-from excel_codegen.models import ProjectConfig, RenderResult, load_config
+from excel_codegen.models import ProjectConfig, load_config
 from excel_codegen.renderer import render_all
 
 FORMULA_YAML = """\
@@ -99,9 +99,7 @@ def test_compile_line_uses_cell_references(formula_config: ProjectConfig) -> Non
 
 
 def test_compile_defaults_are_inlined(formula_config: ProjectConfig) -> None:
-    formula = compile_line(
-        "{{ port }}", config=formula_config, template_name="t", case_column=5
-    )
+    formula = compile_line("{{ port }}", config=formula_config, template_name="t", case_column=5)
     assert '"GPIO"' in formula and '"_PORT"' in formula  # prefix / suffix 回落
     assert '"A"' in formula  # value 回落
 
@@ -113,7 +111,7 @@ def test_compile_case_name_and_template_name(formula_config: ProjectConfig) -> N
         template_name="uart_init",
         case_column=6,
     )
-    assert formula == "='Local Parameter'!F$1&\" /\"".replace(" ", "") or "\"uart_init\"" in formula
+    assert formula == "='Local Parameter'!F$1&\" /\"".replace(" ", "") or '"uart_init"' in formula
     assert "'Local Parameter'!F$1" in formula
     assert '"uart_init"' in formula
 
@@ -158,9 +156,7 @@ def test_dot_value_and_text_are_the_same(formula_config: ProjectConfig) -> None:
         ("{{ nope }}", "未在 YAML 中定义"),
     ],
 )
-def test_unsupported_templates_report_line(
-    formula_config: ProjectConfig, code: str, keyword: str
-) -> None:
+def test_unsupported_templates_report_line(formula_config: ProjectConfig, code: str, keyword: str) -> None:
     """超出"纯替换"子集的写法必须报错，并带上出错的行内容。"""
     template = formula_config.templates[0]
     bad = template.model_copy(update={"code": code})
@@ -206,9 +202,7 @@ def test_write_results_writes_formulas(formula_config: ProjectConfig, tmp_path: 
 
     # 快照模式（同一个模板改回 snapshot）写的是文本
     snapshot = formula_config.templates[0].model_copy(update={"engine": "snapshot"})
-    formulas_config = formula_config.model_copy(
-        update={"templates": [snapshot, formula_config.templates[1]]}
-    )
+    formulas_config = formula_config.model_copy(update={"templates": [snapshot, formula_config.templates[1]]})
     text_output = render_all(formulas_config, path)
     write_results(path, formulas_config, text_output.results)
     workbook = load_workbook(path)

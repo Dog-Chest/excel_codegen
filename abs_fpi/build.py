@@ -41,6 +41,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+import compose as composer  # noqa: E402
+import fill_cases  # noqa: E402
+import verify_excel_engine as verifier  # noqa: E402
+
 from excel_codegen import (  # noqa: E402
     create_template,
     export_files,
@@ -49,16 +53,11 @@ from excel_codegen import (  # noqa: E402
     write_results,
 )
 
-import compose as composer  # noqa: E402
-import fill_cases  # noqa: E402
-import verify_excel_engine as verifier  # noqa: E402
-
 #: (YAML, 工作簿, 样例工况名) —— 项目工作簿放最后：它的 YAML 由 compose 生成
 PROJECTS = [
     ("abs_fpi_external.yaml", "abs_fpi_external.xlsx", list(fill_cases.EXTERNAL)),
     ("abs_fpi_internal.yaml", "abs_fpi_internal.xlsx", list(fill_cases.INTERNAL)),
-    ("abs_fpi.yaml", fill_cases.PROJECT,
-     list(fill_cases.EXTERNAL) + list(fill_cases.INTERNAL)),
+    ("abs_fpi.yaml", fill_cases.PROJECT, list(fill_cases.EXTERNAL) + list(fill_cases.INTERNAL)),
 ]
 
 GENERATED = HERE / "generated"
@@ -81,7 +80,7 @@ def verify(yaml_name: str, book_name: str) -> tuple[int, int]:
             if not results:
                 continue
             got = verifier.evaluate_block(wb, cfg, template, len(results))
-            for res, lines in zip(results, got):
+            for res, lines in zip(results, got, strict=False):
                 checks += 1
                 if lines == res.lines:
                     continue
@@ -100,16 +99,20 @@ def verify(yaml_name: str, book_name: str) -> tuple[int, int]:
 
 def cli_check(yaml_name: str, book_name: str) -> bool:
     proc = subprocess.run(
-        [sys.executable, "-m", "excel_codegen", "check",
-         "-c", str(HERE / yaml_name), "-x", str(HERE / book_name)],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        [sys.executable, "-m", "excel_codegen", "check", "-c", str(HERE / yaml_name), "-x", str(HERE / book_name)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,  # 退出码自己判断：1 = 已过期，是正常结果而不是异常
     )
     text = (proc.stdout or "") + (proc.stderr or "")
-    line = [l.strip() for l in text.splitlines()
-            if l.strip().startswith("OK ") or l.strip().startswith("ERROR ")
-            or "参数指纹" in l]
-    print(f"  [check] {book_name:26s} {'OK' if proc.returncode == 0 else 'STALE':5s} "
-          f"{line[0] if line else ''}")
+    line = [
+        row.strip()
+        for row in text.splitlines()
+        if row.strip().startswith("OK ") or row.strip().startswith("ERROR ") or "参数指纹" in row
+    ]
+    print(f"  [check] {book_name:26s} {'OK' if proc.returncode == 0 else 'STALE':5s} {line[0] if line else ''}")
     return proc.returncode == 0
 
 
@@ -130,9 +133,10 @@ def refresh(yaml_name: str, book_name: str, cases: list[str], *, allow_init: boo
     files = export_files(cfg, out.results, GENERATED)
 
     skipped = sum(len(v) for v in getattr(out, "skipped", {}).values())
-    print(f"[ok]    {book_name}: {len(out.cases)} 工况 × {len(cfg.templates)} 模板 "
-          f"→ {len(files)} 个导出文件"
-          + (f"，case_filter 跳过 {skipped}" if skipped else ""))
+    print(
+        f"[ok]    {book_name}: {len(out.cases)} 工况 × {len(cfg.templates)} 模板 "
+        f"→ {len(files)} 个导出文件" + (f"，case_filter 跳过 {skipped}" if skipped else "")
+    )
 
 
 def main(argv: list[str]) -> int:
@@ -155,8 +159,10 @@ def main(argv: list[str]) -> int:
         checks, failures = verify(yaml_name, book_name)
         total += checks
         failed += failures
-        print(f"  [公式] {book_name:26s} {checks:3d} 项, {failures} 项失败"
-              + ("   <= 公式算出来的代码与 Python 渲染不一致" if failures else ""))
+        print(
+            f"  [公式] {book_name:26s} {checks:3d} 项, {failures} 项失败"
+            + ("   <= 公式算出来的代码与 Python 渲染不一致" if failures else "")
+        )
 
     print("\n== 验证     excel-codegen check")
     ok = all(cli_check(y, b) for y, b, _ in PROJECTS)

@@ -87,6 +87,31 @@ BinExpr 前面，`{% if flag.value > 0 and kind.value == "EXT" %}` 才真正可�
 `tests/test_formula_eval.py` 补 12 项运算符用例；`tests/test_derived.py` 补 4 项（含把
 那个规避写法换成真断言）。
 
+### 5. 质量护栏：ruff + mypy + 覆盖率门槛
+
+CI 此前只跑测试 —— "能不能跑"有了，"写得对不对"没人管。现在四条命令进 CI
+（`ruff check` / `ruff format --check` / `mypy` / `pytest --cov`），三个系统 × 两个
+Python 版本各跑一遍。
+
+| 变化 | 说明 |
+| --- | --- |
+| `[tool.ruff]` | 显式列出规则集（不依赖 ruff 默认值，免得升级时行为漂移）：`E4/E7/E9`、`F`、`I`、`UP`、`B`、`SIM`、`RUF`、`PLW1510`。中文项目要关掉 `RUF001-003`（全角标点被当成"歧义字符"）；Typer 的 `B008`、行长 `E501` 也关掉 |
+| **`target-version = "py311"`** | 与 `requires-python` 必须一致。这条护栏**当场就抓到一个真问题**：`formula.py` 里 f-string 的表达式里写了引号（Python 3.12 才允许），本地 3.12 跑得好好的，一 push 到 3.11 就是语法错误 |
+| `[tool.mypy]` | `python_version = "3.11"`、只查 `excel_codegen/`、`check_untyped_defs`。新增代码一律带注解 |
+| `[tool.coverage.report]` | `fail_under = 85`（当前 86.4%，分支覆盖）。覆盖率掉了直接红 |
+| `ruff format` | 全仓库归一（45 个文件） |
+
+**顺手修掉两个被 lint/类型检查抓出来的真 bug**：
+
+1. **`excel_io.py` 用了没导入的 `DerivedError`**（F821）—— 派生参数的 resolver 在
+   "引用了不合法的名字"时本该抛出带提示的 `DerivedError`，实际会先炸 `NameError`。
+2. **`cli.py` 里 `_first_difference` 定义了两次** —— 0.4.0 重写差异信息时留下的旧版本被
+   新版遮蔽，成了几百行里没人注意的死代码（mypy 的 `no-redef` 把它揪出来了）。
+
+顺带清掉一批：未使用的导入/变量、`zip()` 缺 `strict=`、`try/except/pass` 改
+`contextlib.suppress`、嵌套 `if` 合并、`FilterValue` 的 `__slots__` 属性补类型标注、
+`Evaluator` 的 `tokens/index` 在 `__init__` 里显式初始化（原来是 `getattr(..., None)`）。
+
 ---
 
 ## 0.5.2 — 多平台零配置：uv（2026-09-27）
