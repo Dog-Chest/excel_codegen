@@ -33,6 +33,7 @@ from .excel_io import (
     output_fingerprint,
     read_cases,
     read_global_values,
+    read_group_members,
     read_metadata,
     template_source,
     write_results,
@@ -457,12 +458,13 @@ def validate_command(
                 check_required_sheets(workbook, project)
                 global_values = read_global_values(workbook, project)
                 cases = read_cases(workbook, project)
+                members = read_group_members(workbook, project)
                 metadata = read_metadata(workbook, project)
             finally:
                 workbook.close()
             # 取值约束：这一条会让"表里填错了一个数字"在 validate 阶段就暴露
-            check_value_constraints(project, global_values, cases)
-            check_asserts(project, global_values, cases, env=environment)
+            check_value_constraints(project, global_values, cases, members=members)
+            check_asserts(project, global_values, cases, members=members, env=environment)
             excel_table = Table(title="Excel 检查", header_style="bold cyan")
             excel_table.add_column("项目", style="bold")
             excel_table.add_column("内容")

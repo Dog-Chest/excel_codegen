@@ -45,6 +45,7 @@ uv run excel-codegen render -c examples/example.yaml -x examples/template.xlsx -
 | **取值约束** | `min` / `max` / `choices` / `pattern` 声明合法取值：Excel 里变下拉列表与数值范围，`render` / `validate` / `check` 每次读表都再查一遍 —— 挡住"手滑把 20.559 打成 205.59 却照样生成代码" |
 | **一本工作簿放多套规则** | `case_filter: "kind == 'EXT'"` 让模板只作用于匹配的工况，共用一张 Global 表 |
 | **跨文件复用** | `extends: [rules/a.yaml, rules/b.yaml]` 把几套规范合并进一份项目配置 —— 变量与模板不用手抄，`template_file` 相对各自文件解析 |
+| **三层作用域** | 船（global）→ 工况（local）→ **舱 / 设备（成员表）**：被多个工况引用的舱参数只写一遍，改一处就够 |
 | **可导出代码文件** | 文件名支持 Jinja2（`uart_init_{{ case_name }}.c`），一次生成多份 |
 | **自带说明与指纹** | 工作簿里有 `HOWTO` 表与生成指纹；`excel-codegen check` 判定"表里的代码是否已过期"，**CI 可用** |
 

@@ -2,7 +2,7 @@
 | --- | --- | --- |
 | case_name | WBT7-d20.559-mu90 | 工况名（Excel 表头） |
 | kind | INT | 规则集（多规则集共用一本工作簿时用 case_filter 分流） |
-| tank_ref | WBT7 | 舱（本工具无舱作用域，数据按工况摊平） |
+| tank_ref | WBT7 | 舱（本项目当前按工况摊平；工具 0.7.0 起支持成员表） |
 | draft | 20.559 m | 装载工况 |
 | mu_deg | 90 deg | Table 1A D |
 | k_c | 1 | Table 1A C |

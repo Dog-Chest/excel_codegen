@@ -62,6 +62,7 @@ from .utils import (
 
 __all__ = [
     "GLOBAL_HEADERS",
+    "GROUP_HEADER",
     "LOCAL_HEADERS",
     "META_MARKER",
     "case_column_map",
@@ -73,6 +74,7 @@ __all__ = [
     "output_fingerprint",
     "read_cases",
     "read_global_values",
+    "read_group_members",
     "read_metadata",
     "template_source",
     "write_results",
@@ -95,6 +97,10 @@ _SCAN_LIMIT = 256
 
 #: Global 表列号
 _GLOBAL_COL = {"name": 1, "value": 2, "description": 3, "prefix": 4, "suffix": 5}
+#: 成员表（第三层作用域）列号：A=成员名，B 起一个变量一列
+_GROUP_FIRST_VAR_COLUMN = 2
+#: 成员表 A 列表头
+GROUP_HEADER = "成员"
 #: Local 表列号
 _LOCAL_COL = {"name": 1, "description": 2, "prefix": 3, "suffix": 4}
 
@@ -171,6 +177,10 @@ def create_template(
     local_name = config.excel.sheets.local
     _build_global_sheet(workbook.create_sheet(global_name), config, comments=include_comments)
     _build_local_sheet(workbook.create_sheet(local_name), config, case_names, comments=include_comments)
+    if config.group is not None:
+        _build_group_sheet(
+            workbook.create_sheet(config.group.sheet), config, config.group.members, comments=include_comments
+        )
 
     for name in config.excel.sheets.outputs:
         workbook.create_sheet(name)
@@ -415,6 +425,46 @@ exit "$status"
             path.chmod(path.stat().st_mode | 0o111)  # 让 Linux/macOS 上可以直接 ./ 跑
         written.append(path)
     return written
+
+
+def _build_group_sheet(
+    worksheet: Worksheet,
+    config: ProjectConfig,
+    members: Sequence[str],
+    *,
+    comments: bool = True,
+) -> None:
+    """建"成员表"：**一行一个成员，B 列起一个变量一列**（表头是变量名）。
+
+    为什么不像 Local 那样"变量做行"：工程师写舱容表就是一行一个舱；而且这样公式模式
+    能用与 global / local 同一形态的 ``INDEX/MATCH`` 定位（一次一维查找）。
+    """
+    group = config.group
+    if group is None:
+        return
+    _write_headers(worksheet, [GROUP_HEADER, *group.names])
+    for offset, variable in enumerate(group.variables):
+        cell = worksheet.cell(row=1, column=_GROUP_FIRST_VAR_COLUMN + offset)
+        if comments:
+            _attach_comment(cell, variable, where=f"成员表（{group.sheet}）：一行一个成员")
+
+    for row, member in enumerate(members, start=2):
+        worksheet.cell(row=row, column=1, value=member)
+        for offset, variable in enumerate(group.variables):
+            cell = worksheet.cell(row=row, column=_GROUP_FIRST_VAR_COLUMN + offset, value=variable.default)
+            cell.fill = _INPUT_FILL
+            cell.alignment = _TOP_ALIGN
+
+    for offset, variable in enumerate(group.variables):
+        column = _GROUP_FIRST_VAR_COLUMN + offset
+        cells = [worksheet.cell(row=row, column=column).coordinate for row in range(2, len(members) + 2)]
+        _add_value_validation(worksheet, variable, cells)
+
+    worksheet.column_dimensions["A"].width = 24
+    for offset in range(len(group.variables)):
+        letter = column_index_to_letter(_GROUP_FIRST_VAR_COLUMN + offset)
+        worksheet.column_dimensions[letter].width = 20
+    worksheet.freeze_panes = "B2"
 
 
 def _add_value_validation(worksheet: Worksheet, variable: VariableDef, cells: Sequence[str]) -> None:
@@ -1047,6 +1097,64 @@ def _resolve_derived_locals(
         values[definition.name] = VarValue(computed, current.prefix, current.suffix)
 
 
+def read_group_members(
+    workbook: Workbook,
+    config: ProjectConfig,
+    *,
+    warnings: list[str] | None = None,
+) -> dict[str, dict[str, VarValue]]:
+    """读成员表（第三层作用域）：**一行一个成员，B 列起一个变量一列**。
+
+    :returns: ``{成员名: {变量名: VarValue}}``；没配 ``variables.group`` 时返回空字典。
+    """
+    group = config.group
+    if group is None:
+        return {}
+    sheet = group.sheet
+    worksheet = get_sheet(workbook, sheet)
+
+    # 表头：B 列起是变量名（遇到空表头就停）
+    columns: dict[str, int] = {}
+    for column in range(_GROUP_FIRST_VAR_COLUMN, worksheet.max_column + 1):
+        name = to_text(worksheet.cell(row=1, column=column).value).strip()
+        if not name:
+            break
+        if name in columns:
+            raise ExcelError(f"成员表 {sheet!r} 第 1 行表头 {name!r} 重复")
+        columns[name] = column
+    defined = {variable.name: variable for variable in group.variables}
+    missing = [name for name in defined if name not in columns]
+    if missing:
+        raise ExcelError(
+            f"成员表 {sheet!r} 缺少这些变量的列: {', '.join(missing)}"
+            "（表头要写变量名；改了 YAML 的 group.variables 之后要重跑 init / 手工补列）"
+        )
+    unknown = [name for name in columns if name not in defined]
+    if unknown and warnings is not None:
+        warnings.append(f"成员表 {sheet!r} 里有 YAML 未定义的列: {', '.join(unknown)}（会被读进上下文，按 auto 类型）")
+
+    members: dict[str, dict[str, VarValue]] = {}
+    for row in range(2, worksheet.max_row + 1):
+        name = to_text(worksheet.cell(row=row, column=1).value).strip()
+        if not name:
+            continue
+        if name in members:
+            raise ExcelError(f"成员表 {sheet!r} 第 {row} 行成员名 {name!r} 重复")
+        values: dict[str, VarValue] = {}
+        for column_name, column in columns.items():
+            definition = defined.get(column_name)
+            raw = worksheet.cell(row=row, column=column).value
+            value = _cell_or(raw, definition.default if definition else "")
+            kind = definition.type if definition else "auto"
+            values[column_name] = VarValue(
+                _coerce(value, kind, f"{name}.{column_name}"),
+                definition.prefix if definition else "",
+                definition.suffix if definition else "",
+            )
+        members[name] = values
+    return members
+
+
 def _case_columns(worksheet: Worksheet, sheet_name: str) -> list[tuple[int, str]]:
     columns: list[tuple[int, str]] = []
     seen: set[str] = set()
@@ -1096,6 +1204,7 @@ def check_value_constraints(
     config: ProjectConfig,
     global_values: Mapping[str, VarValue],
     cases: Sequence[CaseData],
+    members: Mapping[str, Mapping[str, VarValue]] | None = None,
 ) -> None:
     """校验表里填的取值是否满足变量声明的 ``min`` / ``max`` / ``choices`` / ``pattern``。
 
@@ -1132,6 +1241,19 @@ def check_value_constraints(
                 problems.append(
                     f"  {local_sheet} 第 {column} 列 '{case.name}' 第 {row} 行 '{variable.name}'：{problem}"
                 )
+
+    # 成员表（第三层作用域）：一个成员一行
+    if members:
+        for member, values in members.items():
+            for variable in config.group_variables:
+                if not variable.has_constraints:
+                    continue
+                value = values.get(variable.name)
+                if value is None:
+                    continue
+                problem = variable.value_problem(value.text)
+                if problem:
+                    problems.append(f"  {config.group.sheet} 成员 '{member}' 的 '{variable.name}'：{problem}")
 
     if problems:
         raise ExcelError(

@@ -64,6 +64,7 @@ __all__ = [
     "excel_literal",
     "guarded_lookup",
     "lookup_expr",
+    "lookup_expr_at",
 ]
 
 #: Excel 单个公式的字符上限（留一点余量）。
@@ -90,6 +91,8 @@ class _Token:
 _GLOBAL_COLUMNS = {"value": 2, "prefix": 4, "suffix": 5}
 _LOCAL_COLUMNS = {"prefix": 3, "suffix": 4}  # value 列随 Case 变化
 _VALUE_ALIASES = frozenset({"value", "text"})
+#: 成员表（第三层作用域）里第一个变量所在的列（B 列）；A 列是成员名
+_GROUP_FIRST_COLUMN = 2
 #: 数值形态**不用 TEXT()**：Excel 的 TEXT() 会把二进制尾巴原样打出来
 #: （``TEXT(20.559,"0.###############")`` 是 ``20.559000000000001``），
 #: 而单元格/拼接的**隐式转换**走的是 General 规则 = **最多 15 位有效数字** ——
@@ -128,10 +131,19 @@ def lookup_expr(sheet: str, variable: str, column: int, *, absolute: bool) -> st
 
     ``absolute=False`` 时列标不加 ``$`` —— 把输出单元格向右拖，Case 列会跟着走。
     """
+    quoted = _quote_sheet(sheet)
+    return lookup_expr_at(sheet, f"MATCH({_quote_text(variable)},{quoted}!$A:$A,0)", column, absolute=absolute)
+
+
+def lookup_expr_at(sheet: str, row_expr: str, column: int, *, absolute: bool) -> str:
+    """行号由调用方给（``MATCH(...)`` 或别的表达式）的 ``INDEX``。
+
+    成员表（第三层作用域，指南 §18）用的就是它：行不是"变量名"，而是
+    ``MATCH(<这个 Case 用哪个成员>, 'Tank Data'!$A:$A, 0)``。
+    """
     letter = column_index_to_letter(column)
     anchor = f"${letter}:${letter}" if absolute else f"{letter}:{letter}"
-    quoted = _quote_sheet(sheet)
-    return f"INDEX({quoted}!{anchor},MATCH({_quote_text(variable)},{quoted}!$A:$A,0))"
+    return f"INDEX({_quote_sheet(sheet)}!{anchor},{row_expr})"
 
 
 def guarded_lookup(
@@ -178,13 +190,15 @@ class _VarRef:
     sheet: str
     name: str
     definition: VariableDef | None
+    row_expr: str
     value_column: int
-    prefix_column: int
-    suffix_column: int
+    #: 成员表（第三层作用域）的变量没有"前缀/后缀列" —— 它的前缀后缀只来自 YAML
+    prefix_column: int | None
+    suffix_column: int | None
     value_column_is_relative: bool
 
     def _lookup(self, column: int, *, absolute: bool) -> str:
-        return lookup_expr(self.sheet, self.name, column, absolute=absolute)
+        return lookup_expr_at(self.sheet, self.row_expr, column, absolute=absolute)
 
     def value(self) -> str:
         base = self._lookup(self.value_column, absolute=not self.value_column_is_relative)
@@ -194,6 +208,9 @@ class _VarRef:
     def decor(self, which: str) -> str:
         column = self.prefix_column if which == "prefix" else self.suffix_column
         default = getattr(self.definition, which, "") if self.definition else ""
+        if column is None:
+            # 成员表的变量：前缀/后缀写死在 YAML 里，表里没有这一列
+            return _quote_text(default)
         return _with_default(self._lookup(column, absolute=True), default)
 
     def combined(self) -> str:
@@ -220,7 +237,28 @@ class _Compiler:
         self.relative_case_column = relative_case_column
         self._globals = {item.name: item for item in config.global_variables}
         self._locals = {item.name: item for item in config.local_variables}
+        self._group_config = config.group
+        self._group = {item.name: item for item in config.group_variables}
         self._cache: dict[tuple[str, int], _VarRef] = {}
+
+    def _member_lookup(self, case_column: int) -> str:
+        """这个 Case 用哪个成员：把 key 变量（local）按普通方式查出来。"""
+        group = self._group_config
+        assert group is not None
+        definition = self._locals[group.key]
+        sheet = self.config.excel.sheets.local
+        quoted = _quote_sheet(sheet)
+        ref = _VarRef(
+            sheet=sheet,
+            name=group.key,
+            definition=definition,
+            row_expr=f"MATCH({_quote_text(group.key)},{quoted}!$A:$A,0)",
+            value_column=case_column,
+            prefix_column=_LOCAL_COLUMNS["prefix"],
+            suffix_column=_LOCAL_COLUMNS["suffix"],
+            value_column_is_relative=self.relative_case_column,
+        )
+        return ref.value()
 
     # -- 变量 -------------------------------------------------------------- #
     def resolve(self, name: str, case_column: int) -> _VarRef:
@@ -228,25 +266,49 @@ class _Compiler:
         if key in self._cache:
             return self._cache[key]
 
+        def name_match(sheet: str, variable: str) -> str:
+            quoted = _quote_sheet(sheet)
+            return f"MATCH({_quote_text(variable)},{quoted}!$A:$A,0)"
+
         if name in self._globals:
+            sheet = self.config.excel.sheets.global_
             ref = _VarRef(
-                sheet=self.config.excel.sheets.global_,
+                sheet=sheet,
                 name=name,
                 definition=self._globals[name],
+                row_expr=name_match(sheet, name),
                 value_column=_GLOBAL_COLUMNS["value"],
                 prefix_column=_GLOBAL_COLUMNS["prefix"],
                 suffix_column=_GLOBAL_COLUMNS["suffix"],
                 value_column_is_relative=False,
             )
         elif name in self._locals:
+            sheet = self.config.excel.sheets.local
             ref = _VarRef(
-                sheet=self.config.excel.sheets.local,
+                sheet=sheet,
                 name=name,
                 definition=self._locals[name],
+                row_expr=name_match(sheet, name),
                 value_column=case_column,
                 prefix_column=_LOCAL_COLUMNS["prefix"],
                 suffix_column=_LOCAL_COLUMNS["suffix"],
                 value_column_is_relative=self.relative_case_column,
+            )
+        elif self._group is not None and name in self._group:
+            group = self._group_config
+            assert group is not None
+            sheet = group.sheet
+            quoted = _quote_sheet(sheet)
+            ref = _VarRef(
+                sheet=sheet,
+                name=name,
+                definition=self._group[name],
+                # 行 = "这个 Case 用哪个成员"（再按 A 列找行）—— 一次一维查找
+                row_expr=f"MATCH({self._member_lookup(case_column)},{quoted}!$A:$A,0)",
+                value_column=_GROUP_FIRST_COLUMN + group.names.index(name),
+                prefix_column=None,
+                suffix_column=None,
+                value_column_is_relative=False,
             )
         else:
             raise FormulaError(

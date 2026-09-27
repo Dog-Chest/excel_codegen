@@ -48,6 +48,7 @@ Jinja2 语法速查、Excel 表结构与填写规则、输出布局、导出代�
 | `variables` | mapping | 否 | 空 | 变量定义：`global` / `local` |
 | `templates` | list | **是** | — | 至少一个模板 |
 | `asserts` | list[str] | 否 | `[]` | **跨变量校验**：对每个 Case 求值的表达式，为假就报错。见 3.6 |
+| `variables.group` | mapping | 否 | — | **第三层作用域**：成员表（舱 / 设备），参数只写一遍。见 §18 |
 
 ### 2.2 `excel`
 
@@ -757,6 +758,7 @@ Prefix/Suffix 是按变量（不是按 Case）生效的。见 4.4：再加一个
 | 0.5.1 | 只动环境与文档（Windows → Ubuntu 迁移）：新增 `setup.sh`（探测文件系统后选 venv 位置）与 `.gitattributes`（行尾统一），README「安装」补 Ubuntu 三个坑，`compare_with_rules.js` 缺外部依赖时明确 `SKIP`（退出码 2）。**工具行为无变化** |
 | 0.5.2 | **多平台零配置**：新增跨平台锁文件 `uv.lock` 与 `.python-version`，`pyproject.toml` 加 `[dependency-groups] dev`（PEP 735）—— 装上 uv 之后 `uv run pytest` / `uv run excel-codegen …` 在 Windows / macOS / Linux 完全一致，不需要 venv、pip、apt。`setup.sh` 同步支持 uv 路径。**支持下限 3.10 → 3.11**（3.10 于 2026-10 结束支持），CI 改为测「底线 3.11 + 3.13」。**工具行为无变化** |
 | **0.6.0** | **取值约束**（`min`/`max`/`choices`/`pattern`：越界在 render/validate 报错，Excel 里变下拉与数值范围，见 §3.5）；**跨文件复用 `extends`**（见 §16）；**公式模式支持行内 `{% if %}`**（编译成 `IF()`，见 §14.1.1）；**质量护栏**（ruff + mypy + 覆盖率门槛进 CI）。另修掉两个真 bug：`and`/`or` 在派生表达式里从未生效；`excel_io` 用了未导入的 `DerivedError` |
+| **0.7.0** | **跨变量校验 `asserts`**（§3.6）、**模板片段 `{% include %}`**（§17）、**第三层作用域成员表**（§18）、取值约束补齐到成员表、`check --json` + 报全部差异、Excel 批注（含 `unit`）、`init` 生成一键刷新脚本、`excel-codegen doctor` 体检、质量护栏补 sdist 自包含检查 |
 
 ---
 
@@ -766,7 +768,7 @@ Prefix/Suffix 是按变量（不是按 Case）生效的。见 4.4：再加一个
 
 | 做不到 | 说明 / 应对 |
 | --- | --- |
-| **第三层作用域**（船 → 工况 → 舱/设备） | 只有 `global` / `local` 两层。一个舱被多个工况引用时，舱的参数只能**按工况摊平**（同名舱在每个 Case 列里各写一遍），改一个舱的尺寸要改 N 列。应对：把"每 Case 重复"的参数集中放在同一个变量块，或用 §9.2 的 `case_filter` 把不同规则分列；真正的多层引用需要下游脚本（例如本项目 `abs_fpi` 里用 openpyxl 预填）。 |
+| **超过三层的引用**（船 → 工况 → 舱 → 更细的部件） | 支持**一层成员表**（§18）：船 = global、工况 = local、舱/设备 = group。再往下一层（比如"一个舱里多个部件"）表达不了。应对：把最下面那层的差异摊到成员表里（多几行），或者用下游脚本预填。 |
 | 快照模式下的自动重算 | `engine: snapshot`（默认）的输出表是**文本快照**，改了参数必须重跑 `render --write-excel`；用 `check` 判过期。想要"改参数自动重算"就把模板改成 `engine: excel`（§14）。 |
 | 公式模式下的**跨行**控制流 | 公式只做占位符替换 + **行内** `{% if %}`（§14.1.1）。`{% for %}`、跨行的 `{% if %}`、过滤器一律报错（带行号）—— 一行模板对应一个单元格，行数一变就没法映射。复杂模板留在快照模式。 |
 | 语义检查（量纲、语法、业务规则） | 本工具只管"参数怎么填、模板怎么复用、结果怎么写回"，它不认识 GeniE/C 的语法，也不会拦 `Math.sin(90)`。这类检查留给下游校验器。 |
@@ -1148,3 +1150,99 @@ templates:
 
 > 什么时候用哪个：复用**变量**与**整份模板** → `extends`（§16）；
 > 复用**模板里的一段** → `{% include %}`。
+
+---
+
+## 18. 第三层作用域：成员表（仓 / 设备）
+
+ABS 内压那种场景里，一个**舱**（WBT6）会被**多个工况**引用。只有 global / local 两层时，
+舱的 13 个参数只能**按工况摊平**：同名舱在每个 Case 列里各写一遍，改一个舱的尺寸要改 N 列。
+
+`variables.group` 补上这一层：
+
+```yaml
+variables:
+  global:
+    - name: rho
+      type: float
+      default: 1025
+  local:
+    - name: tank_ref          # ← 每个 Case 用它指向一个成员
+      choices: ["WBT6", "WBT7", "COT1"]
+      default: "WBT6"
+  group:
+    sheet: "Tank Data"        # 成员表的工作表名
+    key: tank_ref             # 用哪个 local 变量当"指针"（必须是 local）
+    members: ["WBT6", "WBT7", "COT1"]   # init 时先建这几行（可留空，之后自己插行）
+    variables:                # 成员自己的参数（一轮一个成员，只写一遍）
+      - name: l_tank
+        type: float
+        default: 42
+        unit: "m"
+      - name: h_tank
+        type: float
+        default: 32
+```
+
+模板里照常引用：`{{ l_tank }}`、`{{ h_tank }}` —— 取值来自"这个 Case 的 `tank_ref` 指向的那个成员"。
+
+### 18.1 表长什么样
+
+成员表的布局与 Global / Local 都不同：**一行一个成员，B 列起一个变量一列**（表头写变量名）。
+
+| 成员 | l_tank | h_tank |
+| --- | --- | --- |
+| WBT6 | 42 | 32 |
+| WBT7 | 14.5 | 10.15 |
+| COT1 | 41.5 | 22 |
+
+为什么这样排：
+
+* 工程师写"舱容表"本来就是这个样子；
+* 公式模式能复用与 global / local **同一形态**的一维 `INDEX/MATCH`
+  （行由"哪个成员"决定，列由"哪个变量"决定）—— 见 §18.3。
+
+`members` 里给的只是 `init` 时先建哪几行；**成员是从表里发现的**，所以之后自己在表里
+插一行就是一个新成员，不用回头改 YAML。
+
+### 18.2 作用域与优先级
+
+从低到高：**成员（group）→ 全局（global）→ 局部（local）→ `case_name`**。
+
+成员值放最低，是因为它描述"这个舱/设备是什么"，而 global / local 描述"这次计算怎么算"。
+三类变量的**名字不能重名**（配置阶段就报错）—— 同名会让人分不清用的是哪一个。
+
+几条规则：
+
+* `key` **必须是 local 变量**（要"每个 Case 一列"才能指向不同成员）；
+* 成员表里的变量**不能用 `derived`**（派生参数的依赖图目前只覆盖 global / local）；
+* 成员表变量的 `prefix` / `suffix` 只来自 YAML（表里没有这两列）；
+* 成员表变量**支持取值约束**（`min` / `max` / `choices` / `pattern`），会写成数据有效性；
+* `case_filter` 与 `asserts` 也看得到成员值，可以写 `asserts: ["h_tank.value <= 32"]`。
+
+Case 的 `key` 指向一个不存在的成员时会明确报错并列出可选成员：
+
+```
+ERROR Case 'B' 的 'tank_ref' = 'WBT9'，但成员表 'Tank Data' 里没有这个成员（可选: WBT6, WBT7, COT1）
+```
+
+### 18.3 公式模式
+
+成员表**支持公式模式**。定位是嵌套一次的一维查找：
+
+```excel
+INDEX('Tank Data'!$B:$B, MATCH(<这个 Case 的 tank_ref>, 'Tank Data'!$A:$A, 0))
+```
+
+其中 `<这个 Case 的 tank_ref>` 又是 `INDEX('Local Parameter'!E:E, MATCH("tank_ref", …))`。
+也就是说"先按工况找到舱名，再按舱名找行"—— `check` 会把整条链算一遍再与 Python 渲染比对，
+所以"Excel 里看到的"与"导出的"是否一致仍然是有证据的（§14.3）。
+
+### 18.4 什么时候用、什么时候别用
+
+| 场景 | 用不用 group |
+| --- | --- |
+| 一个舱/设备被多个工况引用，参数只该写一遍 | ✅ 用 |
+| 参数确实**每个工况都不一样**（比如工况特定的系数） | ❌ 放 local |
+| 所有工况都一样的船体主尺度 | ❌ 放 global |
+| 需要**两层以上**的引用（舱里再分部件） | ⚠ 表达不了，把最下层摊到成员表里 |

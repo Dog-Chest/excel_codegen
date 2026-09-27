@@ -35,6 +35,7 @@ from .excel_io import (
     output_fingerprint,
     read_cases,
     read_global_values,
+    read_group_members,
     read_metadata,
     write_howto_sheet,
     write_results,
@@ -91,7 +92,7 @@ from .utils import (
     to_text,
 )
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     "FIRST_CASE_COLUMN",
@@ -146,6 +147,7 @@ __all__ = [
     "pvs",
     "read_cases",
     "read_global_values",
+    "read_group_members",
     "read_metadata",
     "render_all",
     "render_template",

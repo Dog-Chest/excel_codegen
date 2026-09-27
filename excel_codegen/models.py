@@ -308,13 +308,105 @@ class VariableDef(BaseModel):
         return None
 
 
+class GroupConfig(BaseModel):
+    """第三层作用域：**成员表**（船 → 工况 → 舱/设备）。
+
+    没有它的时候，一个被多个工况引用的舱只能把参数**按工况摊平**（同名舱在每个 Case 列里
+    各写一遍，改一个舱的尺寸要改 N 列）。有了它，舱的参数只写一遍，Case 用一个"指针变量"
+    （``key``）指向自己用哪个成员。
+
+    Excel 布局与 Global / Local 都不同：**一行一个成员，B 列起一个变量一列**
+    （B 列表头是变量名）—— 这正是工程师写"舱容表"的习惯，也让公式模式能用与
+    global / local 同一形态的 ``INDEX/MATCH`` 定位。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: 成员表的工作表名。
+    sheet: str = "Group Data"
+    #: 哪个 **local** 变量存"这个 Case 用哪个成员"（成员表里 A 列的名字之一）。
+    key: str
+    #: init 时先建这几行（可留空：之后再自己在表里插行也行）。
+    members: list[str] = Field(default_factory=list)
+    #: 成员自己的参数。**不支持 derived**（派生的依赖图只覆盖 global / local）。
+    variables: list[VariableDef] = Field(default_factory=list)
+
+    @field_validator("sheet")
+    @classmethod
+    def _check_sheet(cls, value: str) -> str:
+        return _valid_sheet_name(value)
+
+    @field_validator("key")
+    @classmethod
+    def _check_key(cls, value: str) -> str:
+        text = to_text(value).strip()
+        if not text:
+            raise ValueError("variables.group.key 不能为空（它要指向一个 local 变量名）")
+        return text
+
+    @field_validator("members", mode="before")
+    @classmethod
+    def _check_members(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+            raise ValueError("variables.group.members 必须是字符串列表（也可以留空，之后在表里插行）")
+        names = [to_text(item).strip() for item in value]
+        if any(not name for name in names):
+            raise ValueError("variables.group.members 里有空名字")
+        dupes = _duplicates(names)
+        if dupes:
+            raise ValueError(f"variables.group.members 名字重复: {', '.join(dupes)}")
+        return names
+
+    @model_validator(mode="after")
+    def _check_group(self) -> GroupConfig:
+        if not self.variables:
+            raise ValueError("variables.group.variables 不能为空 —— 不想用第三层作用域就删掉整个 group 段")
+        dupes = _duplicates([item.name for item in self.variables])
+        if dupes:
+            raise ValueError(f"group 变量名重复: {', '.join(dupes)}")
+        for variable in self.variables:
+            if variable.is_derived:
+                raise ValueError(
+                    f"group 变量 {variable.name!r} 用了 derived —— 派生参数的依赖图目前只覆盖 "
+                    "global / local；请把它改成填写型，或挪到 local 里"
+                )
+        return self
+
+    @property
+    def names(self) -> list[str]:
+        return [item.name for item in self.variables]
+
+
 class VariablesConfig(BaseModel):
-    """全局变量 + 局部变量定义。"""
+    """全局变量 + 局部变量 + （可选）成员表。"""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     global_: list[VariableDef] = Field(default_factory=list, alias="global")
     local: list[VariableDef] = Field(default_factory=list)
+    #: 第三层作用域：成员表（舱 / 设备）。见 :class:`GroupConfig`。
+    group: GroupConfig | None = None
+
+    @model_validator(mode="after")
+    def _check_group_key(self) -> VariablesConfig:
+        if self.group is None:
+            return self
+        if self.group.key not in self.local_names:
+            raise ValueError(
+                f"variables.group.key {self.group.key!r} 不是 local 变量 —— "
+                f"它必须是「每个 Case 一列」的那种变量（当前 local: {', '.join(self.local_names) or '（空）'}）"
+            )
+        if self.group.sheet in {self.group.key}:
+            raise ValueError("variables.group.sheet 与变量名冲突")
+        clashes = sorted(set(self.group_names) & (set(self.global_names) | set(self.local_names)))
+        if clashes:
+            raise ValueError(
+                f"group 变量与 global / local 重名: {', '.join(clashes)} —— "
+                "同名会让人分不清用的是哪一个，请改名（第三层作用域的名字必须独立）"
+            )
+        return self
 
     @property
     def global_names(self) -> list[str]:
@@ -323,6 +415,18 @@ class VariablesConfig(BaseModel):
     @property
     def local_names(self) -> list[str]:
         return [item.name for item in self.local]
+
+    @property
+    def group_variables(self) -> list[VariableDef]:
+        return list(self.group.variables) if self.group else []
+
+    @property
+    def group_names(self) -> list[str]:
+        return self.group.names if self.group else []
+
+    @property
+    def has_group(self) -> bool:
+        return self.group is not None
 
 
 # --------------------------------------------------------------------------- #
@@ -542,6 +646,12 @@ class ProjectConfig(BaseModel):
                 )
 
         used = {self.excel.sheets.global_, self.excel.sheets.local, *outputs}
+        if self.group is not None:
+            if self.group.sheet in used:
+                raise ValueError(
+                    f"variables.group.sheet {self.group.sheet!r} 与 Global / Local / Output 表名冲突，请改名"
+                )
+            used.add(self.group.sheet)
         for label, sheet_name in (
             ("excel.template_sheet", self.excel.template_sheet),
             ("excel.howto_sheet", self.excel.howto_sheet),
@@ -572,9 +682,26 @@ class ProjectConfig(BaseModel):
         return self.variables.local_names
 
     @property
+    def group(self):
+        """第三层作用域的成员表配置（没配就是 ``None``）。"""
+        return self.variables.group
+
+    @property
+    def group_variables(self) -> list[VariableDef]:
+        return self.variables.group_variables
+
+    @property
+    def group_names(self) -> list[str]:
+        return self.variables.group_names
+
+    @property
+    def has_group(self) -> bool:
+        return self.variables.has_group
+
+    @property
     def defined_names(self) -> set[str]:
         """所有已定义变量名（用于校验模板引用的变量是否存在）。"""
-        return set(self.global_names) | set(self.local_names) | set(RESERVED_NAMES)
+        return set(self.global_names) | set(self.local_names) | set(self.group_names) | set(RESERVED_NAMES)
 
     def template_by_name(self, name: str) -> TemplateDef | None:
         for template in self.templates:
@@ -683,10 +810,15 @@ def _merge_into(
     """把一个文件的 ``variables`` / ``templates`` 合并进累积结果。"""
     if not is_root and raw.get("excel"):
         warnings.append(f"忽略 {origin} 里的 excel 配置（工作簿布局以根配置文件为准）")
+    variables_raw = raw.get("variables")
+    if not is_root and isinstance(variables_raw, dict) and variables_raw.get("group"):
+        warnings.append(f"忽略 {origin} 里的 variables.group（成员表只有一份，以根配置文件为准）")
 
     variables = raw.get("variables") or {}
     if not isinstance(variables, dict):
         variables = {}
+    if is_root and isinstance(variables.get("group"), dict):
+        merged["variables"]["group"] = dict(variables["group"])
     for scope in ("global", "local"):
         for item in variables.get(scope) or []:
             if not isinstance(item, dict) or "name" not in item:

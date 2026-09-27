@@ -19,6 +19,7 @@ from .excel_io import (
     load_workbook_file,
     read_cases,
     read_global_values,
+    read_group_members,
 )
 from .jinja_env import build_environment, pvs, wrap
 from .models import CaseData, ProjectConfig, RenderResult, TemplateDef
@@ -36,6 +37,7 @@ __all__ = [
     "compile_case_filter",
     "export_files",
     "filter_context",
+    "member_of",
     "pvs",
     "render_all",
     "render_template",
@@ -242,6 +244,7 @@ def check_asserts(
     global_values: Mapping[str, VarValue],
     cases: Sequence[CaseData],
     *,
+    members: Mapping[str, Mapping[str, VarValue]] | None = None,
     env: Environment | None = None,
 ) -> None:
     """对每个 Case 求值 ``asserts``；有假就抛 :class:`ExcelError`。
@@ -253,7 +256,9 @@ def check_asserts(
         return
     problems: list[str] = []
     for case in cases:
-        context = build_context(global_values, case.values, case.name)
+        # 成员值也要进上下文 —— 否则 asserts 里引用舱/设备的参数会报 undefined
+        group_values = members[member_of(config, case, members)] if members else None
+        context = build_context(global_values, case.values, case.name, group_values)
         for expression, program in compiled:
             try:
                 passed = bool(program(**filter_context(context)))
@@ -307,14 +312,42 @@ def build_context(
     global_values: Mapping[str, VarValue],
     local_values: Mapping[str, VarValue],
     case_name: str,
+    group_values: Mapping[str, VarValue] | None = None,
 ) -> dict[str, Any]:
-    """组装单个 Case 的渲染上下文：``global + local + case_name``。"""
+    """组装单个 Case 的渲染上下文。
+
+    优先级从低到高：**成员（group）→ 全局（global）→ 局部（local）→ case_name**。
+    成员值放最低是因为它描述的是"这个舱/设备是什么"，而 global / local 是"这次计算怎么算"。
+    """
     context: dict[str, Any] = {}
+    if group_values:
+        context.update(group_values)
     context.update(global_values)
     context.update(local_values)
     context["case_name"] = case_name
     context["template_name"] = ""  # 渲染具体模板时会被覆盖
     return context
+
+
+def member_of(
+    config: ProjectConfig,
+    case: CaseData,
+    members: Mapping[str, Mapping[str, VarValue]],
+) -> str:
+    """从 Case 的 ``key`` 变量取出成员名，并确认成员表里真有这个成员。"""
+    group = config.group
+    assert group is not None  # 调用方负责只在有成员表时调用
+    value = case.values.get(group.key)
+    name = to_text(value.text).strip() if value is not None else ""
+    if not name:
+        raise ExcelError(f"Case {case.name!r} 的 {group.key!r} 是空的 —— 它要指向成员表 {group.sheet!r} 里的一个成员")
+    if name not in members:
+        available = ", ".join(members) or "（成员表是空的）"
+        raise ExcelError(
+            f"Case {case.name!r} 的 {group.key!r} = {name!r}，但成员表 {group.sheet!r} 里没有这个成员"
+            f"（可选: {available}）"
+        )
+    return name
 
 
 def render_template(
@@ -395,13 +428,14 @@ def render_all(
         check_required_sheets(workbook, config)
         global_values = read_global_values(workbook, config, warnings=read_warnings)
         cases = read_cases(workbook, config, global_values=global_values, warnings=read_warnings)
+        members = read_group_members(workbook, config, warnings=read_warnings)
     finally:
         workbook.close()
 
     # 取值约束（min / max / choices / pattern）：声明了就一定查，别让手滑的数字生成出错误代码
-    check_value_constraints(config, global_values, cases)
+    check_value_constraints(config, global_values, cases, members=members)
     # 跨变量校验（asserts）：拦"吃水不能超过型深"这类组合错误
-    check_asserts(config, global_values, cases)
+    check_asserts(config, global_values, cases, members=members)
 
     if only_cases:
         wanted = [to_text(name).strip() for name in only_cases]
@@ -425,7 +459,8 @@ def render_all(
         per_case: list[RenderResult] = []
         skipped_cases: list[str] = []
         for case in cases:
-            context = build_context(global_values, case.values, case.name)
+            group_values = members[member_of(config, case, members)] if config.group is not None else None
+            context = build_context(global_values, case.values, case.name, group_values)
             if not case_matches(expression, context, template_name=template.name):
                 skipped_cases.append(case.name)
                 continue

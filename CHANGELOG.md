@@ -7,9 +7,11 @@
 
 ---
 
-## 未发布（0.7.0）
+## 0.7.0 — 发布前打磨：校验 / 复用 / 体检 / 第三层作用域（2026-09-27）
 
-发布 PyPI 之前的一轮打磨。按交付顺序记录。
+发布 PyPI 之前的一轮打磨，8 个提交（0 必修 → ③ 批注 → ① 脚本 → ④ check 报告 →
+② asserts → ⑤ include → ⑦ doctor → ⑧ 成员表）。**测试从 195 项涨到 268 项**，
+其中 sdist 打包那个问题是**真会出丑**的（发布出去的源码包里测试跑不起来）。
 
 ### 0. 发布前必修
 
@@ -122,6 +124,42 @@ asserts:
 ② 参数违反 `asserts` 时 `render_all` 会抛异常，得接住变成一条 ERROR 而不是甩 traceback。
 
 新增 `tests/test_doctor.py` 9 项。
+
+### 8. 第三层作用域：成员表（船 → 工况 → 舱/设备）
+
+**这是 `abs_fpi` 那条线上最大的痛点**：一个舱（WBT6）被多个工况引用，只有 global / local
+两层时它的 13 个参数只能**按工况摊平**（同名舱在每个 Case 列里各写一遍，改一个舱要改 N 列）。
+`FINDINGS.md` 把它记为"能力边界"，现在补上了。
+
+```yaml
+variables:
+  local:
+    - name: tank_ref
+      choices: ["WBT6", "WBT7"]
+  group:
+    sheet: "Tank Data"
+    key: tank_ref              # 哪个 local 变量指向成员（必须是 local）
+    members: ["WBT6", "WBT7"]  # init 时先建这几行；之后插行即可加成员
+    variables:                 # 舱自己的参数，只写一遍
+      - name: l_tank
+        type: float
+        min: 0
+```
+
+| 设计点 | 选择与理由 |
+| --- | --- |
+| **布局** | 与 Global / Local 都不同：**一行一个成员，B 列起一个变量一列**。工程师写舱容表就是这个样子，而且这样公式模式能复用**同一形态**的一维 `INDEX/MATCH` |
+| **优先级** | 成员 < 全局 < 局部（成员描述"这是什么"，global/local 描述"怎么算"）；三类变量**不许重名**（配置期报错） |
+| **成员从表里发现** | `members` 只是 init 时先建哪几行；之后在表里插一行就多一个成员，不用改 YAML |
+| **公式模式** | 支持：`INDEX('Tank Data'!$B:$B, MATCH(<本 Case 的 tank_ref>, 'Tank Data'!$A:$A, 0))`，嵌套一次一维查找；`check` 会把整条链算一遍再比对 |
+| **约束** | 成员表变量支持 `min` / `max` / `choices` / `pattern`（写成数据有效性），也支持批注 |
+| **不支持** | 成员变量不能用 `derived`（派生依赖图只覆盖 global / local）；再深一层（舱里分部件）表达不了 —— 都写进了 §18.4 与 §13 |
+| **报错** | Case 的 key 指向不存在的成员时，列出可选成员；key 为空时说清它该指向谁 |
+
+顺带修的一处：`asserts` 的上下文原来没带成员值 —— 写 `asserts: ["h_tank.value <= 32"]`
+会报 undefined。现在 `asserts` 与 `case_filter` 都看得到成员值。
+
+新增 `tests/test_group.py` 15 项；指南新增 §18，§13 的能力边界条目同步更正。
 
 ---
 

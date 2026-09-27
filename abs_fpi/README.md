@@ -159,9 +159,11 @@ return Math.max(p_s + p_d, 0 Pa);   // the pressure the function returns
 
 ## 7. 已知边界
 
-- **舱数据按工况摊平**（工具没有"第三层作用域"，船 → 工况 → 舱 表达不了）。
-  一个舱被 N 个工况用到就写 N 遍；`tank_ref` 只作标注。见 `FINDINGS.md` #3(a) 与
-  `docs/template_guide.md` §13。
+- **本项目当前仍把舱数据按工况摊平**：一个舱被 N 个工况用到就写 N 遍，`tank_ref` 只作标注。
+  > 工具 **0.7.0 起支持第三层作用域**（`variables.group` 成员表，见
+  > `docs/template_guide.md` §18）—— 一个舱的参数可以只写一遍、由 Case 指向它。
+  > 本项目**尚未迁移**（迁移意味着重做工作簿布局与 `compose.py` 的输出表改写），
+  > 所以下面是"当前状态"，不是"工具做不到"。见 `FINDINGS.md` #3(a)。
 - **`case_filter` 的 Case 必须成块连续**（公式模式横向相对列靠恒定偏移），
   所以项目工作簿里 EXT 的 7 个工况在前、INT 的 4 个在后。
 - **公式的 `TEXT()` 格式串受区域设置影响**：中文/英文区域小数点是 `.`；
