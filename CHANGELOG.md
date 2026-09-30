@@ -165,10 +165,14 @@ sdist 解包后 `pytest` 全过；`abs_fpi/build.py --check` 公式求值 28 项
 
 ### 已发布
 
-**0.9.0 是本项目首个 PyPI 版本**（tag `v0.9.0` → `release.yml` → Trusted Publishing，
-仓库里不存任何 token）：<https://pypi.org/project/excel-codegen/0.9.0/>
+**0.9.0 是旧名 `excel-codegen` 的首个 PyPI 版本**（tag `v0.9.0` → `release.yml` →
+Trusted Publishing，仓库里不存任何 token）。
 
-发布后做了一次**从 PyPI 装**的闭环验证（不是从本地 dist）：干净 venv 里
+> ⚠️ 这个 PyPI 项目**已被所有者删除**（改名后连同 `0.9.0` / `0.9.1` / `0.9.2` 一起移除，
+> 因为项目名不能改、名字里又带商标；详见上面的 0.10.0 条目）。所以旧版本**无法再安装**，
+> 新项目是 [`spreadsheet-codegen`](https://pypi.org/project/spreadsheet-codegen/)。
+
+发布时做过一次**从 PyPI 装**的闭环验证（不是从本地 dist）：干净 venv 里
 `pip install excel-codegen` → `examples --copy` → 对随包发布的 `abs_fpi_internal.xlsx`
 跑 `check`（OK）→ `render --outdir` 导出 → `init` 生成新工作簿；
 `uv tool install excel-codegen` 同样通过。
