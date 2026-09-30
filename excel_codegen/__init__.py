@@ -92,7 +92,7 @@ from .utils import (
     to_text,
 )
 
-__version__ = "0.8.1"
+__version__ = "0.9.0"
 
 __all__ = [
     "FIRST_CASE_COLUMN",

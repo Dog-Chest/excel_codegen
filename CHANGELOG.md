@@ -3,8 +3,63 @@
 本项目遵循"每个版本对应一次真实测试驱动"的节奏：0.1.0 落地 → 0.2.0 修实测报告 →
 0.3.0 加公式模式 → 0.4.0 补齐公式模式的验证链 → 0.5.0 派生参数 → 0.5.x 跨平台与文档 →
 0.6.0 取值约束 / `extends` / 行内 `{% if %}` / 质量护栏 → 0.7.0 校验与复用补齐 →
-0.8.0 行列风格 / 成员表落地 / NASTRAN 工况控制 → 0.8.1 环境体检（`setup.sh`）。逐条实测证据见
+0.8.0 行列风格 / 成员表落地 / NASTRAN 工况控制 → 0.8.1 环境体检（`setup.sh`）→
+0.9.0 内置示例随包发布（`excel-codegen examples`）。逐条实测证据见
 [`abs_fpi/FINDINGS.md`](abs_fpi/FINDINGS.md)。
+
+---
+
+## 0.9.0 — 内置示例随包发布 + `excel-codegen examples`（2026-09-30）
+
+这一版把"干过真活的用例"变成**软件自带的东西**：装了 pip 包、没克隆仓库的人也能直接跑。
+
+### 1. 新增 `excel-codegen examples`
+
+```bash
+excel-codegen examples                      # 列出示例、各自演示什么
+excel-codegen examples --copy ./examples    # 拷出来用（--only abs_fpi 只拷一个）
+```
+
+* 加上 `--force` 才会覆盖已有目录 —— 拷出来的文件是**用户的**，默认不碰；
+* 拷出来的每个示例都带一本**已经填好样例参数**的工作簿，打开就能改；
+  公式模式下改完自动重算，不需要跑命令。
+
+### 2. 三个内置示例（`excel_codegen/examples/`）
+
+示例从"仓库里的文件"变成**包数据**：wheel 与 sdist 里都有（`MANIFEST.in` +
+`[tool.setuptools.package-data]`），`tests/test_examples_command.py` 守住"清单与目录
+一一对应"以及"拷出来仍然解得出 `template_file`"。
+
+| 示例 | 内容 |
+| --- | --- |
+| `basic/` | `example_formula.yaml`（默认公式模式）+ `example.yaml`（显式 snapshot：过滤器 / 循环 / 导出文件） |
+| `nastran/` | 纵向布局的 NASTRAN 工况控制语句（§19 / §20） |
+| `abs_fpi/` | **现场用例**：ABS FPI 内外压 → GeniE，两个规则集可各自单用、也可合成项目工作簿共用一张 Global 表；内压用成员表 `Tank Data` |
+
+### 3. 仓库结构整理
+
+* 示例**资产**（YAML / `.j2` 模板 / 工作簿 / 导出产物）从 `abs_fpi/` 搬到
+  `excel_codegen/examples/abs_fpi/`，随包发布；仓库根的 `abs_fpi/` 只留**现场脚本与实测报告**
+  （`FINDINGS.md` / `TEMPLATES.md` / `probes/` / `build.py` / `compose.py` / `verify_excel_engine.py` /
+  `compare_with_rules.js`），仍然 `prune` 掉不进包；
+* 现场脚本按 `EXAMPLES` 常量指向新位置，`build.py --check`（28 项）、三个探针、
+  成员表探针全部复跑通过 —— 搬完没有丢证据；
+* 仓库顶层不再有 `examples/`，避免"两份示例漂移"。
+
+### 4. 文档
+
+* 新增 [`excel_codegen/examples/README.md`](excel_codegen/examples/README.md)（示例索引 + 每个怎么跑）
+  与 `abs_fpi/README.md`（现场用例怎么用、什么免重跑、已知边界）；
+* `abs_fpi/README.md` 改写为**开发侧**索引（脚本 / 探针 / 四层校验链）；
+* README 快速开始改成"`examples --copy` → 打开工作簿 → 要导文件才回命令行"；
+* `docs/cli.md` 补第六个命令；`docs/setup.md` 新增「Windows 上怎么用」并说明 `setup.sh` 仅 POSIX。
+
+### 回归
+
+341 项测试（+11）、覆盖率 87.91%、ruff / format / mypy 全过；
+`uv build` 出的 wheel 与 sdist 里示例文件**逐一致**（各 56 个），`twine check` 通过；
+`abs_fpi/build.py --check` 公式求值 28 项 0 失败、三个工作簿 `check` 全过；
+探针 A–H / G / N 全部通过。
 
 ---
 

@@ -20,6 +20,7 @@ import pytest
 from openpyxl import load_workbook
 
 from excel_codegen import create_template, render_all, write_results
+from excel_codegen.example_pack import examples_root
 from excel_codegen.formula import FormulaError
 from excel_codegen.models import ProjectConfig, load_config
 from excel_codegen.utils import ConfigError
@@ -166,10 +167,9 @@ def _indent(code: str) -> str:
 # 仓库自带的示例也遵守这条默认
 # --------------------------------------------------------------------------- #
 def test_shipped_formula_example_needs_no_engine_line(tmp_path: Path) -> None:
-    """`examples/example_formula.yaml` 里那两处 engine: excel 现在只是"写出来更清楚"。"""
-    here = Path(__file__).resolve().parents[1]
-    example = here / "examples" / "example_formula.yaml"
-    if not example.exists():  # pragma: no cover - sdist 里一定带着
+    """`basic/example_formula.yaml` 里那两处 engine: excel 现在只是"写出来更清楚"。"""
+    example = examples_root() / "basic" / "example_formula.yaml"
+    if not example.exists():  # pragma: no cover - 示例随包发布，一定在
         pytest.skip("示例不在")
     config: ProjectConfig = load_config(example)
     assert all(template.engine == "excel" for template in config.templates)

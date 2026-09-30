@@ -38,7 +38,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+#: 本目录：现场脚本与实测报告（FINDINGS.md / TEMPLATES.md / probes/）
 HERE = Path(__file__).resolve().parent
+#: 示例资产：YAML + 模板 + 工作簿 + 导出产物，随包发布
+#: （0.9.0 起从 abs_fpi/ 挪进 excel_codegen/examples/abs_fpi/，见 examples/README.md）
+EXAMPLES = HERE.parent / "excel_codegen" / "examples" / "abs_fpi"
 sys.path.insert(0, str(HERE))
 
 import compose as composer  # noqa: E402
@@ -60,15 +64,15 @@ PROJECTS = [
     ("abs_fpi.yaml", fill_cases.PROJECT, list(fill_cases.EXTERNAL) + list(fill_cases.INTERNAL)),
 ]
 
-GENERATED = HERE / "generated"
+GENERATED = EXAMPLES / "generated"
 
 
 def verify(yaml_name: str, book_name: str) -> tuple[int, int]:
     """把 Output 表里的公式算一遍，与 Python 渲染结果逐行比对。"""
     from openpyxl import load_workbook
 
-    cfg = load_config(HERE / yaml_name)
-    book = HERE / book_name
+    cfg = load_config(EXAMPLES / yaml_name)
+    book = EXAMPLES / book_name
     out = render_all(cfg, book)
     checks = failures = 0
     wb = load_workbook(book)
@@ -99,7 +103,16 @@ def verify(yaml_name: str, book_name: str) -> tuple[int, int]:
 
 def cli_check(yaml_name: str, book_name: str) -> bool:
     proc = subprocess.run(
-        [sys.executable, "-m", "excel_codegen", "check", "-c", str(HERE / yaml_name), "-x", str(HERE / book_name)],
+        [
+            sys.executable,
+            "-m",
+            "excel_codegen",
+            "check",
+            "-c",
+            str(EXAMPLES / yaml_name),
+            "-x",
+            str(EXAMPLES / book_name),
+        ],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -117,8 +130,8 @@ def cli_check(yaml_name: str, book_name: str) -> bool:
 
 
 def refresh(yaml_name: str, book_name: str, cases: list[str], *, allow_init: bool) -> None:
-    yaml_path = HERE / yaml_name
-    book_path = HERE / book_name
+    yaml_path = EXAMPLES / yaml_name
+    book_path = EXAMPLES / book_name
     cfg = load_config(yaml_path)
 
     if not book_path.exists():

@@ -503,11 +503,14 @@ A25: cases         B25: Case1
 `init` 会在**工作簿旁边**生成两个脚本（`--no-scripts` 可关）：
 
 ```text
-examples/
+basic/
 ├── template.xlsx
 ├── template_render.bat     ← Windows 双击
 └── template_render.sh      ← Linux / macOS 执行
 ```
+
+（名字跟着工作簿走：工作簿叫 `abs_fpi_internal.xlsx`，脚本就叫
+`abs_fpi_internal_render.bat` / `.sh`。）
 
 双击（或 `./template_render.sh`）就等于跑那条 `render --write-excel`：
 **改完参数 → 双击 → 回 Excel 看 Output 表**，不用记命令。
@@ -567,7 +570,8 @@ direction: "vertical"
 ## 8. 导出代码文件（`--outdir`）
 
 ```bash
-excel-codegen render --config examples/example.yaml --excel examples/template.xlsx --outdir generated/
+excel-codegen examples --copy ./examples    # 先拿到内置示例
+excel-codegen render --config examples/basic/example.yaml --excel examples/basic/template.xlsx --outdir generated/
 ```
 
 - 文件名优先级：`template.filename`（Jinja2 渲染，可用 `{{ case_name }}`、`{{ template_name }}`、这个 Case 的任意变量）→ 否则 `<模板名>_<Case名><extension>`。
@@ -762,7 +766,7 @@ Prefix/Suffix 是按变量（不是按 Case）生效的。见 4.4：再加一个
 | --- | --- |
 | 0.1.0 | 首个可用版本：YAML 定义 + Excel 填写 + Jinja2 渲染 + 两种布局 + 导出 |
 | **0.2.0** | 真实项目移植后的修复会话：Prefix/Suffix 保留空格、`render` 不再静默、GBK 控制台不崩、清理旧结果按真实底边、`HOWTO` 表、指纹 + `check` 命令、`case_filter`、`{{ x.value }}` 形态一致、YAML 重复键报错、`--cases` 支持名字、文档补齐能力边界 |
-| **0.3.0** | **公式模式（`engine: excel`）**：输出表写 Excel 公式，改参数由 Excel 自己重算，不用再跑脚本；配 `examples/example_formula.yaml`。见 §14 |
+| **0.3.0** | **公式模式（`engine: excel`）**：输出表写 Excel 公式，改参数由 Excel 自己重算，不用再跑脚本；配 `basic/example_formula.yaml`。见 §14 |
 | **0.4.0** | 公式求值器（`check` 默认把公式算一遍再与 Python 渲染比对）、公式模式差异信息改为贴模板行、空 Case 列 / 超长公式告警、§14.5「改结构什么要重跑」、**更正 0.3.0 文档里"有 if/else 就不能用公式模式"的错误判断** |
 | **0.5.0** | **派生参数（`derived:`）**：参数引用参数（同 Case 的 local + global），Excel 侧写成公式自动重算；数值形态改成"两边都按 15 位有效数字"（不再用 `TEXT()`）。见 §15 |
 | 0.5.1 | 只动环境与文档（Windows → Ubuntu 迁移）：新增 `setup.sh`（探测文件系统后选 venv 位置）与 `.gitattributes`（行尾统一），README「安装」补 Ubuntu 三个坑，`compare_with_rules.js` 缺外部依赖时明确 `SKIP`（退出码 2）。**工具行为无变化** |
@@ -771,6 +775,7 @@ Prefix/Suffix 是按变量（不是按 Case）生效的。见 4.4：再加一个
 | **0.7.0** | **跨变量校验 `asserts`**（§3.6）、**模板片段 `{% include %}`**（§17）、**第三层作用域成员表**（§18）、取值约束补齐到成员表、`check --json` + 报全部差异、Excel 批注（含 `unit`）、`init` 生成一键刷新脚本、`excel-codegen doctor` 体检、质量护栏补 sdist 自包含检查 |
 | **0.8.0** | **行列风格 `excel.local_direction`**：Local 表可切成“一行一个工况”（见 §19）；公式模式与求值器支持二维 `INDEX` / 行区间 `MATCH`；**`filename` 里可用任意参数**；abs_fpi 舱数据改用成员表；新增 NASTRAN 工况控制用例（§20） |
 | 0.8.1 | 只动开发环境脚本 `setup.sh` 与测试：复用旧 venv 之前先体检（解释器版本 / `site-packages` / `pip`），拦住在换过 Python 后"能执行却什么也 import 不到"的坏环境（见 `docs/setup.md`）。**工具行为无变化** |
+| **0.9.0** | **内置示例随包发布 + 新增 `excel-codegen examples`**：`basic` / `nastran` / `abs_fpi` 三个示例（含已填好样例参数的工作簿）进 wheel 与 sdist，`--copy DIR` 一键拷出 —— 装了 pip 包、没克隆仓库的人也能用（见 [`excel_codegen/examples/README.md`](../excel_codegen/examples/README.md)）；`docs/setup.md` 补 Windows 用法 |
 
 ---
 
@@ -1349,8 +1354,9 @@ excel-codegen render -c project.yaml --write-excel
 
 ## 20. 用例：NASTRAN 工况控制语句
 
-仓库里的 `examples/nastran_case_control.yaml` 是一个完整可跑的示例，它把 §19 的纵向布局
-用在**工况控制语句**上。两个模板都是 `engine: excel`（公式模式）—— 改 Excel 里的参数，
+内置示例 `nastran`（`excel-codegen examples --copy .` 后是 `examples/nastran/`）
+是一个完整可跑的示例，它把 §19 的纵向布局用在**工况控制语句**上。
+两个模板都是 `engine: excel`（公式模式）—— 改 Excel 里的参数，
 Code 表里的语句自己就变了，不用跑命令。
 
 ### 20.1 表就是"一行一个子工况"
@@ -1387,7 +1393,7 @@ Code 表里的语句自己就变了，不用跑命令。
   "省略"只能表现为"这一格是空的"。把一列粘进文本编辑器后删掉空行即可：
 
 ```bash
-excel-codegen render -c examples/nastran_case_control.yaml --outdir deck
+excel-codegen render -c examples/nastran/nastran_case_control.yaml --outdir deck
 sed '/^$/d' deck/cc_*.inc > deck/case_control.deck
 ```
 
@@ -1432,7 +1438,7 @@ asserts:
 整份输入文件仍然是 `SOL 101` / `CEND` / `<上面这段>` / `BEGIN BULK` ——
 执行控制段与 BULK 段不属于 case control，一笔手写即可（或者再写一个模板生成它们）。
 
-> 运行记录：`examples/generated_nastran/` 是示例工作簿的实测产物；
+> 运行记录：`examples/nastran/generated/` 是示例工作簿的实测产物（随包发布）；
 > `tests/test_nastran_case_control.py` 17 项把上面每一条都钉住了
 > （含"省略语句不留空行/不留文本"、"改一格参数公式就跟着变"、
 > 以及"Code 表里的公式算出来 == Python 渲染"这条一致性保证）。

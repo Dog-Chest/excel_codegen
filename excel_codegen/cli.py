@@ -20,7 +20,7 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
 
-from . import __version__
+from . import __version__, example_pack
 from .derived import expression_names
 from .derived import validate_config as derived_validate_config
 from .excel_io import (
@@ -1194,6 +1194,48 @@ def doctor_command(
     console.print(
         f"[bold green]OK[/] 体检完成：{sum(1 for level, _, _ in findings if level == 'OK')} 项通过"
         + (f"，{notes} 项值得留意" if notes else "，没有需要留意的")
+    )
+
+
+@app.command("examples")
+def examples_command(
+    copy_to: Path | None = typer.Option(None, "--copy", "-o", help="把内置示例拷到这个目录（每个示例一个子目录）"),
+    only: str | None = typer.Option(None, "--only", help="只处理某一个示例（basic / nastran / abs_fpi）"),
+    force: bool = typer.Option(False, "--force", help="目标已存在且非空时覆盖"),
+) -> None:
+    """列出随包发布的内置示例；加 --copy DIR 就拷出来直接用。
+
+    示例随 wheel / sdist 一起发布 —— 不需要克隆仓库。每个示例都带一本**已经填好样例参数**
+    的工作簿：公式模式下打开就能改、改完自动重算。
+    """
+    if copy_to is None:
+        console.print(
+            "[bold]内置示例[/]（随包发布 —— 不用克隆仓库；"
+            "[cyan]excel-codegen examples --copy ./examples[/] 拷出来用）\n"
+        )
+        for item in example_pack.EXAMPLES:
+            console.print(f"  [bold cyan]{item.name}[/]  {item.title}")
+            console.print(f"    [dim]{item.summary}[/]")
+            console.print(f"    入口   [green]{item.entry}[/]")
+            console.print(f"    工作簿 {item.workbook}\n")
+        return
+
+    try:
+        selected = [example_pack.find(only)] if only else list(example_pack.EXAMPLES)
+        written = example_pack.copy_examples(copy_to, only=only, force=force)
+    except CodeGenError as exc:
+        raise _fail(exc) from exc
+
+    console.print(f"[bold green]OK[/] 已拷贝 {len(written)} 个示例到 [cyan]{copy_to}[/]")
+    for item in selected:
+        console.print(f"  {item.name:9s} {item.workbook}   [dim]打开就能改参数[/]")
+
+    first = selected[0]
+    console.print(
+        "\n下一步（可选）：打开上面那本 .xlsx 填参数；"
+        "要把代码导出成文件时跑\n"
+        f"  [cyan]excel-codegen render -c {copy_to / first.entry} "
+        f"-x {copy_to / first.workbook} --outdir out[/]"
     )
 
 

@@ -40,6 +40,7 @@ import pytest
 from openpyxl import load_workbook
 
 from excel_codegen import create_template, write_results
+from excel_codegen.example_pack import examples_root
 from excel_codegen.formula_eval import evaluate_template_values
 from excel_codegen.models import ProjectConfig, load_config
 from excel_codegen.renderer import collect_variables, export_files, render_all
@@ -442,18 +443,18 @@ def test_unknown_kind_is_rejected(workbook_path: Path, project: ProjectConfig) -
 # 仓库里那个示例本身也要是好的
 # --------------------------------------------------------------------------- #
 def _example_paths() -> tuple[Path, Path, Path]:
-    here = Path(__file__).resolve().parents[1]
+    root = examples_root() / "nastran"
     return (
-        here / "examples" / "nastran_case_control.yaml",
-        here / "examples" / "nastran_case_control.xlsx",
-        here / "examples" / "generated_nastran" / "case_control.deck",
+        root / "nastran_case_control.yaml",
+        root / "nastran_case_control.xlsx",
+        root / "generated" / "case_control.deck",
     )
 
 
 def test_shipped_example_is_formula_mode_and_vertical() -> None:
     """示例的**形态**要钉住（工作表是给大家改的，所以不钉它的取值）。"""
     yaml_path, _, _ = _example_paths()
-    if not yaml_path.exists():  # pragma: no cover - sdist 里一定带着
+    if not yaml_path.exists():  # pragma: no cover - 示例随包发布，一定在
         pytest.skip("示例 YAML 不在")
 
     config = load_config(yaml_path)
@@ -470,7 +471,7 @@ def test_shipped_example_workbook_is_consistent() -> None:
     （也就是"改 Excel 就改输出"在示例上成立）。
     """
     yaml_path, book, _ = _example_paths()
-    if not (yaml_path.exists() and book.exists()):  # pragma: no cover - sdist 里一定带着
+    if not (yaml_path.exists() and book.exists()):  # pragma: no cover - 示例随包发布，一定在
         pytest.skip("示例不在")
     config = load_config(yaml_path)
 

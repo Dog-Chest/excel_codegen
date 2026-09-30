@@ -3,8 +3,11 @@
 # 为什么需要这个文件：setuptools 默认的文件收集规则**只收 test*.py**，会把
 # tests/conftest.py 漏掉 —— 于是 sdist 里躺着一套跑不起来的测试
 # （解包后 pytest 全是 `fixture 'config_text' not found`）。
-# 要么把测试带全，要么干脆不带；这里选前者，顺带把 examples/ 与 docs/ 带上
-# （README 的「快速开始」指着 examples/example.yaml）。
+# 要么把测试带全，要么干脆不带；这里选前者，顺带把示例与 docs/ 带上。
+#
+# 0.9.0 起示例是**包数据**（excel_codegen/examples/），不是仓库顶层的 examples/：
+# 这样 wheel 里也有 —— `pip install excel-codegen` 的人不必克隆仓库，
+# `excel-codegen examples --copy DIR` 就能拿到（见 excel_codegen/example_pack.py）。
 
 include LICENSE
 include README.md
@@ -13,18 +16,23 @@ include pyproject.toml
 include uv.lock
 include .python-version
 
+# 开发环境脚本：docs/setup.md（随包发布）让人跑 `./setup.sh`，tests/test_setup_script.py
+# 也直接执行它 —— 不发它，sdist 里就躺着一套"脚本不存在"的测试
+include setup.sh
+
 # 测试：必须带上 conftest.py（fixture 全在那儿）
 recursive-include tests *.py
 
-# 示例：YAML + 生成好的工作簿 + 渲染产物（README 的快速开始要用）
-# .inc / .deck 是 NASTRAN 那个示例的产物（指南 §20），测试会读它
-recursive-include examples *.yaml *.xlsx *.c *.md *.csv *.inc *.deck
+# 内置示例：YAML + 模板 + 生成好的工作簿 + 导出产物 + 一键刷新脚本
+# .inc / .deck 是 NASTRAN 那个示例的产物（指南 §20），测试会读它；
+# .j2 是 abs_fpi 示例的 template_file（漏了它示例就解不开）
+recursive-include excel_codegen/examples *.yaml *.xlsx *.j2 *.c *.md *.csv *.inc *.deck *.sh *.bat *.js
 
 # 文档
 recursive-include docs *.md
 
-# 刻意不带：abs_fpi/ 是"拿这个工具干真活"的现场项目（有自己的工作簿与产物，
-# 也在 .gitignore 里排除了中间产物），不属于这个包，没必要塞进 sdist。
+# 刻意不带：仓库根的 abs_fpi/ 是现场脚本与实测报告（FINDINGS.md / probes / build.py …），
+# 不属于这个包。注意示例资产已经搬到 excel_codegen/examples/abs_fpi/，**不在**这条 prune 里。
 prune abs_fpi
 
 # 中间产物与缓存一律排除

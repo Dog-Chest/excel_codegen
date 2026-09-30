@@ -100,7 +100,7 @@ from excel_codegen import (
     read_metadata,
 )
 
-config = load_config("examples/example.yaml")  # 读取并校验 YAML
+config = load_config("examples/basic/example.yaml")  # 读取并校验 YAML（示例：excel-codegen examples --copy .）
 create_template(config, "template.xlsx", cases=3, overwrite=True)
 
 output = render_all(config, "template.xlsx")  # 读取填写的参数并渲染
@@ -154,3 +154,28 @@ excel-codegen doctor -c project.yaml
 
 典型用途：**新同事拿到仓库的第一条命令**（"我这儿跑不起来"）、发布前自检、
 以及定期确认"这本工作簿还受哪些约束管着"。
+
+---
+
+## `excel-codegen examples`
+
+列出**随包发布的内置示例**，或把它们拷出来直接用。示例是包数据（wheel 与 sdist 里都有），
+所以 `pip install excel-codegen` / `uv tool install excel-codegen` 的人**不需要克隆仓库**。
+
+| 选项 | 说明 |
+| --- | --- |
+| `-o, --copy DIR` | 把示例拷到 DIR（每个示例一个子目录）；不带就是只列出 |
+| `--only NAME` | 只处理某一个示例（`basic` / `nastran` / `abs_fpi`） |
+| `--force` | 目标目录已存在且非空时覆盖（默认拒绝，避免覆盖你改过的文件） |
+
+```bash
+excel-codegen examples                       # 看有哪些、各自演示什么
+excel-codegen examples --copy ./examples     # 全部拷出来
+excel-codegen examples --copy . --only abs_fpi   # 只要现场用例那个
+```
+
+拷出来的每个示例都带一本**已经填好样例参数**的工作簿，打开就能改；
+公式模式下改完自动重算，不需要跑命令。示例清单与说明见
+[`excel_codegen/examples/README.md`](../excel_codegen/examples/README.md)。
+
+> 拷出来的目录是**你的**：`--force` 之外不会覆盖已有内容，改坏了再拷一份就行。

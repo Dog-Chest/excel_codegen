@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
+from excel_codegen.example_pack import examples_root
 from excel_codegen.excel_io import create_template, write_results
 from excel_codegen.models import ProjectConfig, RenderResult, TemplateDef, load_config
 from excel_codegen.renderer import (
@@ -24,7 +25,8 @@ from excel_codegen.renderer import (
 )
 from excel_codegen.utils import ExcelError, RenderError, VarValue
 
-EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
+#: 内置示例随包发布（0.9.0 起在 excel_codegen/examples/ 下，wheel 与 sdist 都有）
+EXAMPLES_DIR = examples_root()
 
 
 def make_template(code: str, **overrides: object) -> TemplateDef:
@@ -254,8 +256,8 @@ def test_export_files_default_naming_and_overwrite_guard(tmp_path: Path, config_
 # 仓库自带的示例配置
 # --------------------------------------------------------------------------- #
 def test_shipped_example_config_renders(tmp_path: Path) -> None:
-    config_path = EXAMPLES_DIR / "example.yaml"
-    assert config_path.exists(), "examples/example.yaml 应该随仓库提供"
+    config_path = EXAMPLES_DIR / "basic" / "example.yaml"
+    assert config_path.exists(), "内置示例基本/example.yaml 应该随包提供"
 
     config = load_config(config_path)
     assert len(config.templates) == 2

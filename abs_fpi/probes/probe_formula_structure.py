@@ -24,15 +24,17 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent  # abs_fpi/
-PROJECT = ROOT / "abs_fpi.yaml"
-BOOK = ROOT / "ABS_FPI_load_cases.xlsx"
+ROOT = HERE.parent  # abs_fpi/：现场脚本与实测报告
+#: 示例资产随包发布（0.9.0 起从 abs_fpi/ 挪到 excel_codegen/examples/abs_fpi/，见 examples/README.md）
+EXAMPLES = ROOT.parent / "excel_codegen" / "examples" / "abs_fpi"
+PROJECT = EXAMPLES / "abs_fpi.yaml"
+BOOK = EXAMPLES / "ABS_FPI_load_cases.xlsx"
 PY = Path(sys.executable)
 
 
 def run(args: list[str]) -> tuple[int, str]:
     proc = subprocess.run(
-        args, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(ROOT), check=False
+        args, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(EXAMPLES), check=False
     )
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 

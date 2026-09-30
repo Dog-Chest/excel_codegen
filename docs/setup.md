@@ -18,7 +18,8 @@ pipx install uv                                                 # 任何系统
 # 之后在任何系统、任何目录，命令完全一样
 uv run pytest                                   # 自动建环境 + 按 uv.lock 装依赖 + 跑测试
 uv run excel-codegen --version                  # 跑 CLI，不用 activate
-uv run excel-codegen render -c examples/example.yaml -x examples/template.xlsx --write-excel
+uv run excel-codegen examples --copy ./examples # 内置示例（带已填好样例参数的工作簿）
+uv run excel-codegen render -c examples/basic/example.yaml -x examples/basic/template.xlsx --write-excel
 uv run python abs_fpi/build.py --check
 ```
 
@@ -41,6 +42,8 @@ uv run python abs_fpi/build.py --check
 > ```
 >
 > 或者直接跑 `./setup.sh`，它会自动探测文件系统并替你设好。
+> ⚠ `setup.sh` 是 **POSIX shell 脚本**（Linux / macOS）—— Windows 上没有 bash，
+> 用上面那两条 uv 命令就够了，不需要它（见下面「Windows 上怎么用」）。
 
 ---
 
@@ -84,6 +87,40 @@ EXCEL_CODEGEN_VENV=/data/venvs/ecg ./setup.sh    # 也可以自己指定环境�
   可连 `pip` 都 import 不到。体检不过会报出具体原因（哪两个版本对不上）并让你 `--recreate`，
   而不是把它拖到 `pip install` 才以一句 `No module named pip` 收场；
 * `pip install` 失败时会指出最常见的两种原因（环境半坏 / 权限不对）与对应的下一步。
+
+---
+
+## Windows 上怎么用
+
+工具本身在 Windows 上是一等公民：CLI 全部命令、生成的 `.xlsx`、以及一并生成的
+`*_render.bat` 都是跨平台的，CI 也在 `windows-latest` × Python 3.11 / 3.13 上跑全套测试。
+只有 `setup.sh` 是 POSIX 脚本 —— Windows 上不需要它。
+
+**用（推荐）**：发布之后装成全局命令，不碰仓库：
+
+```powershell
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"   # 装 uv（一次性）
+uv tool install excel-codegen                                # 装工具
+excel-codegen examples --copy .\examples                     # 拿示例（含已填好的工作簿）
+start .\examples\abs_fpi\abs_fpi_internal.xlsx               # 打开改参数
+```
+
+**开发**：在仓库目录里用 uv，命令与 Linux / macOS 完全一致（不需要 `activate`）：
+
+```powershell
+uv run pytest
+uv run excel-codegen --version
+```
+
+几个 Windows 特有的点：
+
+* **一键刷新脚本**：`init` / `render --write-excel` 会在工作簿旁边生成
+  `<工作簿名>_render.bat`，**双击即可**（`.sh` 是给 Linux / macOS 的）；
+* **控制台编码**：早期版本在 GBK 控制台上打印 `✓` 会抛 `UnicodeEncodeError`，已修
+  （FINDINGS #1）；如果仍见到乱码，先 `chcp 65001` 切到 UTF-8；
+* **Excel 占用**：工作簿正被 Excel / WPS 打开时写回会失败 —— 先关掉再跑
+  （脚本的失败提示里也写了这一条）；
+* **别在装依赖时 Ctrl-C**：NTFS 上写到一半被打断会留下读不动的目录（见下一节）。
 
 ---
 

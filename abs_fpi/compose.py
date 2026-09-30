@@ -31,7 +31,7 @@
 
 用法::
 
-    python compose.py            # 读 compose.yaml → 写 abs_fpi.yaml
+    python compose.py            # 读 examples/abs_fpi/compose.yaml → 写同目录的 abs_fpi.yaml
 """
 
 from __future__ import annotations
@@ -42,11 +42,13 @@ from pathlib import Path
 import yaml
 
 HERE = Path(__file__).resolve().parent
+#: 示例资产（compose.yaml 的配方与它产出/引用的 YAML）随包发布，见 examples/README.md
+EXAMPLES = HERE.parent / "excel_codegen" / "examples" / "abs_fpi"
 sys.path.insert(0, str(HERE))
 
 from excel_codegen import load_config  # noqa: E402
 
-MANIFEST = HERE / "compose.yaml"
+MANIFEST = EXAMPLES / "compose.yaml"
 
 #: 这三个字段决定生成出来的文本，同名变量之间必须逐字一致
 STRICT_FIELDS = ("prefix", "suffix", "type")

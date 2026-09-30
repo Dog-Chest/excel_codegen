@@ -42,7 +42,7 @@
 ## 2. 一条命令
 
 ```bash
-cd excel_codegen/abs_fpi
+cd abs_fpi                  # 现场脚本在这里；示例资产在 ../excel_codegen/examples/abs_fpi/
 python build.py            # compose → 建骨架（缺哪个建哪个）→ 渲染写回 → 导出代码 → 两层验证
 python build.py --check    # 只验证，不动文件（CI 可用）
 python build.py --init     # 骨架不存在时也重建（会清掉你填的参数）
@@ -76,8 +76,9 @@ wrote abs_fpi.yaml: 17 全局 / 35 局部变量, 4 模板 → Code EXT, Summary 
 
 ## 3. 加下一个规范（DNV / BV / CSR…）的清单
 
-1. **抄一份规则集**：`cp abs_fpi_external.yaml dnv_rp_c201.yaml`，改 `excel.output`
-   （例如 `dnv_rp_c201.xlsx`）与 `templates` 列表。
+1. **抄一份规则集**：从 `../excel_codegen/examples/abs_fpi/` 抄
+   （`cp ../excel_codegen/examples/abs_fpi/abs_fpi_external.yaml dnv_rp_c201.yaml`），
+   改 `excel.output`（例如 `dnv_rp_c201.xlsx`）与 `templates` 列表。
 2. **写变量**：`variables.global` 放全船数据，`variables.local` 放逐工况数据。
    - 名字必须是 `[A-Za-z_][A-Za-z0-9_]*`，不能是 `case_name` / `template_name`；
    - **单位放 `suffix`**（`suffix: " m"` → `340 m`）；无量纲留空；
@@ -144,11 +145,20 @@ wrote abs_fpi.yaml: 17 全局 / 35 局部变量, 4 模板 → Code EXT, Summary 
 ## 7. 文件清单
 
 ```
-abs_fpi/
+abs_fpi/                             ← 现场脚本与实测报告（不进包）
 ├── TEMPLATES.md                  ← 本文件：数据库索引 + 加规范的清单
-├── README.md                     怎么用、产物长什么样、校验链
+├── README.md                     开发侧索引：脚本 / 探针 / 校验链
 ├── FINDINGS.md                   对 excel_codegen 的实测报告（含修复复测）
 │
+├── build.py                      一条命令：compose + 生成 + 导出 + 两层验证
+├── compose.py                    规则集 → 项目 YAML（合并 + 冲突检查）
+├── fill_cases.py                 样例工况取值（只有首次 --init 时才灌）
+├── verify_excel_engine.py        公式求值器：验证"Excel 算出来的代码"对不对
+├── compare_with_rules.js         与 GeniE/Rules 逐行比对
+└── probes/                       对这一版工具的最小复现与探针
+
+excel_codegen/examples/abs_fpi/      ← 示例资产（随包发布，用户用这份）
+├── README.md                     怎么用、什么免重跑、已知边界
 ├── abs_fpi_external.yaml         规则集 1（真源）
 ├── abs_fpi_internal.yaml         规则集 2（真源）
 ├── compose.yaml                  配方：哪几个规则集 + case_filter
@@ -159,15 +169,9 @@ abs_fpi/
 │   ├── int_body.js.j2            内压 GeniE 函数体
 │   └── int_summary.md.j2         内压工况汇总
 │
-├── build.py                      一条命令：compose + 生成 + 导出 + 两层验证
-├── compose.py                    规则集 → 项目 YAML（合并 + 冲突检查）
-├── fill_cases.py                 样例工况取值（只有首次 --init 时才灌）
-├── verify_excel_engine.py        公式求值器：验证"Excel 算出来的代码"对不对
-├── compare_with_rules.js         与 GeniE/Rules 逐行比对
-├── probes/                       对这一版工具的最小复现与探针
-│
 ├── abs_fpi_external.xlsx         规则集工作簿（公式模式）
 ├── abs_fpi_internal.xlsx         规则集工作簿（公式模式）
 ├── ABS_FPI_load_cases.xlsx       项目工作簿（两套规则共用 Global）
+├── *_render.sh / *.bat           一键刷新脚本（Windows 双击 .bat）
 └── generated/                    导出的代码（.js）与工况汇总（.md）
 ```

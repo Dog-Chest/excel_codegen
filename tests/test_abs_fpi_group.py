@@ -6,10 +6,11 @@
 
 1. 配置层面：舱参数都在 group 里、Local 表里没有它们、`tank_ref` 是带 choices 的指针；
 2. 数据层面：`Tank Data` 表里三个舱各自只有一份数据，两个 WBT6 工况共用它；
-3. 产物层面：仓库里 `abs_fpi/generated/` 的导出文件与当前 YAML + 工作簿一致
+3. 产物层面：`examples/abs_fpi/generated/` 的导出文件与当前 YAML + 工作簿一致
    （防止"改了 YAML 忘了重新生成"）。
 
-`abs_fpi/` 不进 sdist（见 `MANIFEST.in` 的 `prune abs_fpi`），所以这里全部按"文件不在就跳过"写。
+0.9.0 起这些示例资产随包发布（`excel_codegen/examples/abs_fpi/`，见 `examples/README.md`），
+所以 sdist 里也有；下面的"文件不在就跳过"只是给被裁剪过的安装留条活路。
 """
 
 from __future__ import annotations
@@ -19,11 +20,14 @@ from pathlib import Path
 import pytest
 
 from excel_codegen import read_group_members
+from excel_codegen.example_pack import examples_root
 from excel_codegen.excel_io import load_workbook_file
 from excel_codegen.models import load_config
 from excel_codegen.renderer import render_all
 
-ABS_FPI = Path(__file__).resolve().parents[1] / "abs_fpi"
+#: 示例资产随包发布（0.9.0 起从 abs_fpi/ 挪到 excel_codegen/examples/abs_fpi/）；
+#: 仓库根的 abs_fpi/ 只留现场脚本与实测报告（FINDINGS.md / probes/）
+ABS_FPI = examples_root() / "abs_fpi"
 INTERNAL_YAML = ABS_FPI / "abs_fpi_internal.yaml"
 PROJECT_YAML = ABS_FPI / "abs_fpi.yaml"
 EXTERNAL_YAML = ABS_FPI / "abs_fpi_external.yaml"
@@ -47,8 +51,8 @@ TANK_VARIABLES = [
 
 
 def _require(path: Path) -> Path:
-    if not path.exists():  # pragma: no cover - sdist 里没有 abs_fpi/
-        pytest.skip(f"{path.name} 不在（abs_fpi/ 不进 sdist）")
+    if not path.exists():  # pragma: no cover - 示例随包发布，只有被裁剪的安装才会缺
+        pytest.skip(f"{path.name} 不在（示例资产缺失）")
     return path
 
 
@@ -139,8 +143,8 @@ def test_two_cases_share_one_tank(internal) -> None:
     ],
 )
 def test_generated_files_are_current(case: str, line: str) -> None:
-    """`abs_fpi/generated/` 是提交进仓库的产物 —— 改了 YAML 忘了重跑就该红。"""
+    """`examples/abs_fpi/generated/` 是提交进仓库的产物 —— 改了 YAML 忘了重跑就该红。"""
     path = ABS_FPI / "generated" / f"{case}.js"
-    if not path.exists():  # pragma: no cover - sdist 里没有 abs_fpi/
-        pytest.skip("abs_fpi/generated/ 不在")
+    if not path.exists():  # pragma: no cover - 示例随包发布，只有被裁剪的安装才会缺
+        pytest.skip("examples/abs_fpi/generated/ 不在")
     assert line in path.read_text(encoding="utf-8")

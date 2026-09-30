@@ -26,9 +26,11 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent  # abs_fpi/
-YAML = ROOT / "abs_fpi_internal.yaml"
-BOOK = ROOT / "abs_fpi_internal.xlsx"
+ROOT = HERE.parent  # abs_fpi/：现场脚本与实测报告
+#: 示例资产随包发布（0.9.0 起从 abs_fpi/ 挪到 excel_codegen/examples/abs_fpi/，见 examples/README.md）
+EXAMPLES = ROOT.parent / "excel_codegen" / "examples" / "abs_fpi"
+YAML = EXAMPLES / "abs_fpi_internal.yaml"
+BOOK = EXAMPLES / "abs_fpi_internal.xlsx"
 OUT = HERE / "_out"
 TEMPLATE = "genie_int"
 
@@ -156,8 +158,8 @@ def step4(cfg, book: Path) -> None:
 
     import yaml as _yaml
 
-    # 放在 abs_fpi/ 根下：模板文件的相对路径按**配置文件所在目录**解析（指南 §16.2）
-    plain = ROOT / "_probe_group_nokeys.yaml"
+    # 放在示例 YAML 旁边：模板文件的相对路径按**配置文件所在目录**解析（指南 §16.2）
+    plain = EXAMPLES / "_probe_group_nokeys.yaml"
     raw = _yaml.safe_load(YAML.read_text(encoding="utf-8"))
     for item in raw["variables"]["local"]:
         if item["name"] == "tank_ref":

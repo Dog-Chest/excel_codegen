@@ -28,28 +28,30 @@
 ## 快速开始
 
 ```bash
-# 生成 Excel（模板不写 engine 时默认就是公式模式；建完表就顺手把输出也写好了）
-uv run excel-codegen init -c examples/example_formula.yaml -o examples/template_formula.xlsx --cases 2
+# 1) 把内置示例拷出来 —— 示例随包发布，装了 pip 包就够，不用克隆仓库
+excel-codegen examples                      # 看有哪些、各自演示什么
+excel-codegen examples --copy ./examples
 
-# 打开它填参数：Global Parameter 的 B 列、Local Parameter 的 E/F 列
-# Output 表里是活公式 —— 改完参数**它自己就重算了**，不需要任何命令
+# 2) 打开示例里那本已经填好样例参数的工作簿就能改：
+#    Global Parameter 的 B 列、Local Parameter 的 E/F 列
+#    Output 表里是活公式 —— 改完参数**它自己就重算了**，不需要任何命令
 
-# 只有「要把代码导成文件」时才回到命令行
-uv run excel-codegen render -c examples/example_formula.yaml -x examples/template_formula.xlsx \
-    --outdir examples/generated_formula
+# 3) 只有「要把代码导成文件」时才回到命令行
+excel-codegen render -c examples/basic/example_formula.yaml \
+    -x examples/basic/template_formula.xlsx --outdir out
 ```
 
 想核对「Excel 里算出来的」与「Python 渲染的」是否一致（CI 里很有用）：`excel-codegen check`。
 
 没装 uv 就去掉 `uv run`，先按下面「安装」把环境准备好。
 
-`examples/` 里还有两个可直接跑的：
+内置示例（`excel-codegen examples`，源码在 [`excel_codegen/examples/`](excel_codegen/examples/)）：
 
 | 示例 | 演示什么 |
 | --- | --- |
-| [`example.yaml`](examples/example.yaml) | 显式 `engine: snapshot` 的对照示例：过滤器 / 循环 / 导出文件（快照模式只在需要这些时才用） |
-| [`example_formula.yaml`](examples/example_formula.yaml) | **默认的公式模式**：改参数后打开 Excel 就重算，不用再跑脚本 |
-| [`nastran_case_control.yaml`](examples/nastran_case_control.yaml) | **一行一个工况**（`local_direction: vertical`）+ 公式模式生成 NASTRAN 工况控制语句：语句留空就不输出，在 Excel 里改一格 Code 列立刻跟着变（指南 §19 / §20） |
+| [`basic`](excel_codegen/examples/basic/) | 入门：`example_formula.yaml` 是**默认的公式模式**（改参数后打开 Excel 就重算）；`example.yaml` 显式 `engine: snapshot`，演示过滤器 / 循环 / 导出文件 |
+| [`nastran`](excel_codegen/examples/nastran/) | **一行一个工况**（`local_direction: vertical`）+ 公式模式生成 NASTRAN 工况控制语句：语句留空就不输出，在 Excel 里改一格 Code 列立刻跟着变（指南 §19 / §20） |
+| [`abs_fpi`](excel_codegen/examples/abs_fpi/) | **现场用例**：ABS FPI 内外压 → GeniE。两个规则集可各自单用，也可合成一本项目工作簿共用一张 Global 表；内压用成员表 `Tank Data` 把舱参数只写一遍 |
 
 ## 特性
 
@@ -70,7 +72,8 @@ uv run excel-codegen render -c examples/example_formula.yaml -x examples/templat
 
 ## 现场用例：ABS FPI 内外压 → GeniE
 
-[`abs_fpi/`](abs_fpi/) 是拿这个工具干真活的现场项目 —— 把 **ABS FPI**（5A-3-2/5.5 外压、
+[`excel_codegen/examples/abs_fpi/`](excel_codegen/examples/abs_fpi/) 是拿这个工具干真活的现场用例
+（`excel-codegen examples --copy .` 就能拿到）—— 把 **ABS FPI**（5A-3-2/5.5 外压、
 5.7 内压）的面载荷计算，生成可直接粘进 GeniE 的 JavaScript 函数体。
 
 | 工作簿 | 内容 | 工况 |
@@ -85,7 +88,8 @@ uv run excel-codegen render -c examples/example_formula.yaml -x examples/templat
 
 它同时是这个工具的**实测证据**：四层校验链（`validate` → `check`（含公式求值）→
 `verify_excel_engine.py` → `compare_with_rules.js`）每跑一次都重新证明"生成的代码是对的"；
-逐轮试用发现的问题与修复复测记录在 [`abs_fpi/FINDINGS.md`](abs_fpi/FINDINGS.md)。
+逐轮试用发现的问题与修复复测记录在 [`abs_fpi/FINDINGS.md`](abs_fpi/FINDINGS.md)
+（`abs_fpi/` 是开发侧的现场脚本与实测报告，**不随包发布**；随包发布的是上面那个示例目录）。
 
 > 用例里的舱容与工况组合只是**示意数值**（随手取的几个数），不代表任何真实船舶。
 
@@ -94,8 +98,9 @@ uv run excel-codegen render -c examples/example_formula.yaml -x examples/templat
 | 文档 | 内容 |
 | --- | --- |
 | [`docs/template_guide.md`](docs/template_guide.md) | **模板库扩展指南**：YAML 字段、Prefix/Suffix、Jinja2 速查、Excel 表结构、`case_filter`、排错、FAQ、能力边界、公式模式与派生参数 |
-| [`docs/cli.md`](docs/cli.md) | 命令参考（五个命令的全部选项）、作为 Python 库使用、错误类型 |
-| [`docs/setup.md`](docs/setup.md) | 安装与跨平台环境：uv 零配置、venv + pip、Ubuntu 与外置盘的坑、Python 版本策略 |
+| [`docs/cli.md`](docs/cli.md) | 命令参考（六个命令的全部选项）、作为 Python 库使用、错误类型 |
+| [`docs/setup.md`](docs/setup.md) | 安装与跨平台环境：uv 零配置、venv + pip、Windows / Ubuntu 的坑、Python 版本策略 |
+| [`excel_codegen/examples/README.md`](excel_codegen/examples/README.md) | **内置示例**：三个示例各自演示什么、怎么拷出来、怎么改 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本变更历史 |
 | [`abs_fpi/README.md`](abs_fpi/README.md) | 现场项目：怎么用、边界、四层校验链 |
 | [`docs/publishing.md`](docs/publishing.md) | 维护者向：发布到 GitHub / PyPI、密钥与隐私 |
@@ -122,7 +127,7 @@ pip install -e ".[dev]"
 ## 开发
 
 ```bash
-uv run pytest --cov          # 330 项用例 + 覆盖率门槛（85%）
+uv run pytest --cov          # 341 项用例 + 覆盖率门槛（85%）
 uv run ruff check .          # lint
 uv run ruff format --check . # 格式
 uv run mypy                  # 类型检查
