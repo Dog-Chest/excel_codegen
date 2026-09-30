@@ -9,6 +9,11 @@
 * 可 ``import jinja2`` 与 ``-m pip`` 全部失败，脚本最终停在一句 ``No module named pip``。
 
 这组用例把那三种坏法各钉一条，并确认正常环境**不会**被误判。
+
+另外钉一条**可移植性**：shell 里 ``$VAR`` 紧挨着中文必须写成 ``${VAR}``。macOS 自带
+bash 3.2，解析器会把多字节字符的首字节吞进变量名 —— ``$REPO_FS（`` 变成
+``REPO_FS<0xEF>``，在 ``set -u`` 下第一屏就 ``unbound variable`` 退出。Linux 的
+bash ≥ 4 解析正常，所以这个坑只在 macOS 上炸（见 CHANGELOG 0.9.0）。
 """
 
 from __future__ import annotations
@@ -18,12 +23,20 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
+from excel_codegen import load_config
+from excel_codegen.example_pack import examples_root
+from excel_codegen.excel_io import write_run_scripts
+
 ROOT = Path(__file__).resolve().parents[1]
 SETUP = ROOT / "setup.sh"
+
+#: ``$VAR`` 紧挨着一个非 ASCII 字节 —— 老 bash 会把那个字节当成变量名的一部分
+BARE_EXPANSION_BEFORE_MULTIBYTE = re.compile(rb"\$([A-Za-z_][A-Za-z0-9_]*)(?=[\x80-\xff])")
 
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="setup.sh 需要 POSIX shell")
 
@@ -71,9 +84,9 @@ def _run_setup(env_dir: Path, tmp_path: Path) -> subprocess.CompletedProcess[str
         env=env,
         capture_output=True,
         text=True,
-        # 不赌子进程的输出编码：macOS 的 CI 上 stderr 里出现过一个坏字节，
-        # 默认的严格解码会直接抛 UnicodeDecodeError（断言根本没机会跑）。
-        # 与 build.py / 探针里读子进程输出的写法保持一致。
+        # 不赌子进程的输出编码：脚本真出问题时 bash 会把变量名连同坏字节一起打出来
+        # （见文件头的 bash 3.2 可移植性一节），严格解码会先抛 UnicodeDecodeError，
+        # 断言反而没机会跑。与 build.py / 探针里读子进程输出的写法一致。
         encoding="utf-8",
         errors="replace",
         check=False,
@@ -143,3 +156,29 @@ def test_usable_environment_is_reused(env_dir: Path, tmp_path: Path) -> None:
     # 走到安装那一步（stdout 出现 pip）才算"没被误拦"
     assert "pip" in proc.stdout.lower(), proc.stdout
     assert "ERROR" not in proc.stderr, proc.stderr
+
+
+# --------------------------------------------------------------------------- #
+# 可移植性：$VAR 紧挨中文会被老 bash（macOS 自带 3.2）吞进变量名
+# --------------------------------------------------------------------------- #
+def _shell_scripts_to_scan() -> list[Path]:
+    return [SETUP, *sorted(examples_root().rglob("*.sh"))]
+
+
+@pytest.mark.parametrize("path", _shell_scripts_to_scan(), ids=lambda p: p.name)
+def test_bundled_shell_scripts_brace_expansions_before_multibyte(path: Path) -> None:
+    """``$VAR（`` 在 bash 3.2 上会被解析成 ``VAR<首字节>: unbound variable``。"""
+    hits = BARE_EXPANSION_BEFORE_MULTIBYTE.findall(path.read_bytes())
+    assert not hits, f"{path.name} 里有紧邻多字节字符的裸变量展开，改成 ${{VAR}}：{[h.decode() for h in hits]}"
+
+
+def test_generated_render_scripts_are_free_of_that_hazard() -> None:
+    """生成的 ``*_render.sh`` 也要守同一条 —— 它同样是给人双击/直接跑的。"""
+    config = load_config(examples_root() / "basic" / "example.yaml")
+    with tempfile.TemporaryDirectory() as tmp:
+        written = write_run_scripts(config, Path(tmp) / "template.xlsx")
+        shells = [p for p in written if p.suffix == ".sh"]
+        assert shells, "应当生成 .sh"
+        for path in shells:
+            hits = BARE_EXPANSION_BEFORE_MULTIBYTE.findall(path.read_bytes())
+            assert not hits, f"{path.name}: {[h.decode() for h in hits]}"

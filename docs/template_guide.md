@@ -775,7 +775,7 @@ Prefix/Suffix 是按变量（不是按 Case）生效的。见 4.4：再加一个
 | **0.7.0** | **跨变量校验 `asserts`**（§3.6）、**模板片段 `{% include %}`**（§17）、**第三层作用域成员表**（§18）、取值约束补齐到成员表、`check --json` + 报全部差异、Excel 批注（含 `unit`）、`init` 生成一键刷新脚本、`excel-codegen doctor` 体检、质量护栏补 sdist 自包含检查 |
 | **0.8.0** | **行列风格 `excel.local_direction`**：Local 表可切成“一行一个工况”（见 §19）；公式模式与求值器支持二维 `INDEX` / 行区间 `MATCH`；**`filename` 里可用任意参数**；abs_fpi 舱数据改用成员表；新增 NASTRAN 工况控制用例（§20） |
 | 0.8.1 | 只动开发环境脚本 `setup.sh` 与测试：复用旧 venv 之前先体检（解释器版本 / `site-packages` / `pip`），拦住在换过 Python 后"能执行却什么也 import 不到"的坏环境（见 `docs/setup.md`）。**工具行为无变化** |
-| **0.9.0** | **内置示例随包发布 + 新增 `excel-codegen examples`**：`basic` / `nastran` / `abs_fpi` 三个示例（含已填好样例参数的工作簿）进 wheel 与 sdist，`--copy DIR` 一键拷出 —— 装了 pip 包、没克隆仓库的人也能用（见 [`excel_codegen/examples/README.md`](../excel_codegen/examples/README.md)）；`docs/setup.md` 补 Windows 用法 |
+| **0.9.0** | **内置示例随包发布 + 新增 `excel-codegen examples`**：`basic` / `nastran` / `abs_fpi` 三个示例（含已填好样例参数的工作簿）进 wheel 与 sdist，`--copy DIR` 一键拷出 —— 装了 pip 包、没克隆仓库的人也能用（见 [`excel_codegen/examples/README.md`](../excel_codegen/examples/README.md)）；`docs/setup.md` 补 Windows 用法。另修一个真 bug：**`setup.sh` 在 macOS（bash 3.2）上第一屏就 `unbound variable` 退出** —— `$VAR` 紧邻中文要写成 `${VAR}` |
 
 ---
 

@@ -36,7 +36,7 @@ for arg in "$@"; do
     -h|--help)
       sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
-    *) echo "未知参数：$arg（可用：--no-test / --recreate / --help）" >&2; exit 2 ;;
+    *) echo "未知参数：${arg}（可用：--no-test / --recreate / --help）" >&2; exit 2 ;;
   esac
 done
 
@@ -90,7 +90,7 @@ else
   PYTHON="${PYTHON:-python3}"
   # 下限必须与 pyproject.toml 的 requires-python 一致，否则这里放行、pip 那边才报错
   MIN_PY="3.11"
-  command -v "$PYTHON" >/dev/null 2>&1 || die "既没有 uv，也没有 $PYTHON。装一个 Python $MIN_PY+，或装 uv（https://docs.astral.sh/uv/）。"
+  command -v "$PYTHON" >/dev/null 2>&1 || die "既没有 uv，也没有 ${PYTHON}。装一个 Python $MIN_PY+，或装 uv（https://docs.astral.sh/uv/）。"
   "$PYTHON" - "$MIN_PY" <<'PY' || die "Python 版本太低：本项目要求 $MIN_PY+（与 pyproject.toml 的 requires-python 一致）。"
 import sys
 need = tuple(int(part) for part in sys.argv[1].split("."))
@@ -120,12 +120,12 @@ DEFAULT_VENV="$HERE/.venv"
 case "$REPO_FS" in
   ntfs*|exfat|vfat|msdos|fuseblk|hfsplus|unknown)
     DEFAULT_VENV="$HOME/.venvs/excel_codegen"
-    warn "仓库所在文件系统是 $REPO_FS（非原生 Linux 文件系统）。"
+    warn "仓库所在文件系统是 ${REPO_FS}（非原生 Linux 文件系统）。"
     say  "       环境默认改到 $DEFAULT_VENV —— 上万个碎文件写在 $REPO_FS 上既慢又容易卡。"
     say  "       （仓库本身放在这里没问题，只有 .venv 要挪走。）"
     ;;
   *)
-    say "[2/5] 仓库文件系统 $REPO_FS，环境可直接放在仓库内的 .venv/  ✓"
+    say "[2/5] 仓库文件系统 ${REPO_FS}，环境可直接放在仓库内的 .venv/  ✓"
     ;;
 esac
 
@@ -156,7 +156,7 @@ else
     # 复用之前先体检（原因见函数上方的注释）：坏掉的旧环境必须在装依赖**之前**拦住，
     # 否则会停在 `pip install` 那里，报一句与真正病因无关的 "No module named pip"。
     if reason="$(venv_problem "$ENV_DIR")"; then
-      warn "已有环境 $ENV_DIR 跑不起来：$reason。"
+      warn "已有环境 $ENV_DIR 跑不起来：${reason}。"
       die  "用 ./setup.sh --recreate 删掉重建（工作簿与代码都在仓库里，删环境不会丢东西）。"
     fi
     say "[3/5] 复用已有环境（要重建加 --recreate）"

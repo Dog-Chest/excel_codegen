@@ -54,25 +54,37 @@ excel-codegen examples --copy ./examples    # 拷出来用（--only abs_fpi 只�
 * README 快速开始改成"`examples --copy` → 打开工作簿 → 要导文件才回命令行"；
 * `docs/cli.md` 补第六个命令；`docs/setup.md` 新增「Windows 上怎么用」并说明 `setup.sh` 仅 POSIX。
 
-### 修掉一个只在 macOS 上炸的测试 bug
+### 真 bug：`setup.sh` 在 macOS 上第一屏就崩（bash 3.2 把中文首字节吞进变量名）
 
-`tests/test_setup_script.py` 用 `subprocess.run(text=True)` 读 `setup.sh` 的输出，等于
-**赌子进程的输出一定是合法 UTF-8**。macOS 的 CI 上 stderr 里出现了一个坏字节
-（`UnicodeDecodeError: 'utf-8' codec can't decode byte 0xef in position 74`），
-于是 4 项用例在**断言之前**就崩了（stdout 反而解码正常）。ubuntu / windows 全绿，
-所以是平台相关的偶发字节，不是脚本逻辑错。
+macOS 自带 **bash 3.2**。它的解析器会把紧跟在 `$VAR` 后面的多字节字符**首字节**当作
+变量名的一部分，于是
 
-* `_run_setup` 改成显式 `encoding="utf-8", errors="replace"`（与 `build.py`、探针里读子进程
-  输出的写法一致）；
-* 断言改锚在 **ASCII 证据**上（两个版本号、`--recreate`、`site-packages`、`pip`、退出码、
-  `ERROR`），而不是中文短语 —— 否则一个坏字节被替换成 U+FFFD 就会让用例"看运气"。
-  行为覆盖不变：改动前 3 项照样失败（仍能钉住老版体检）。
+```bash
+warn "仓库所在文件系统是 $REPO_FS（非原生 Linux 文件系统）。"
+```
+
+在 macOS 上变成 `REPO_FS<0xEF>: unbound variable` —— `set -u` 让脚本立刻退出，
+**任何 macOS 用户跑 `./setup.sh` 都在第一屏就挂**（而 `docs/setup.md` 里正是让人跑它）。
+Linux 的 bash ≥ 4 解析正常，所以这个坑从 0.5.1 加入 `setup.sh` 起就只在 macOS 上炸，
+本地与 ubuntu / windows 的 CI 一直全绿。
+
+它是先以"CI 上一个 `UnicodeDecodeError`"的面目出现的：bash 把坏字节连同变量名一起写进
+stderr，测试的严格 UTF-8 解码先崩了 —— 顺着那条线才挖到真正的病因。
+
+* `setup.sh` 里 5 处 `$VAR` 紧邻中文一律改成 `${VAR}`（`${arg}` / `${PYTHON}` /
+  `${REPO_FS}` ×2 / `${reason}`）：花括号只是显式界定名字，任何 bash 版本都无歧义；
+* `tests/test_setup_script.py` 增加**静态守卫**：扫 `setup.sh`、随包发布的 `*_render.sh`、
+  以及**新生成**的渲染脚本，凡 `$VAR` 紧邻非 ASCII 字节就失败 —— 这类坑不该等 macOS CI
+  才发现（已确认去掉花括号后守卫会红）；
+* 顺带把测试读子进程输出改成显式 `encoding="utf-8", errors="replace"`，断言锚在 **ASCII
+  证据**上（版本号 / `--recreate` / `site-packages` / `pip` / 退出码 / `ERROR`），
+  免得下次脚本一出声就被解码异常盖住真正的原因。
 
 ### 回归
 
-341 项测试（+11）、覆盖率 87.91%、ruff / format / mypy 全过；
+349 项测试（+8）、覆盖率 87.91%、ruff / format / mypy 全过；
 `uv build` 出的 wheel 与 sdist 里示例文件**逐一致**（各 64 个）、`twine check` 通过；
-sdist 解包后 `pytest` 341 项全过；`abs_fpi/build.py --check` 公式求值 28 项 0 失败、
+sdist 解包后 `pytest` 全过；`abs_fpi/build.py --check` 公式求值 28 项 0 失败、
 三个工作簿 `check` 全过；探针 A–H / G / N 全部通过；
 净 venv 只装 wheel 后 `examples --copy` / `check` / `render` / `init` / `*_render.sh` 全走通。
 
