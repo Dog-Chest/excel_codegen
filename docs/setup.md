@@ -77,9 +77,12 @@ EXCEL_CODEGEN_VENV=/data/venvs/ecg ./setup.sh    # 也可以自己指定环境�
 
 * **Python 下限与 `pyproject.toml` 的 `requires-python` 保持一致**（3.11）——
   脚本自己先拦，不然会一路装到 `pip` 才报版本不符；
-* **复用已有环境前先验证它还能跑**：venv 建到一半被打断、或它依赖的 Python 被换掉之后，
-  `bin/python` 还在但一执行就报错；这时会明确让你 `--recreate`，而不是丢一个 pip 的
-  `Errno 13 权限不够`；
+* **复用已有环境前先体检**：不只测"解释器能不能执行"，还要 `pyvenv.cfg` 记的版本与现在
+  真跑的对得上、`site-packages` 在当前解释器的搜索路径上、`pip` 可用。只测前者会漏掉最阴
+  的一种坏法 —— 换过 Python（或删掉旧版本）之后，venv 里的 `bin/python3` 是**通用**链接，
+  会悄悄漂到新解释器上，而依赖还留在旧的 `lib/pythonX.Y` 里：`python -c ""` 照样通过，
+  可连 `pip` 都 import 不到。体检不过会报出具体原因（哪两个版本对不上）并让你 `--recreate`，
+  而不是把它拖到 `pip install` 才以一句 `No module named pip` 收场；
 * `pip install` 失败时会指出最常见的两种原因（环境半坏 / 权限不对）与对应的下一步。
 
 ---

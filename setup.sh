@@ -19,6 +19,11 @@
 #     本项目实测在 ntfs3 挂载上 `rm -rf .venv` 会令进程停在 D（不可中断睡眠）状态；
 #   * 在 ext4 / xfs / btrfs 等原生文件系统上，直接放仓库里的 `.venv/` 没问题。
 # 所以本脚本先探测仓库所在文件系统，再决定环境放哪里。
+#
+# 复用旧环境之前会做一次体检（解释器版本 / site-packages / pip）。换系统、或把旧的
+# Python 删掉之后，venv 里的 bin/python3 是通用链接，会**悄悄**漂到新解释器上，而依赖
+# 还留在旧的 lib/pythonX.Y 里 —— 这种环境"能执行"却什么也 import 不到（连 pip 都没了）。
+# 体检过不了就报出具体原因并提示 --recreate，绝不让它拖到 `pip install` 才炸。
 # ============================================================================
 set -euo pipefail
 
@@ -41,6 +46,40 @@ cd "$HERE"
 say()  { printf '%s\n' "$*"; }
 warn() { printf '!  %s\n' "$*" >&2; }
 die()  { printf 'ERROR  %s\n' "$*" >&2; exit 1; }
+
+# --- 体检：已有的 venv 还能不能用 -------------------------------------------
+# 只测 `bin/python -c ""` 是不够的，它漏掉最阴的一种坏法：
+#   venv 建在 3.12 上，之后系统的 python3.12 被删、python3 指向 3.14；venv 里的
+#   bin/python3 是**通用**链接（-> /usr/bin/python3）而不是钉死版本，于是解释器
+#   悄悄漂到 3.14，可依赖还躺在 lib/python3.12/site-packages 里。
+#   结果 `python -c ""` 照样返回 0，而所有 import（连 pip 本身）都没了。
+# 所以这里逐项验：解释器能跑 → 版本没被换 → site-packages 在当前解释器上 → pip 可用。
+# 返回 0 表示**有问题**，并把一句人读的原因打到 stdout（供调用方拼进报错）。
+venv_problem() {
+  local env_dir="$1"
+  local vpy="$env_dir/bin/python"
+  local want got
+  if ! "$vpy" -c "" >/dev/null 2>&1; then
+    printf '%s' '解释器执行不起来（多半是它依赖的 Python 被删掉了）'
+    return 0
+  fi
+  # pyvenv.cfg 记着"当初按哪个版本建的"，与现在真跑的对不上就是被换掉了
+  want="$(sed -n 's/^version *= *//p' "$env_dir/pyvenv.cfg" 2>/dev/null | head -1)"
+  got="$("$vpy" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])' 2>/dev/null)"
+  if [ -n "$want" ] && [ "$want" != "$got" ]; then
+    printf '解释器被换掉了：环境是按 Python %s 建的，现在跑的是 %s' "$want" "$got"
+    return 0
+  fi
+  if ! "$vpy" -c 'import os, sys; sys.exit(0 if os.path.isdir(os.path.join(sys.prefix, "lib", "python%d.%d" % sys.version_info[:2], "site-packages")) else 1)' >/dev/null 2>&1; then
+    printf 'site-packages 不在当前解释器（%s）的搜索路径上' "$got"
+    return 0
+  fi
+  if ! "$vpy" -m pip --version >/dev/null 2>&1; then
+    printf '%s' 'pip 用不了（import 不到）'
+    return 0
+  fi
+  return 1
+}
 
 # --- 1. 选路：uv 优先 -------------------------------------------------------
 USE_UV=0
@@ -114,10 +153,10 @@ else
     die  "缺少 python3-venv，已停止。"
   fi
   if [ -x "$ENV_DIR/bin/python" ]; then
-    # 复用之前先确认这个环境真的还能跑：venv 建到一半被打断、或它依赖的 Python
-    # 被升级/删掉之后，bin/python 这个链接还在、但一执行就报错。
-    if ! "$ENV_DIR/bin/python" -c "" >/dev/null 2>&1; then
-      warn "已有环境 $ENV_DIR 跑不起来（多半是上次没装完，或它依赖的 Python 被换掉了）。"
+    # 复用之前先体检（原因见函数上方的注释）：坏掉的旧环境必须在装依赖**之前**拦住，
+    # 否则会停在 `pip install` 那里，报一句与真正病因无关的 "No module named pip"。
+    if reason="$(venv_problem "$ENV_DIR")"; then
+      warn "已有环境 $ENV_DIR 跑不起来：$reason。"
       die  "用 ./setup.sh --recreate 删掉重建（工作簿与代码都在仓库里，删环境不会丢东西）。"
     fi
     say "[3/5] 复用已有环境（要重建加 --recreate）"

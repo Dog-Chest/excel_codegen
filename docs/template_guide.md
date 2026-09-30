@@ -770,6 +770,7 @@ Prefix/Suffix 是按变量（不是按 Case）生效的。见 4.4：再加一个
 | **0.6.0** | **取值约束**（`min`/`max`/`choices`/`pattern`：越界在 render/validate 报错，Excel 里变下拉与数值范围，见 §3.5）；**跨文件复用 `extends`**（见 §16）；**公式模式支持行内 `{% if %}`**（编译成 `IF()`，见 §14.1.1）；**质量护栏**（ruff + mypy + 覆盖率门槛进 CI）。另修掉两个真 bug：`and`/`or` 在派生表达式里从未生效；`excel_io` 用了未导入的 `DerivedError` |
 | **0.7.0** | **跨变量校验 `asserts`**（§3.6）、**模板片段 `{% include %}`**（§17）、**第三层作用域成员表**（§18）、取值约束补齐到成员表、`check --json` + 报全部差异、Excel 批注（含 `unit`）、`init` 生成一键刷新脚本、`excel-codegen doctor` 体检、质量护栏补 sdist 自包含检查 |
 | **0.8.0** | **行列风格 `excel.local_direction`**：Local 表可切成“一行一个工况”（见 §19）；公式模式与求值器支持二维 `INDEX` / 行区间 `MATCH`；**`filename` 里可用任意参数**；abs_fpi 舱数据改用成员表；新增 NASTRAN 工况控制用例（§20） |
+| 0.8.1 | 只动开发环境脚本 `setup.sh` 与测试：复用旧 venv 之前先体检（解释器版本 / `site-packages` / `pip`），拦住在换过 Python 后"能执行却什么也 import 不到"的坏环境（见 `docs/setup.md`）。**工具行为无变化** |
 
 ---
 
