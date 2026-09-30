@@ -133,7 +133,7 @@ pip install -e ".[dev]"
 
 跨平台细节、外置盘注意事项与 Python 版本策略见 [`docs/setup.md`](docs/setup.md)。
 
-> **已发布到 PyPI**：当前版本 **0.9.0**（[PyPI 页面](https://pypi.org/project/excel-codegen/)）。
+> **已发布到 PyPI**：当前版本 **0.9.1**（[PyPI 页面](https://pypi.org/project/excel-codegen/)）。
 > 之后的发版流程（Trusted Publishing，仓库里不存 token）见 [`docs/publishing.md`](docs/publishing.md)。
 
 ## 开发

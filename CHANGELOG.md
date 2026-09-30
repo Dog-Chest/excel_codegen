@@ -4,8 +4,27 @@
 0.3.0 加公式模式 → 0.4.0 补齐公式模式的验证链 → 0.5.0 派生参数 → 0.5.x 跨平台与文档 →
 0.6.0 取值约束 / `extends` / 行内 `{% if %}` / 质量护栏 → 0.7.0 校验与复用补齐 →
 0.8.0 行列风格 / 成员表落地 / NASTRAN 工况控制 → 0.8.1 环境体检（`setup.sh`）→
-0.9.0 内置示例随包发布（`excel-codegen examples`）。逐条实测证据见
+0.9.0 内置示例随包发布（`excel-codegen examples`）→ 0.9.1 文档修正。逐条实测证据见
 [`abs_fpi/FINDINGS.md`](abs_fpi/FINDINGS.md)。
+
+---
+
+## 0.9.1 — 文档修正：PyPI 项目描述（2026-09-30）
+
+**纯文档，工具行为无变化。**
+
+0.9.0 是本项目首个 PyPI 版本，但它的项目描述取自**打包那一刻的 README**，而那版 README
+还写着"PyPI 发布流程已就绪、**尚未首次发布**" —— 在一本已经发布的页面上自相矛盾。
+PyPI 的项目描述不能事后编辑，只能发新版本覆盖，于是有了这个补丁版。
+
+* README「安装」拆成两路：**只是要用**（`uv tool install` / `pipx install` /
+  `pip install excel-codegen`）与**改工具本身**（克隆 + `pip install -e ".[dev]"`），
+  并注记当前版本；
+* [`docs/publishing.md`](docs/publishing.md) 记下首次发布已完成，并新增
+  **「排错：`invalid-publisher`」**：含义（OIDC token 有效，但 PyPI 上没有对得上的
+  publisher；**一个字节都没上传，版本没被烧**）、对着日志里的 OIDC claims 逐字核对的
+  5 个字段、两个最常见的错法（Workflow name 写成 `.github/workflows/release.yml`、
+  Environment name 留空），以及改完怎么重发（`rerun-failed-jobs`，或删 tag 重推）。
 
 ---
 
