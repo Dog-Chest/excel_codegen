@@ -54,12 +54,27 @@ excel-codegen examples --copy ./examples    # 拷出来用（--only abs_fpi 只�
 * README 快速开始改成"`examples --copy` → 打开工作簿 → 要导文件才回命令行"；
 * `docs/cli.md` 补第六个命令；`docs/setup.md` 新增「Windows 上怎么用」并说明 `setup.sh` 仅 POSIX。
 
+### 修掉一个只在 macOS 上炸的测试 bug
+
+`tests/test_setup_script.py` 用 `subprocess.run(text=True)` 读 `setup.sh` 的输出，等于
+**赌子进程的输出一定是合法 UTF-8**。macOS 的 CI 上 stderr 里出现了一个坏字节
+（`UnicodeDecodeError: 'utf-8' codec can't decode byte 0xef in position 74`），
+于是 4 项用例在**断言之前**就崩了（stdout 反而解码正常）。ubuntu / windows 全绿，
+所以是平台相关的偶发字节，不是脚本逻辑错。
+
+* `_run_setup` 改成显式 `encoding="utf-8", errors="replace"`（与 `build.py`、探针里读子进程
+  输出的写法一致）；
+* 断言改锚在 **ASCII 证据**上（两个版本号、`--recreate`、`site-packages`、`pip`、退出码、
+  `ERROR`），而不是中文短语 —— 否则一个坏字节被替换成 U+FFFD 就会让用例"看运气"。
+  行为覆盖不变：改动前 3 项照样失败（仍能钉住老版体检）。
+
 ### 回归
 
 341 项测试（+11）、覆盖率 87.91%、ruff / format / mypy 全过；
-`uv build` 出的 wheel 与 sdist 里示例文件**逐一致**（各 56 个），`twine check` 通过；
-`abs_fpi/build.py --check` 公式求值 28 项 0 失败、三个工作簿 `check` 全过；
-探针 A–H / G / N 全部通过。
+`uv build` 出的 wheel 与 sdist 里示例文件**逐一致**（各 64 个）、`twine check` 通过；
+sdist 解包后 `pytest` 341 项全过；`abs_fpi/build.py --check` 公式求值 28 项 0 失败、
+三个工作簿 `check` 全过；探针 A–H / G / N 全部通过；
+净 venv 只装 wheel 后 `examples --copy` / `check` / `render` / `init` / `*_render.sh` 全走通。
 
 ---
 

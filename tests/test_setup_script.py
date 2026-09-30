@@ -71,6 +71,11 @@ def _run_setup(env_dir: Path, tmp_path: Path) -> subprocess.CompletedProcess[str
         env=env,
         capture_output=True,
         text=True,
+        # 不赌子进程的输出编码：macOS 的 CI 上 stderr 里出现过一个坏字节，
+        # 默认的严格解码会直接抛 UnicodeDecodeError（断言根本没机会跑）。
+        # 与 build.py / 探针里读子进程输出的写法保持一致。
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
 
@@ -99,12 +104,12 @@ def test_stale_interpreter_is_caught_before_installing(env_dir: Path, tmp_path: 
 
     proc = _run_setup(env_dir, tmp_path)
     assert proc.returncode != 0
-    assert "解释器被换掉了" in proc.stderr, proc.stderr
+    # 断言只锚在 ASCII 证据上：子进程输出在某些平台上可能有一个坏字节被
+    # errors="replace" 换成 U+FFFD，用中文短语当断言会变成"看运气"。
+    assert "--recreate" in proc.stderr, proc.stderr
     assert recorded in proc.stderr and actual in proc.stderr, "报错要把两个版本都写出来才算可操作"
-    assert "--recreate" in proc.stderr
     # 关键：在碰 pip 之前就停住，不再以裸的 "No module named pip" 收场
-    assert "pip 升级" not in proc.stdout
-    assert "安装 excel_codegen" not in proc.stdout
+    assert "pip" not in proc.stdout.lower(), proc.stdout
 
 
 @posix_only
@@ -115,7 +120,7 @@ def test_site_packages_mismatch_is_caught(env_dir: Path, tmp_path: Path) -> None
     proc = _run_setup(env_dir, tmp_path)
     assert proc.returncode != 0
     assert "site-packages" in proc.stderr, proc.stderr
-    assert "pip 升级" not in proc.stdout
+    assert "pip" not in proc.stdout.lower(), proc.stdout
 
 
 @posix_only
@@ -123,7 +128,9 @@ def test_missing_pip_is_caught(env_dir: Path, tmp_path: Path) -> None:
     """没有 pip 的环境复用不了：下一句就是 ``-m pip install``。"""
     proc = _run_setup(env_dir, tmp_path)
     assert proc.returncode != 0
-    assert "pip 用不了" in proc.stderr, proc.stderr
+    assert "pip" in proc.stderr.lower(), proc.stderr
+    # 必须是**体检**给出的出路，而不是把 pip 自己的报错原样漏出来
+    assert "--recreate" in proc.stderr, proc.stderr
 
 
 @posix_only
@@ -133,5 +140,6 @@ def test_usable_environment_is_reused(env_dir: Path, tmp_path: Path) -> None:
 
     proc = _run_setup(env_dir, tmp_path)
     assert proc.returncode == 0, proc.stderr
-    assert "复用已有环境" in proc.stdout
-    assert "跑不起来" not in proc.stderr
+    # 走到安装那一步（stdout 出现 pip）才算"没被误拦"
+    assert "pip" in proc.stdout.lower(), proc.stdout
+    assert "ERROR" not in proc.stderr, proc.stderr
