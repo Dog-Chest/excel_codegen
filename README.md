@@ -121,6 +121,12 @@ pip install spreadsheet-codegen            # 或
 装好后得到命令 `spreadsheet-codegen`（也可用 `python -m spreadsheet_codegen`），
 `spreadsheet-codegen examples --copy ./examples` 就能拿到带工作簿的示例。
 
+**连 Python 都不用装**（只想先看看工作簿长什么样）：
+
+到 [**Releases**](https://github.com/Dog-Chest/spreadsheet_codegen/releases/latest) 下载
+`examples.zip`，用 **Excel / WPS** 打开里面的工作簿就行 —— 工作簿是**公式模式**：
+填参数，`Output` 表里的代码自己重算，**不需要跑任何命令**。
+
 **改这个工具本身**（开发）：
 
 ```bash

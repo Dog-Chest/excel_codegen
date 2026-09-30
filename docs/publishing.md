@@ -135,7 +135,12 @@ git push origin main --tags
 > 想先演练就走 Actions 页面手动触发 `release`、`target` 选 `testpypi`。
 
 tag 一推，`release.yml` 就会：校验 tag 与 `pyproject.toml` 版本一致 → 再跑一遍质量闸 →
-`uv build` → `twine check` → 发到 PyPI。
+`uv build` → `twine check` → 打包内置示例（`examples.zip`）→ 发到 PyPI →
+**建 GitHub Release**（挂上 `dist/*`：wheel / sdist / `examples.zip`，说明用
+`--generate-notes` 生成，已存在则跳过）。
+
+> `examples.zip` 是给"不想装 Python 的人"的：里面的工作簿是公式模式，用 Excel / WPS
+> 打开就能填参数、自动重算。
 
 > **先演练**：Actions 页面手动触发 `release`，`target` 选 `testpypi`，会发到 TestPyPI
 > （用 `--index-url https://test.pypi.org/simple/` 装来验证）。TestPyPI 与 PyPI 是两个
