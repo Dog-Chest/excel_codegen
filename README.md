@@ -1,6 +1,6 @@
 # excel_codegen
 
-**在 Excel 里填参数，用 YAML + Jinja2 出代码。**
+**在 Microsoft Excel 里填参数，用 YAML + Jinja2 出代码。**
 
 [![ci](https://github.com/Dog-Chest/excel_codegen/actions/workflows/ci.yml/badge.svg)](https://github.com/Dog-Chest/excel_codegen/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.11%2B-blue)
@@ -104,6 +104,7 @@ excel-codegen render -c examples/basic/example_formula.yaml \
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本变更历史 |
 | [`abs_fpi/README.md`](abs_fpi/README.md) | 现场项目：怎么用、边界、四层校验链 |
 | [`docs/publishing.md`](docs/publishing.md) | 维护者向：发布到 GitHub / PyPI、密钥与隐私 |
+| [`NOTICE.md`](NOTICE.md) | **商标归属、规范版权与免责声明**（含 AI 生成与版权归属说明） |
 
 ## 安装
 
@@ -153,6 +154,18 @@ CI（[配置](.github/workflows/ci.yml)）在 **Windows / macOS / Linux × Pytho
 > 语法错误，而在本地 3.12 上跑得好好的），`[tool.coverage.report]` 的 `fail_under = 85`
 > 让覆盖率掉了就直接红。
 
+## 商标与免责
+
+* 本项目与 **Microsoft**、**MSC Software**、**DNV**、**ABS**、**金山办公**、**ST**
+  等厂商**均无关联**，也未获得其赞助或背书；文档中出现的产品名仅为说明兼容性或所依据
+  规范的**描述性使用**，相关商标归各自所有者所有；
+* `abs_fpi` 示例依据 **ABS 规范**实现：**规范文本版权归 ABS 所有**，本仓库不含规范原文
+  与表格；该实现**未经 ABS 审核或认可**，使用前请自行取得正式规范并独立复核；
+* 本工具生成的是**工程计算代码**：用于实际设计 / 建造 / 送审之前必须由具备资格的人员
+  独立复核，**不能替代**船级社审查；作者不对使用后果负责。
+
+完整声明（含各商标的所有者清单、AI 生成与版权归属说明）见 [`NOTICE.md`](NOTICE.md)。
+
 ## License
 
-MIT —— 见 [`LICENSE`](LICENSE)。
+MIT —— 见 [`LICENSE`](LICENSE)；商标、规范版权与免责声明见 [`NOTICE.md`](NOTICE.md)。

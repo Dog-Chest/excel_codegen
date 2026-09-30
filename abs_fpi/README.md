@@ -12,6 +12,13 @@
 | **对 `excel_codegen` 的实测报告**（逐轮发现的问题与修复复测） | [`FINDINGS.md`](FINDINGS.md) |
 | 模板库索引、怎么加下一个规范（DNV / BV …） | [`TEMPLATES.md`](TEMPLATES.md) |
 
+> ⚠️ **规范版权与免责**：本目录及其产出的示例依据 **ABS《Rules for Building and
+> Classing》** 实现。**规范文本版权归 American Bureau of Shipping 所有**；本仓库只含演示
+> 所必需的公式与系数，**不含**规范原文、表格或图表。使用者须**自行取得正式规范**并以其为
+> 准；本实现**未经 ABS 审核或认可**，本项目与 ABS **无关联**，`ABS` 是其商标。
+> 输出**不能替代**船级社审查；用于实际设计 / 建造 / 送审前必须由具备资格的人员独立复核。
+> 完整声明见仓库根的 [`NOTICE.md`](../NOTICE.md)。
+
 ---
 
 ## 这里的脚本做什么

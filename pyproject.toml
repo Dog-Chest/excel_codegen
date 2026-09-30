@@ -13,7 +13,8 @@ readme = "README.md"
 # 只需把这里、CI 矩阵、以及 README 的说明一起改掉（不要让文档比代码乐观）。
 requires-python = ">=3.11"
 license = "MIT"
-license-files = ["LICENSE"]
+# NOTICE.md 一起进 wheel 的 .dist-info/licenses/ 与 sdist —— 商标与免责声明要跟着分发走
+license-files = ["LICENSE", "NOTICE.md"]
 authors = [{ name = "JG. Luo" }]
 keywords = ["excel", "openpyxl", "jinja2", "codegen", "template"]
 classifiers = [

@@ -10,6 +10,7 @@
 # `excel-codegen examples --copy DIR` 就能拿到（见 excel_codegen/example_pack.py）。
 
 include LICENSE
+include NOTICE.md
 include README.md
 include CHANGELOG.md
 include pyproject.toml
