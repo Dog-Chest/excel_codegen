@@ -88,6 +88,16 @@ sdist 解包后 `pytest` 全过；`abs_fpi/build.py --check` 公式求值 28 项
 三个工作簿 `check` 全过；探针 A–H / G / N 全部通过；
 净 venv 只装 wheel 后 `examples --copy` / `check` / `render` / `init` / `*_render.sh` 全走通。
 
+### 已发布
+
+**0.9.0 是本项目首个 PyPI 版本**（tag `v0.9.0` → `release.yml` → Trusted Publishing，
+仓库里不存任何 token）：<https://pypi.org/project/excel-codegen/0.9.0/>
+
+发布后做了一次**从 PyPI 装**的闭环验证（不是从本地 dist）：干净 venv 里
+`pip install excel-codegen` → `examples --copy` → 对随包发布的 `abs_fpi_internal.xlsx`
+跑 `check`（OK）→ `render --outdir` 导出 → `init` 生成新工作簿；
+`uv tool install excel-codegen` 同样通过。
+
 ---
 
 ## 0.8.1 — 坏掉的旧 venv 必须在装依赖之前被拦住（2026-09-30）

@@ -79,6 +79,9 @@ git push -u origin main
 用 **Trusted Publishing（OIDC）** —— 仓库里不存任何 token，GitHub 每次发布时向 PyPI
 换一张短期凭据。
 
+> ✅ **首次发布已完成**：`v0.9.0` → <https://pypi.org/project/excel-codegen/0.9.0/>
+> 下面的一次性配置留档，之后每次发版直接跳到「每次发版」。
+
 ### 一次性配置（只在第一次做）
 
 1. **注册 PyPI 账号**并开启两步验证（发版必需）。
@@ -94,7 +97,6 @@ git push -u origin main
 
    > 项目名写成 `excel-codegen`（连字符）是因为**分发的名字**与**导入的名字**可以不同：
    > `pip install excel-codegen` 装进来的是 `import excel_codegen`。
-   > 已确认 PyPI 上 `excel-codegen` 与 `excel_codegen` 都还没被占用。
 3. GitHub 仓库 → Settings → Environments → 新建一个叫 **`pypi`** 的环境
    （可以顺手加 "Required reviewers"，发版前多一道人工确认）。
 4. 确认 `pyproject.toml` 的 `[project.urls]` 都是真地址（占位符在 PyPI 页面上会变成
@@ -133,5 +135,43 @@ pipx install excel-codegen
 # 或
 pip install excel-codegen
 ```
+
+> 装完 `excel-codegen examples --copy ./examples` 就能拿到带工作簿的内置示例。
+
+---
+
+### 排错：`invalid-publisher`
+
+```
+Trusted publishing exchange failure:
+* `invalid-publisher`: valid token, but no corresponding publisher
+```
+
+**含义**：OIDC token 本身没问题（签名有效），只是 PyPI 上**没有能对上的 (pending) publisher**。
+**一个字节都没上传**，所以版本号没有被烧掉 —— 改完直接重跑即可。
+
+对着日志里渲染出来的 claims 逐字核对 PyPI 表单（下面是 `v0.9.0` 的实际值）：
+
+| 日志里的 claim | PyPI 表单字段 | 实际值 |
+| --- | --- | --- |
+| `repository_owner` | Owner | `Dog-Chest` |
+| `repository` | Repository name | `excel_codegen`（**下划线**） |
+| `workflow_ref` 的文件名 | Workflow name | `release.yml`（**只写文件名**，别写路径） |
+| `environment` | Environment name | `pypi`（**留空就对不上**） |
+| 发行包 METADATA 的 `Name` | PyPI Project Name | `excel_codegen` → 归一化成 `excel-codegen` |
+
+最常见的两个错：**Workflow name 写成 `.github/workflows/release.yml`**、
+**Environment name 留空**（workflow 里用的是 `pypi`）。
+另外确认加的是 **pypi.org 生产站**的 pending publisher，不是 TestPyPI 的。
+
+**改完怎么重发**（不用重新走一遍 build）：
+
+1. 首选：Actions 页面打开上次失败的 run → **Re-run failed jobs**
+   （用 API 则是 `POST /repos/{owner}/{repo}/actions/runs/{id}/rerun-failed-jobs`，
+   需要 `actions: write` 权限的 token）；
+2. 没有那个权限时：**删掉 tag 再重推**，同样安全（版本没烧）：
+   ```bash
+   git push origin --delete v0.9.0 && git push origin v0.9.0
+   ```
 
 这样同事就不需要克隆仓库了 —— 「多平台零配置」这条线到此才算闭环。

@@ -109,6 +109,19 @@ excel-codegen render -c examples/basic/example_formula.yaml \
 
 需要 **Python 3.11+**（Windows / Linux / macOS 均可）。
 
+**只是要用它**（不克隆仓库）：
+
+```bash
+uv tool install excel-codegen        # 推荐
+pipx install excel-codegen           # 或
+pip install excel-codegen            # 或
+```
+
+装好后得到命令 `excel-codegen`（也可用 `python -m excel_codegen`），
+`excel-codegen examples --copy ./examples` 就能拿到带工作簿的示例。
+
+**改这个工具本身**（开发）：
+
 ```bash
 # 推荐：uv —— 不用建 venv、不用 pip、不用管本机 Python 版本
 curl -LsSf https://astral.sh/uv/install.sh | sh     # Windows 见 docs/setup.md
@@ -118,11 +131,10 @@ python3 -m venv ~/.venvs/excel_codegen && source ~/.venvs/excel_codegen/bin/acti
 pip install -e ".[dev]"
 ```
 
-装好后得到命令 `excel-codegen`（也可用 `python -m excel_codegen`）。
 跨平台细节、外置盘注意事项与 Python 版本策略见 [`docs/setup.md`](docs/setup.md)。
 
-> **PyPI 发布流程已就绪、尚未首次发布**（[`docs/publishing.md`](docs/publishing.md) 里有一次性登记步骤）。
-> 发布之后就可以不克隆仓库、直接 `uv tool install excel-codegen`（或 `pipx install excel-codegen`）。
+> **已发布到 PyPI**：当前版本 **0.9.0**（[PyPI 页面](https://pypi.org/project/excel-codegen/)）。
+> 之后的发版流程（Trusted Publishing，仓库里不存 token）见 [`docs/publishing.md`](docs/publishing.md)。
 
 ## 开发
 
