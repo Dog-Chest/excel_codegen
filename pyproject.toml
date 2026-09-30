@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spreadsheet_codegen"
-version = "1.0.0"
+version = "0.10.0"
 description = "Excel 模板参数填写 + Jinja2 代码生成器（支持 Prefix/Value/Suffix 组合）"
 readme = "README.md"
 # 支持下限 = **CI 真正测过的最老版本**（见 .github/workflows/ci.yml）。

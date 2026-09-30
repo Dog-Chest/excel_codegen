@@ -1,12 +1,15 @@
 # 变更历史（CHANGELOG）
 
-> **项目已改名**：0.1.0 – 0.9.1 的历史属于**旧名字 `excel_codegen`**（PyPI 上叫
-> `excel-codegen`），本文件下半部分如实保留当时的名字。新名字 **`spreadsheet_codegen`**
-> 从 **1.0.0** 起算，改名原因见下面的 1.0.0 条目与 [`NOTICE.md`](NOTICE.md)。
+> **项目已改名**：0.1.0 – 0.9.2 的历史属于**旧名字 `excel_codegen`**（PyPI 上叫
+> `excel-codegen`，现已改名并**全部 yank**），本文件下半部分如实保留当时的名字。
+> 其中 **0.9.2 是旧名的最后一个版本**，只是个弃用跳板（功能与 0.9.1 相同，README 引导
+> 到新名字），它的条目记在 `legacy/excel-codegen` 分支上。
+> 新名字 **`spreadsheet_codegen`** 从 **0.10.0** 起算，改名原因见下面的 0.10.0 条目与
+> [`NOTICE.md`](NOTICE.md)。
 
 ---
 
-## 1.0.0 — 改名为 spreadsheet_codegen（2026-09-30）
+## 0.10.0 — 改名为 spreadsheet_codegen（2026-09-30）
 
 **破坏性变更**：项目名从 `excel_codegen` 改为 **`spreadsheet_codegen`**
 （分发包 `excel-codegen` → `spreadsheet-codegen`，命令同理）。
@@ -43,7 +46,9 @@
 ### 旧名字怎么处理
 
 - PyPI 项目名**不能改**，`excel-codegen` 会一直留在那里。它的最后版本是 **`0.9.2` 弃用版**
-  （README 引导到新名字），随后旧版本被 **yank**：新装的人装不到，已被锁定的依赖不受影响；
+  （README 引导到新名字）；随后 `0.9.0` / `0.9.1` / `0.9.2` **全部 yank**，实测效果：
+  不锁定版本时 `pip install excel-codegen` **装不到**，而 `excel-codegen==0.9.1` 这样
+  **精确锁定**的仍能安装（带 `Reason for being yanked: Renamed to spreadsheet-codegen` 提示）；
 - GitHub 仓库改名后旧 URL 自动重定向，外链不丢。
 
 ### 回归

@@ -84,7 +84,7 @@ git push -u origin main
 >
 > * `excel-codegen` 留在 PyPI 上，从 `0.9.2` 起是**弃用跳板版**（README 引导到新名），
 >   并把旧版本**yank** 掉 —— 新装的人装不到，已锁定的依赖不受影响；
-> * 本项目用**新名字 `spreadsheet-codegen` 重新起步**，tag 从 `v1.0.0` 开始。
+> * 本项目用**新名字 `spreadsheet-codegen` 重新起步**，tag 从 `v0.10.0` 开始。
 >
 > 也就是说：**新名字需要重新登记一次 pending publisher**（下面第 2 步），
 > 而 GitHub 那边的 `pypi` 环境可以直接复用。
