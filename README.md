@@ -1,3 +1,17 @@
+> # ⛔ 本项目已改名，请勿再使用
+>
+> **`excel-codegen` 已弃用**，请改用 **`spreadsheet-codegen`**：
+>
+> ```bash
+> pip install spreadsheet-codegen        # 或 uv tool install spreadsheet-codegen
+> ```
+>
+> 改名原因：旧名里带 Microsoft 的商标 "Excel"，存在被投诉下架的商标风险。
+> 本版本（`0.9.2`）只是**弃用跳板** —— 功能与 `0.9.1` 完全相同，**不会再有任何更新**。
+> 新项目：<https://pypi.org/project/spreadsheet-codegen/>
+>
+> ---
+
 # excel_codegen
 
 **在 Microsoft Excel 里填参数，用 YAML + Jinja2 出代码。**

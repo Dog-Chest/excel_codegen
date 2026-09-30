@@ -8,6 +8,19 @@
 [`abs_fpi/FINDINGS.md`](abs_fpi/FINDINGS.md)。
 
 ---
+## 0.9.2 — 弃用跳板：项目已改名为 spreadsheet_codegen（2026-09-30）
+
+**本版本不再演进，功能与 0.9.1 完全相同。**
+
+项目改名为 **`spreadsheet_codegen`**（PyPI：`spreadsheet-codegen`），原因是旧名里带
+Microsoft 的商标 "Excel"，作为**产品名**使用存在商标风险（PyPI 的 Acceptable Use Policy
+禁止侵犯商标，且处罚不可申诉）。完整的排查与法律声明见 `NOTICE.md`。
+
+* 请改用：`pip install spreadsheet-codegen` / `uv tool install spreadsheet-codegen`
+* 新项目：<https://pypi.org/project/spreadsheet-codegen/>
+* **旧名 `excel-codegen` 的所有版本随后会被 yank**（新装的人装不到，已被锁定的依赖不受影响）
+
+---
 
 ## 0.9.1 — 文档修正：PyPI 项目描述（2026-09-30）
 
