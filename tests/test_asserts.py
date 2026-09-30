@@ -13,12 +13,12 @@ import pytest
 from openpyxl import load_workbook
 from typer.testing import CliRunner
 
-from excel_codegen import create_template, load_config, render_all
-from excel_codegen.cli import app
-from excel_codegen.excel_io import check_value_constraints
-from excel_codegen.models import CaseData
-from excel_codegen.renderer import check_asserts, compile_asserts
-from excel_codegen.utils import ConfigError, ExcelError, RenderError, VarValue
+from spreadsheet_codegen import create_template, load_config, render_all
+from spreadsheet_codegen.cli import app
+from spreadsheet_codegen.excel_io import check_value_constraints
+from spreadsheet_codegen.models import CaseData
+from spreadsheet_codegen.renderer import check_asserts, compile_asserts
+from spreadsheet_codegen.utils import ConfigError, ExcelError, RenderError, VarValue
 
 runner = CliRunner()
 

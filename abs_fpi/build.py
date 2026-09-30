@@ -23,8 +23,8 @@
    `utils.to_text` 以保持语义一致 —— 所以它是"工具自带求值器有没有算错"的第二重证据。
    0.4.0 起工具自带的 `check` 在公式模式下**也会**求值比对（见第 2 条），这一层因此从
    "补缺口"变成了"独立复核"；一旦模板用上 `derived:`（含算术），本脚本会报"不能识别的公式
-   片段"，那时以工具自带的 `excel-codegen check --values` 为准（见 FINDINGS 0.5.0）。
-2. `excel-codegen check` —— 工具自带：公式 / 快照是否与当前 YAML + 参数一致；
+   片段"，那时以工具自带的 `spreadsheet-codegen check --values` 为准（见 FINDINGS 0.5.0）。
+2. `spreadsheet-codegen check` —— 工具自带：公式 / 快照是否与当前 YAML + 参数一致；
    公式模式下默认把公式算一遍再比对（`--no-values` 可关）。CI 可用。
 3. `compare_with_rules.js` —— 与另一套已经过量纲校验的生成器（同级目录的 `../../GeniE/Rules`）
    逐行比对。该仓库在**本仓库之外**，缺失时脚本会打印 `SKIP` 并以退出码 2 结束
@@ -41,15 +41,15 @@ from pathlib import Path
 #: 本目录：现场脚本与实测报告（FINDINGS.md / TEMPLATES.md / probes/）
 HERE = Path(__file__).resolve().parent
 #: 示例资产：YAML + 模板 + 工作簿 + 导出产物，随包发布
-#: （0.9.0 起从 abs_fpi/ 挪进 excel_codegen/examples/abs_fpi/，见 examples/README.md）
-EXAMPLES = HERE.parent / "excel_codegen" / "examples" / "abs_fpi"
+#: （0.9.0 起从 abs_fpi/ 挪进 spreadsheet_codegen/examples/abs_fpi/，见 examples/README.md）
+EXAMPLES = HERE.parent / "spreadsheet_codegen" / "examples" / "abs_fpi"
 sys.path.insert(0, str(HERE))
 
 import compose as composer  # noqa: E402
 import fill_cases  # noqa: E402
 import verify_excel_engine as verifier  # noqa: E402
 
-from excel_codegen import (  # noqa: E402
+from spreadsheet_codegen import (  # noqa: E402
     create_template,
     export_files,
     load_config,
@@ -106,7 +106,7 @@ def cli_check(yaml_name: str, book_name: str) -> bool:
         [
             sys.executable,
             "-m",
-            "excel_codegen",
+            "spreadsheet_codegen",
             "check",
             "-c",
             str(EXAMPLES / yaml_name),
@@ -177,7 +177,7 @@ def main(argv: list[str]) -> int:
             + ("   <= 公式算出来的代码与 Python 渲染不一致" if failures else "")
         )
 
-    print("\n== 验证     excel-codegen check")
+    print("\n== 验证     spreadsheet-codegen check")
     ok = all(cli_check(y, b) for y, b, _ in PROJECTS)
 
     print(f"\n公式求值 {total} 项 / {failed} 项失败；check {'全过' if ok else '有过期'}")

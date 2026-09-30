@@ -1,4 +1,4 @@
-"""命令行接口：``excel-codegen init | render | validate | check``。
+"""命令行接口：``spreadsheet-codegen init | render | validate | check``。
 
 控制台注意事项：中文 Windows 的 GBK 控制台编不出 ``✓`` / ``✗`` 之类的字符，
 所以本模块只用 ASCII 标记（``OK`` / ``ERROR`` / ``!``），并在导入时给
@@ -98,7 +98,7 @@ def _load_project(config: Path):
 
 def _version_callback(value: bool) -> None:
     if value:
-        console.print(f"excel-codegen [cyan]{__version__}[/]")
+        console.print(f"spreadsheet-codegen [cyan]{__version__}[/]")
         raise typer.Exit()
 
 
@@ -149,7 +149,7 @@ def _prefill_output(
             target,
             project,
             output.results,
-            command="excel-codegen init",
+            command="spreadsheet-codegen init",
             update_howto=howto_sheet,
         )
         _drop_suppressed_sheets(project, target, template_sheet=template_sheet, howto_sheet=howto_sheet)
@@ -220,7 +220,7 @@ def _case_names_of(spec: int | list[str]) -> list[str]:
 def _open_excel(project: ProjectConfig, excel: Path | None) -> Path:
     path = _resolve_excel_path(project, excel)
     if not path.exists():
-        raise ExcelError(f"Excel 文件不存在: {path}（请先运行 `excel-codegen init` 生成模板并填写参数）")
+        raise ExcelError(f"Excel 文件不存在: {path}（请先运行 `spreadsheet-codegen init` 生成模板并填写参数）")
     return path
 
 
@@ -332,8 +332,8 @@ def init_command(
             f"1. 在 [cyan]{project.excel.sheets.global_}[/] 表填写 B 列（Value），D/E 列可覆盖 Prefix/Suffix；\n"
             f"2. 在 [cyan]{project.excel.sheets.local}[/] 表从 E 列开始按 Case 填写，如需更多 Case 直接右拉复制；\n"
             "3. 运行渲染（不加 --write-excel 只预览，不会改动 Excel）：\n"
-            f"   [green]excel-codegen render --config {config} --excel {target} --write-excel[/]\n"
-            f"   [green]excel-codegen render --config {config} --excel {target} --outdir generated/[/]",
+            f"   [green]spreadsheet-codegen render --config {config} --excel {target} --write-excel[/]\n"
+            f"   [green]spreadsheet-codegen render --config {config} --excel {target} --outdir generated/[/]",
             title="使用说明",
             border_style="green",
         )
@@ -370,7 +370,7 @@ def render_command(
         written_files: list[Path] = []
         output_warnings: list[str] = []
         command_text = (
-            f"excel-codegen render -c {config} -x {excel_path}"
+            f"spreadsheet-codegen render -c {config} -x {excel_path}"
             + (" --write-excel" if write_excel else "")
             + (f" --outdir {outdir}" if outdir is not None else "")
         )
@@ -904,7 +904,7 @@ def check_command(
         error_console.print(f"[bold red]ERROR[/] 输出表已过期，共 {len(problems)} 处不一致：")
         for problem in problems:
             error_console.print(f"    {problem}")
-        error_console.print(f"    → 跑一次 `excel-codegen render -c {config} -x {excel_path} --write-excel` 刷新")
+        error_console.print(f"    → 跑一次 `spreadsheet-codegen render -c {config} -x {excel_path} --write-excel` 刷新")
         raise typer.Exit(code=1)
     console.print("[bold green]OK[/] 输出表与当前参数一致")
 
@@ -1211,7 +1211,7 @@ def examples_command(
     if copy_to is None:
         console.print(
             "[bold]内置示例[/]（随包发布 —— 不用克隆仓库；"
-            "[cyan]excel-codegen examples --copy ./examples[/] 拷出来用）\n"
+            "[cyan]spreadsheet-codegen examples --copy ./examples[/] 拷出来用）\n"
         )
         for item in example_pack.EXAMPLES:
             console.print(f"  [bold cyan]{item.name}[/]  {item.title}")
@@ -1234,7 +1234,7 @@ def examples_command(
     console.print(
         "\n下一步（可选）：打开上面那本 .xlsx 填参数；"
         "要把代码导出成文件时跑\n"
-        f"  [cyan]excel-codegen render -c {copy_to / first.entry} "
+        f"  [cyan]spreadsheet-codegen render -c {copy_to / first.entry} "
         f"-x {copy_to / first.workbook} --outdir out[/]"
     )
 

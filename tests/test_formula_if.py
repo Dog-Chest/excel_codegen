@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from excel_codegen import create_template, load_config, render_all
-from excel_codegen.excel_io import write_results
-from excel_codegen.formula import FormulaError, compile_formulas
-from excel_codegen.models import ProjectConfig
+from spreadsheet_codegen import create_template, load_config, render_all
+from spreadsheet_codegen.excel_io import write_results
+from spreadsheet_codegen.formula import FormulaError, compile_formulas
+from spreadsheet_codegen.models import ProjectConfig
 
 IF_YAML = """\
 version: 1
@@ -293,7 +293,7 @@ def test_check_verifies_if_formulas(tmp_path: Path) -> None:
 
     from typer.testing import CliRunner
 
-    from excel_codegen.cli import app
+    from spreadsheet_codegen.cli import app
 
     result = CliRunner().invoke(app, ["check", "-c", str(tmp_path / "if.yaml"), "-x", str(excel)])
     assert result.exit_code == 0, result.output

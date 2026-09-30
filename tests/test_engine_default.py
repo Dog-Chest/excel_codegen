@@ -19,11 +19,11 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from excel_codegen import create_template, render_all, write_results
-from excel_codegen.example_pack import examples_root
-from excel_codegen.formula import FormulaError
-from excel_codegen.models import ProjectConfig, load_config
-from excel_codegen.utils import ConfigError
+from spreadsheet_codegen import create_template, render_all, write_results
+from spreadsheet_codegen.example_pack import examples_root
+from spreadsheet_codegen.formula import FormulaError
+from spreadsheet_codegen.models import ProjectConfig, load_config
+from spreadsheet_codegen.utils import ConfigError
 
 HEAD = """\
 version: 1
@@ -190,7 +190,7 @@ def test_shipped_formula_example_needs_no_engine_line(tmp_path: Path) -> None:
 def _cli():
     from typer.testing import CliRunner
 
-    from excel_codegen.cli import app
+    from spreadsheet_codegen.cli import app
 
     return CliRunner(), app
 

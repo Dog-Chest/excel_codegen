@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from excel_codegen.derived import (
+from spreadsheet_codegen.derived import (
     DerivedError,
     DerivedNotTranslatable,
     evaluate_derived,
@@ -16,10 +16,10 @@ from excel_codegen.derived import (
     ordered_derived,
     to_excel,
 )
-from excel_codegen.excel_io import create_template, write_results
-from excel_codegen.models import ProjectConfig, VariableDef, load_config
-from excel_codegen.renderer import render_all
-from excel_codegen.utils import VarValue
+from spreadsheet_codegen.excel_io import create_template, write_results
+from spreadsheet_codegen.models import ProjectConfig, VariableDef, load_config
+from spreadsheet_codegen.renderer import render_all
+from spreadsheet_codegen.utils import VarValue
 
 DERIVED_YAML = """\
 version: 1
@@ -168,7 +168,7 @@ def test_resolver_reports_undefined_name_as_derived_error(project: ProjectConfig
     回归用例：``excel_io`` 一度用了 ``DerivedError`` 却没导入 —— 这条错误路径会先炸
     ``NameError``，用户看到的是一句莫名其妙的报错而不是"只能引用 global 变量"的提示。
     """
-    from excel_codegen.excel_io import _global_resolver, _local_resolver
+    from spreadsheet_codegen.excel_io import _global_resolver, _local_resolver
 
     with pytest.raises(DerivedError, match="只能引用 global"):
         _global_resolver(project)("nope")
@@ -234,7 +234,7 @@ def test_derived_follows_user_input(derived_config: ProjectConfig, tmp_path: Pat
 
 def test_excel_formula_matches_python_render(derived_config: ProjectConfig, tmp_path: Path) -> None:
     """公式求值器算出来的文本 == Python 渲染的文本（派生链 + 公式模式）。"""
-    from excel_codegen.formula_eval import evaluate_template_values
+    from spreadsheet_codegen.formula_eval import evaluate_template_values
 
     path = create_template(derived_config, tmp_path / "d.xlsx", cases=2)
     output = render_all(derived_config, path)
@@ -300,7 +300,7 @@ def test_derived_cell_is_read_as_value_by_evaluator(derived_config: ProjectConfi
     try:
         formula = workbook["Local Parameter"]["E4"].value  # h_s 的公式
         reader = None
-        from excel_codegen.formula_eval import Evaluator, WorkbookReader, sheet_names_of
+        from spreadsheet_codegen.formula_eval import Evaluator, WorkbookReader, sheet_names_of
 
         reader = WorkbookReader(workbook)
         evaluator = Evaluator(reader, {name: name for name in sheet_names_of(derived_config)})

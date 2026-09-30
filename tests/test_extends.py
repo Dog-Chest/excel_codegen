@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from excel_codegen import create_template, load_config, render_all
-from excel_codegen.utils import ConfigError
+from spreadsheet_codegen import create_template, load_config, render_all
+from spreadsheet_codegen.utils import ConfigError
 
 HEAD = "version: 1\n"
 GLOBAL_L = '  global:\n    - name: L\n      type: float\n      default: 300\n      suffix: " m"\n'

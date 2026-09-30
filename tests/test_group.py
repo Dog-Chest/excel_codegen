@@ -16,10 +16,10 @@ import pytest
 from openpyxl import load_workbook
 from typer.testing import CliRunner
 
-from excel_codegen import create_template, load_config, read_group_members, render_all
-from excel_codegen.cli import app
-from excel_codegen.excel_io import load_workbook_file, write_results
-from excel_codegen.utils import ConfigError, ExcelError
+from spreadsheet_codegen import create_template, load_config, read_group_members, render_all
+from spreadsheet_codegen.cli import app
+from spreadsheet_codegen.excel_io import load_workbook_file, write_results
+from spreadsheet_codegen.utils import ConfigError, ExcelError
 
 runner = CliRunner()
 

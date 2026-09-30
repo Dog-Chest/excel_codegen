@@ -10,7 +10,7 @@
 
 本模块实现公式子集（``&`` 拼接 / ``IF`` / ``ISBLANK`` / ``TEXT`` / ``INDEX``+``MATCH`` /
 整列引用 / 单元格引用 / 字符串与数字字面量）的一个小求值器，把输出表里的公式逐格算成文本，
-再与 :func:`excel_codegen.renderer.render_all` 的结果逐行比对。两边一致 ⇒
+再与 :func:`spreadsheet_codegen.renderer.render_all` 的结果逐行比对。两边一致 ⇒
 "Excel 里看到的"与"命令行导出的"是同一段代码。
 
 它**解析的是工作簿里真实的公式文本**（不是重新生成一遍），所以能抓到"列标指错"

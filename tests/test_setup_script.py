@@ -28,9 +28,9 @@ from pathlib import Path
 
 import pytest
 
-from excel_codegen import load_config
-from excel_codegen.example_pack import examples_root
-from excel_codegen.excel_io import write_run_scripts
+from spreadsheet_codegen import load_config
+from spreadsheet_codegen.example_pack import examples_root
+from spreadsheet_codegen.excel_io import write_run_scripts
 
 ROOT = Path(__file__).resolve().parents[1]
 SETUP = ROOT / "setup.sh"
@@ -66,7 +66,7 @@ def _site_packages(env_dir: Path) -> Path:
 
 
 def _run_setup(env_dir: Path, tmp_path: Path) -> subprocess.CompletedProcess[str]:
-    """按 ``EXCEL_CODEGEN_VENV`` 指定环境跑一遍 ``setup.sh --no-test``。
+    """按 ``SPREADSHEET_CODEGEN_VENV`` 指定环境跑一遍 ``setup.sh --no-test``。
 
     PATH 里放一个指向当前解释器的 ``python3`` 垫片，并**屏蔽 uv** —— 否则装了 uv 的机器
     会走 ``uv sync`` 那条路，根本到不了这里要测的体检分支。
@@ -77,7 +77,7 @@ def _run_setup(env_dir: Path, tmp_path: Path) -> subprocess.CompletedProcess[str
 
     env = dict(os.environ)
     env["PATH"] = f"{shim}:/usr/bin:/bin"
-    env["EXCEL_CODEGEN_VENV"] = str(env_dir)
+    env["SPREADSHEET_CODEGEN_VENV"] = str(env_dir)
     return subprocess.run(
         ["bash", str(SETUP), "--no-test"],
         cwd=ROOT,

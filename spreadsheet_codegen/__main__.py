@@ -1,4 +1,4 @@
-"""允许 ``python -m excel_codegen`` 调用 CLI。"""
+"""允许 ``python -m spreadsheet_codegen`` 调用 CLI。"""
 
 from __future__ import annotations
 

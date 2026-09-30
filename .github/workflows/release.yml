@@ -6,9 +6,9 @@
 #
 # 首次发布前需要在 PyPI 上登记一个 "pending publisher"（见 docs/publishing.md）：
 #   PyPI → Account → Publishing → Add a pending publisher
-#     PyPI Project Name : excel-codegen
+#     PyPI Project Name : spreadsheet-codegen
 #     Owner             : Dog-Chest
-#     Repository name   : excel_codegen
+#     Repository name   : spreadsheet_codegen
 #     Workflow name     : release.yml
 #     Environment name  : pypi
 name: release

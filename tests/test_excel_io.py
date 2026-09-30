@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from excel_codegen.excel_io import (
+from spreadsheet_codegen.excel_io import (
     GLOBAL_HEADERS,
     LOCAL_HEADERS,
     check_required_sheets,
@@ -19,8 +19,8 @@ from excel_codegen.excel_io import (
     read_global_values,
     write_results,
 )
-from excel_codegen.models import FIRST_CASE_COLUMN, ProjectConfig, RenderResult, load_config
-from excel_codegen.utils import ConfigError, ExcelError
+from spreadsheet_codegen.models import FIRST_CASE_COLUMN, ProjectConfig, RenderResult, load_config
+from spreadsheet_codegen.utils import ConfigError, ExcelError
 
 
 # --------------------------------------------------------------------------- #
@@ -335,11 +335,11 @@ def test_vertical_rerender_clears_extra_cases(project: ProjectConfig, tmp_path: 
 
 def test_write_results_records_fingerprints(project: ProjectConfig, tmp_path: Path) -> None:
     """FINDINGS #8.3：写回时留下时间/参数指纹/输出指纹，且能被 read_metadata 读回。"""
-    from excel_codegen.excel_io import read_metadata
+    from spreadsheet_codegen.excel_io import read_metadata
 
     path = create_template(project, tmp_path / "t.xlsx", cases=1)
     results = {"uart_init": [RenderResult("uart_init", "Case1", "a\nb")]}
-    write_results(path, project, results, command="excel-codegen render --write-excel")
+    write_results(path, project, results, command="spreadsheet-codegen render --write-excel")
 
     workbook = load_workbook(path)
     try:
@@ -414,9 +414,40 @@ def test_duplicate_yaml_key_is_rejected(tmp_path: Path, config_text: str) -> Non
     assert "variables" in message
 
 
+def test_read_metadata_accepts_the_pre_rename_marker(project: ProjectConfig, tmp_path: Path) -> None:
+    """改名不能把旧工作簿读瞎：0.9.x 写进去的是 `## excel-codegen-meta`，仍要认得。"""
+    from spreadsheet_codegen.excel_io import LEGACY_META_MARKERS, META_MARKER, read_metadata
+
+    assert LEGACY_META_MARKERS, "旧标记至少要留一个，否则旧工作簿的指纹就丢了"
+    path = create_template(project, tmp_path / "t.xlsx", cases=1)
+    write_results(path, project, {"uart_init": [RenderResult("uart_init", "Case1", "a")]})
+
+    workbook = load_workbook(path)
+    try:
+        # 把元信息块的标记改回改名前的写法，模拟 0.9.x 生成的工作簿
+        sheet = workbook[project.excel.template_sheet]
+        replaced = 0
+        for (cell,) in sheet.iter_rows(min_col=1, max_col=1):
+            if cell.value == META_MARKER:
+                cell.value = LEGACY_META_MARKERS[0]
+                replaced += 1
+        assert replaced == 1
+        workbook.save(path)
+    finally:
+        workbook.close()
+
+    workbook = load_workbook(path)
+    try:
+        metadata = read_metadata(workbook, project)
+        assert metadata["参数指纹"], "旧标记的工作簿也要能读回指纹"
+        assert metadata["输出指纹"]
+    finally:
+        workbook.close()
+
+
 def test_read_metadata_howto_fallback_uses_same_keys(tmp_path: Path, config_text: str) -> None:
     """关掉 Template 表时，元信息只存在于 HOWTO 表 —— 键名必须和 Template 表路径一致。"""
-    from excel_codegen.excel_io import read_metadata
+    from spreadsheet_codegen.excel_io import read_metadata
 
     config_path = tmp_path / "howto_only.yaml"
     config_path.write_text(

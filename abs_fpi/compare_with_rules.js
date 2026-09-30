@@ -1,10 +1,10 @@
 /* ============================================================================
  * compare_with_rules.js
  * ----------------------------------------------------------------------------
- * 交叉校验：把 excel_codegen 渲染出来的 GeniE 代码，与 GeniE/Rules 那套已经过
+ * 交叉校验：把 spreadsheet_codegen 渲染出来的 GeniE 代码，与 GeniE/Rules 那套已经过
  * 量纲/结构校验的生成器对同一批工况产出的代码逐行比对。
  *
- * 为什么需要它：excel_codegen 只做「文本替换」，它不认识 GeniE 的量纲、
+ * 为什么需要它：spreadsheet_codegen 只做「文本替换」，它不认识 GeniE 的量纲、
  * 不知道 `if` 必须配 `else`、也不会检查 `sin/cos` 收到的是不是角度。
  * 所以移植之后必须用另一套有检查的工具来确认移植没有走样 —— 这个脚本就是那条链。
  *
@@ -34,7 +34,7 @@ if (missing.length) {
   console.log('      期望位置：' + RULES_DIR);
   console.log('      缺少文件：' + missing.join(', '));
   console.log('      说明：这是一条**独立**证据（与另一套已校验的生成器逐行比对）；');
-  console.log('            该仓库不在本工作区时无法执行。其余验证（excel-codegen check、');
+  console.log('            该仓库不在本工作区时无法执行。其余验证（spreadsheet-codegen check、');
   console.log('            verify_excel_engine.py、build.py --check）不依赖它。');
   console.log('      退出码：' + (allowMissing ? '0（--allow-missing，按跳过处理）'
                                              : '2（明确跳过，不等于通过）'));
@@ -61,7 +61,7 @@ function normalize(lines) {
     let s = String(raw).replace(/\/\/.*$/, '').trim();
     if (s === '') return;
     // 坐标变换语句两边都排除：
-    //   GeniE/Rules 在恒等映射下**不输出**它，而 excel_codegen 侧为了能进公式模式
+    //   GeniE/Rules 在恒等映射下**不输出**它，而 spreadsheet_codegen 侧为了能进公式模式
     //   （公式模式没有 {% if %}）总是输出。变换本身由 6 个映射格纯替换而来，
     //   正确性由 verify_excel_engine.py --change 与 rule_selfcheck.js 的 48 种映射各自覆盖。
     if (/^(var t[123] = [xyz];|[xyz] = -?t[123];)$/.test(s)) return;

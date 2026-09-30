@@ -4,8 +4,8 @@ requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "excel_codegen"
-version = "0.9.1"
+name = "spreadsheet_codegen"
+version = "1.0.0"
 description = "Excel 模板参数填写 + Jinja2 代码生成器（支持 Prefix/Value/Suffix 组合）"
 readme = "README.md"
 # 支持下限 = **CI 真正测过的最老版本**（见 .github/workflows/ci.yml）。
@@ -55,27 +55,27 @@ dev = [
 ]
 
 [project.scripts]
-excel-codegen = "excel_codegen.cli:app"
+spreadsheet-codegen = "spreadsheet_codegen.cli:app"
 
 [project.urls]
-Documentation = "https://github.com/Dog-Chest/excel_codegen#readme"
-Repository = "https://github.com/Dog-Chest/excel_codegen"
-Changelog = "https://github.com/Dog-Chest/excel_codegen/blob/main/CHANGELOG.md"
-Issues = "https://github.com/Dog-Chest/excel_codegen/issues"
+Documentation = "https://github.com/Dog-Chest/spreadsheet_codegen#readme"
+Repository = "https://github.com/Dog-Chest/spreadsheet_codegen"
+Changelog = "https://github.com/Dog-Chest/spreadsheet_codegen/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Dog-Chest/spreadsheet_codegen/issues"
 
 [tool.setuptools.packages.find]
-include = ["excel_codegen*"]
+include = ["spreadsheet_codegen*"]
 # examples/ 只有数据、没有 __init__.py，别被当成命名空间包
 namespaces = false
 
-# 内置示例（excel_codegen/examples/）是**包数据**：wheel 里也要有，
-# 这样 `pip install excel-codegen` / `uv tool install` 的人不用克隆仓库就能
-# `excel-codegen examples --copy DIR`。MANIFEST.in 负责 sdist，这里负责 wheel。
+# 内置示例（spreadsheet_codegen/examples/）是**包数据**：wheel 里也要有，
+# 这样 `pip install spreadsheet-codegen` / `uv tool install` 的人不用克隆仓库就能
+# `spreadsheet-codegen examples --copy DIR`。MANIFEST.in 负责 sdist，这里负责 wheel。
 [tool.setuptools]
 include-package-data = true
 
 [tool.setuptools.package-data]
-excel_codegen = [
+spreadsheet_codegen = [
     "examples/*/*",
     "examples/*/*/*",
 ]
@@ -119,7 +119,7 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.11"
-files = ["excel_codegen"]
+files = ["spreadsheet_codegen"]
 # 不要求每个函数都写注解（这个项目注解已经不少，但没必要卡住），但**检查已注解的代码**
 check_untyped_defs = true
 warn_redundant_casts = true
@@ -130,7 +130,7 @@ ignore_missing_imports = true
 disable_error_code = ["misc"]
 
 [tool.coverage.run]
-source = ["excel_codegen"]
+source = ["spreadsheet_codegen"]
 branch = true
 
 [tool.coverage.report]

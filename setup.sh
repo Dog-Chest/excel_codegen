@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ============================================================================
-# excel_codegen —— Linux / macOS 开发环境搭建
+# spreadsheet_codegen —— Linux / macOS 开发环境搭建
 #
 #   ./setup.sh                              # 有 uv 用 uv（推荐），没有就退回 venv+pip
 #   ./setup.sh --no-test                    # 只装环境，不跑 pytest
 #   ./setup.sh --recreate                   # 删掉旧环境重建
-#   EXCEL_CODEGEN_VENV=/data/v ./setup.sh   # 指定环境位置（uv 与 pip 两条路都认）
+#   SPREADSHEET_CODEGEN_VENV=/data/v ./setup.sh   # 指定环境位置（uv 与 pip 两条路都认）
 #
 # 两条路：
 #   A) 机器上有 uv  → `uv sync`：自动挑/下载 Python、按 uv.lock 装依赖，**不需要**
@@ -119,7 +119,7 @@ REPO_FS="$(fs_type_of "$HERE")"
 DEFAULT_VENV="$HERE/.venv"
 case "$REPO_FS" in
   ntfs*|exfat|vfat|msdos|fuseblk|hfsplus|unknown)
-    DEFAULT_VENV="$HOME/.venvs/excel_codegen"
+    DEFAULT_VENV="$HOME/.venvs/spreadsheet_codegen"
     warn "仓库所在文件系统是 ${REPO_FS}（非原生 Linux 文件系统）。"
     say  "       环境默认改到 $DEFAULT_VENV —— 上万个碎文件写在 $REPO_FS 上既慢又容易卡。"
     say  "       （仓库本身放在这里没问题，只有 .venv 要挪走。）"
@@ -129,7 +129,8 @@ case "$REPO_FS" in
     ;;
 esac
 
-ENV_DIR="${EXCEL_CODEGEN_VENV:-$DEFAULT_VENV}"
+# 兼容改名前的变量名（EXCEL_CODEGEN_VENV）：新名优先，老写法仍认
+ENV_DIR="${SPREADSHEET_CODEGEN_VENV:-${EXCEL_CODEGEN_VENV:-$DEFAULT_VENV}}"
 say "       环境位置：$ENV_DIR"
 
 if [ "$RECREATE" = "1" ] && [ -d "$ENV_DIR" ]; then
@@ -142,7 +143,7 @@ if [ "$USE_UV" = "1" ]; then
   export UV_PROJECT_ENVIRONMENT="$ENV_DIR"
   say "[3/5] uv sync（按 uv.lock 锁定版本；缺 Python 3.12 时 uv 会自己下载）..."
   uv sync --quiet
-  say "       ✓ 已同步 excel_codegen $(uv version --short 2>/dev/null || echo '')"
+  say "       ✓ 已同步 spreadsheet_codegen $(uv version --short 2>/dev/null || echo '')"
 else
   if ! "$PYTHON" -c "import ensurepip" >/dev/null 2>&1; then
     warn "当前 Python 缺少 ensurepip，无法用 \`python3 -m venv\` 建虚拟环境。"
@@ -168,15 +169,15 @@ else
   VPY="$ENV_DIR/bin/python"
   say "       pip 升级 ..."
   "$VPY" -m pip install --quiet --upgrade pip
-  say "       安装 excel_codegen[dev]（可编辑安装）..."
+  say "       安装 spreadsheet_codegen[dev]（可编辑安装）..."
   if ! "$VPY" -m pip install --quiet -e ".[dev]"; then
     warn "安装失败。最常见的两种原因："
     say  "       1) 这个环境是上次装到一半留下的 —— 用 ./setup.sh --recreate 删掉重建；"
     say  "       2) $ENV_DIR 的权限不对（例如以前用 sudo 建过）—— 换一个位置："
-    say  "          EXCEL_CODEGEN_VENV=~/venvs/excel_codegen ./setup.sh"
+    say  "          SPREADSHEET_CODEGEN_VENV=~/venvs/spreadsheet_codegen ./setup.sh"
     die  'pip install -e ".[dev]" 失败。'
   fi
-  say "       ✓ 已安装：$("$VPY" -m pip show excel_codegen 2>/dev/null | awk '/^Version:/{print $2}')"
+  say "       ✓ 已安装：$("$VPY" -m pip show spreadsheet_codegen 2>/dev/null | awk '/^Version:/{print $2}')"
 fi
 
 # --- 4. 测试 ----------------------------------------------------------------
@@ -201,10 +202,10 @@ say ""
 say "环境就绪。以后每条命令都这样跑（Windows / macOS / Linux 完全一样）："
 if [ "$USE_UV" = "1" ]; then
   say "    uv run pytest"
-  say "    uv run excel-codegen --version"
+  say "    uv run spreadsheet-codegen --version"
   say "    uv run python abs_fpi/build.py --check"
 else
   say "    source \"$ENV_DIR/bin/activate\""
-  say "    excel-codegen --version        # 或 python -m excel_codegen"
+  say "    spreadsheet-codegen --version        # 或 python -m spreadsheet_codegen"
   say "    pytest                         # 全部用例"
 fi

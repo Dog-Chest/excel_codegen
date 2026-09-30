@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from excel_codegen.example_pack import examples_root
-from excel_codegen.excel_io import create_template, write_results
-from excel_codegen.models import ProjectConfig, RenderResult, TemplateDef, load_config
-from excel_codegen.renderer import (
+from spreadsheet_codegen.example_pack import examples_root
+from spreadsheet_codegen.excel_io import create_template, write_results
+from spreadsheet_codegen.models import ProjectConfig, RenderResult, TemplateDef, load_config
+from spreadsheet_codegen.renderer import (
     build_context,
     build_environment,
     case_matches,
@@ -23,9 +23,9 @@ from excel_codegen.renderer import (
     validate_template,
     wrap,
 )
-from excel_codegen.utils import ExcelError, RenderError, VarValue
+from spreadsheet_codegen.utils import ExcelError, RenderError, VarValue
 
-#: 内置示例随包发布（0.9.0 起在 excel_codegen/examples/ 下，wheel 与 sdist 都有）
+#: 内置示例随包发布（0.9.0 起在 spreadsheet_codegen/examples/ 下，wheel 与 sdist 都有）
 EXAMPLES_DIR = examples_root()
 
 

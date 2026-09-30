@@ -25,7 +25,7 @@ SUBSEQ = 1, 1.2, 1.3
    而它在表里占的那一行是**空的**（语句按行对齐，方便整列复制）；
 2. **SUBCASE 与 SUBCOM 两种块**都对，``SUBSEQ`` 的内容原样输出（工具不解释它）；
 3. **公式模式的一致性**：Code 表里**公式算出来的文本** == Python 渲染的文本
-   （这就是"改 Excel 就改输出"的保证 —— 与 ``excel-codegen check --values`` 同一件事）；
+   （这就是"改 Excel 就改输出"的保证 —— 与 ``spreadsheet-codegen check --values`` 同一件事）；
 4. **整块拼起来**是一段合法的 case control（按 ``seq`` 排序、删掉空行）。
 
 另外还钉住两个曾经会出问题的地方：``{% if %}`` 的条件在公式模式下**必须写 ``.value``**，
@@ -39,12 +39,12 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from excel_codegen import create_template, write_results
-from excel_codegen.example_pack import examples_root
-from excel_codegen.formula_eval import evaluate_template_values
-from excel_codegen.models import ProjectConfig, load_config
-from excel_codegen.renderer import collect_variables, export_files, render_all
-from excel_codegen.utils import ExcelError
+from spreadsheet_codegen import create_template, write_results
+from spreadsheet_codegen.example_pack import examples_root
+from spreadsheet_codegen.formula_eval import evaluate_template_values
+from spreadsheet_codegen.models import ProjectConfig, load_config
+from spreadsheet_codegen.renderer import collect_variables, export_files, render_all
+from spreadsheet_codegen.utils import ExcelError
 
 CASE_CONTROL_YAML = """\
 version: 1
@@ -310,7 +310,7 @@ def test_sheet_holds_formulas_not_snapshots(workbook_path: Path, project: Projec
 def test_formula_values_equal_python_render(workbook_path: Path, project: ProjectConfig) -> None:
     """核心保证：Code 表里**公式算出来的文本** == Python 渲染的文本。
 
-    "改 Excel 就改输出"成立的前提就是这条 —— 与 `excel-codegen check --values` 同一件事。
+    "改 Excel 就改输出"成立的前提就是这条 —— 与 `spreadsheet-codegen check --values` 同一件事。
     """
     expected = render_all(project, workbook_path)
     write_results(workbook_path, project, expected.results)

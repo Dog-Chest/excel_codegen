@@ -5,9 +5,9 @@
 # （解包后 pytest 全是 `fixture 'config_text' not found`）。
 # 要么把测试带全，要么干脆不带；这里选前者，顺带把示例与 docs/ 带上。
 #
-# 0.9.0 起示例是**包数据**（excel_codegen/examples/），不是仓库顶层的 examples/：
-# 这样 wheel 里也有 —— `pip install excel-codegen` 的人不必克隆仓库，
-# `excel-codegen examples --copy DIR` 就能拿到（见 excel_codegen/example_pack.py）。
+# 0.9.0 起示例是**包数据**（spreadsheet_codegen/examples/），不是仓库顶层的 examples/：
+# 这样 wheel 里也有 —— `pip install spreadsheet-codegen` 的人不必克隆仓库，
+# `spreadsheet-codegen examples --copy DIR` 就能拿到（见 spreadsheet_codegen/example_pack.py）。
 
 include LICENSE
 include NOTICE.md
@@ -27,13 +27,13 @@ recursive-include tests *.py
 # 内置示例：YAML + 模板 + 生成好的工作簿 + 导出产物 + 一键刷新脚本
 # .inc / .deck 是 NASTRAN 那个示例的产物（指南 §20），测试会读它；
 # .j2 是 abs_fpi 示例的 template_file（漏了它示例就解不开）
-recursive-include excel_codegen/examples *.yaml *.xlsx *.j2 *.c *.md *.csv *.inc *.deck *.sh *.bat *.js
+recursive-include spreadsheet_codegen/examples *.yaml *.xlsx *.j2 *.c *.md *.csv *.inc *.deck *.sh *.bat *.js
 
 # 文档
 recursive-include docs *.md
 
 # 刻意不带：仓库根的 abs_fpi/ 是现场脚本与实测报告（FINDINGS.md / probes / build.py …），
-# 不属于这个包。注意示例资产已经搬到 excel_codegen/examples/abs_fpi/，**不在**这条 prune 里。
+# 不属于这个包。注意示例资产已经搬到 spreadsheet_codegen/examples/abs_fpi/，**不在**这条 prune 里。
 prune abs_fpi
 
 # 中间产物与缓存一律排除

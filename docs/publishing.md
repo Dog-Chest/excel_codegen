@@ -52,7 +52,7 @@ git config --global user.email "129145708+Dog-Chest@users.noreply.github.com"
 ```bash
 # 1) 网页上 New repository —— 不要勾 README / .gitignore / license（本地都有）
 # 2) 关联并推送
-git remote add origin git@github.com:<用户名>/excel_codegen.git
+git remote add origin git@github.com:<用户名>/spreadsheet_codegen.git
 git push -u origin main
 ```
 
@@ -79,33 +79,48 @@ git push -u origin main
 用 **Trusted Publishing（OIDC）** —— 仓库里不存任何 token，GitHub 每次发布时向 PyPI
 换一张短期凭据。
 
-> ✅ **首次发布已完成**：`v0.9.0` → <https://pypi.org/project/excel-codegen/0.9.0/>
-> 下面的一次性配置留档，之后每次发版直接跳到「每次发版」。
+> ⚠️ **改名说明**：本项目原名 `excel-codegen`（因为名字里带 Microsoft 商标 "Excel"，
+> 有商标风险而改名）。**PyPI 项目名不能改**，所以：
+>
+> * `excel-codegen` 留在 PyPI 上，从 `0.9.2` 起是**弃用跳板版**（README 引导到新名），
+>   并把旧版本**yank** 掉 —— 新装的人装不到，已锁定的依赖不受影响；
+> * 本项目用**新名字 `spreadsheet-codegen` 重新起步**，tag 从 `v1.0.0` 开始。
+>
+> 也就是说：**新名字需要重新登记一次 pending publisher**（下面第 2 步），
+> 而 GitHub 那边的 `pypi` 环境可以直接复用。
 
-### 一次性配置（只在第一次做）
+### 一次性配置（新名字要重做第 2 步）
 
 1. **注册 PyPI 账号**并开启两步验证（发版必需）。
 2. **登记 pending publisher**：PyPI → Account → Publishing → *Add a pending publisher*：
 
    | 字段 | 填什么 |
    | --- | --- |
-   | PyPI Project Name | `excel-codegen` |
+   | PyPI Project Name | `spreadsheet-codegen` |
    | Owner | `Dog-Chest` |
-   | Repository name | `excel_codegen` |
+   | Repository name | `spreadsheet_codegen` |
    | Workflow name | `release.yml` |
    | Environment name | `pypi` |
 
-   > 项目名写成 `excel-codegen`（连字符）是因为**分发的名字**与**导入的名字**可以不同：
-   > `pip install excel-codegen` 装进来的是 `import excel_codegen`。
-3. GitHub 仓库 → Settings → Environments → 新建一个叫 **`pypi`** 的环境
-   （可以顺手加 "Required reviewers"，发版前多一道人工确认）。
-4. 确认 `pyproject.toml` 的 `[project.urls]` 都是真地址（占位符在 PyPI 页面上会变成
-   一个打不开的链接）。**当前四项都已指向 `github.com/Dog-Chest/excel_codegen`**，无需再改。
+   > 项目名写成 `spreadsheet-codegen`（连字符）是因为**分发的名字**与**导入的名字**可以不同：
+   > `pip install spreadsheet-codegen` 装进来的是 `import spreadsheet_codegen`。
+3. GitHub 仓库 → Settings → Environments → **`pypi`**（已在旧名下建好，直接复用）。
+4. 确认 `pyproject.toml` 的 `[project.urls]` 都是真地址。
+   **当前四项都指向 `github.com/Dog-Chest/spreadsheet_codegen`** —— 前提是 GitHub 仓库
+   已经改成这个名字（见下）。
+
+### 改名要一起做的几件事
+
+| 动作 | 在哪做 | 备注 |
+| --- | --- | --- |
+| GitHub 仓库改名 `excel_codegen` → `spreadsheet_codegen` | 仓库 Settings → Repository name | 旧 URL 会自动重定向，外链不丢；**改名前文档里的新链接会 404** |
+| 新名登记 pending publisher | PyPI → Account → Publishing | 见上面第 2 步 |
+| 旧名发弃用版 `0.9.2` + yank | 旧 tag/分支 + PyPI 页面 | yank 在 PyPI 的 *Manage → Releases* 里逐版本操作 |
 
 ### 每次发版
 
 ```bash
-# 1) 改版本号（pyproject.toml 与 excel_codegen/__init__.py 两处）+ 写 CHANGELOG
+# 1) 改版本号（pyproject.toml 与 spreadsheet_codegen/__init__.py 两处）+ 写 CHANGELOG
 # 2) 重新锁定（版本号变化会写进 uv.lock）—— CI 有 uv lock --check，忘了会红
 uv lock
 # 3) 本地过一遍质量闸
@@ -129,14 +144,14 @@ tag 一推，`release.yml` 就会：校验 tag 与 `pyproject.toml` 版本一致
 ### 发布之后，别人怎么装
 
 ```bash
-uv tool install excel-codegen      # 装成全局命令
+uv tool install spreadsheet-codegen      # 装成全局命令
 # 或
-pipx install excel-codegen
+pipx install spreadsheet-codegen
 # 或
-pip install excel-codegen
+pip install spreadsheet-codegen
 ```
 
-> 装完 `excel-codegen examples --copy ./examples` 就能拿到带工作簿的内置示例。
+> 装完 `spreadsheet-codegen examples --copy ./examples` 就能拿到带工作簿的内置示例。
 
 ---
 
@@ -155,10 +170,10 @@ Trusted publishing exchange failure:
 | 日志里的 claim | PyPI 表单字段 | 实际值 |
 | --- | --- | --- |
 | `repository_owner` | Owner | `Dog-Chest` |
-| `repository` | Repository name | `excel_codegen`（**下划线**） |
+| `repository` | Repository name | `spreadsheet_codegen`（**下划线**） |
 | `workflow_ref` 的文件名 | Workflow name | `release.yml`（**只写文件名**，别写路径） |
 | `environment` | Environment name | `pypi`（**留空就对不上**） |
-| 发行包 METADATA 的 `Name` | PyPI Project Name | `excel_codegen` → 归一化成 `excel-codegen` |
+| 发行包 METADATA 的 `Name` | PyPI Project Name | `spreadsheet_codegen` → 归一化成 `spreadsheet-codegen` |
 
 最常见的两个错：**Workflow name 写成 `.github/workflows/release.yml`**、
 **Environment name 留空**（workflow 里用的是 `pypi`）。

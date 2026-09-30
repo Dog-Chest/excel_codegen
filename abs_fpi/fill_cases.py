@@ -1,6 +1,6 @@
 """把 ``Local Parameter`` 的 Case 列与 ``Tank Data`` 成员表填成真实工况。
 
-``excel-codegen init`` 只会把每个变量的 YAML ``default`` 复制到每一列 Case，
+``spreadsheet-codegen init`` 只会把每个变量的 YAML ``default`` 复制到每一列 Case，
 所以"逐工况不同"的取值必须有人填 —— 这个脚本就是那个"人"。
 它只动参数表（Local 的 E 列及右侧、Tank Data 的 B 列及右侧），不碰 Global 表、不碰模板表。
 

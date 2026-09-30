@@ -1,11 +1,11 @@
 # 内置示例
 
-示例**随包发布**（wheel 与 sdist 里都有），所以装了 `excel-codegen` 就够了，
+示例**随包发布**（wheel 与 sdist 里都有），所以装了 `spreadsheet-codegen` 就够了，
 不需要克隆仓库：
 
 ```bash
-excel-codegen examples                     # 列出示例、各自演示什么
-excel-codegen examples --copy ./examples   # 拷到 ./examples（--only abs_fpi 只拷一个）
+spreadsheet-codegen examples                     # 列出示例、各自演示什么
+spreadsheet-codegen examples --copy ./examples   # 拷到 ./examples（--only abs_fpi 只拷一个）
 ```
 
 拷出来之后**打开里面的 `.xlsx` 就能改** —— 每一本都已经填好样例数值，而且默认是
@@ -31,10 +31,10 @@ cd basic
 
 # 工作簿已经生成好了，直接打开 template_formula.xlsx 改参数即可。
 # 要把代码导成文件：
-excel-codegen render -c example_formula.yaml -x template_formula.xlsx --outdir generated_formula
+spreadsheet-codegen render -c example_formula.yaml -x template_formula.xlsx --outdir generated_formula
 
 # 核对「Excel 里算出来的」与「Python 渲染的」是否一致（CI 里很有用）：
-excel-codegen check -c example_formula.yaml -x template_formula.xlsx
+spreadsheet-codegen check -c example_formula.yaml -x template_formula.xlsx
 ```
 
 `example.yaml` 是**对照示例**：它显式写 `engine: snapshot`，用到了公式模式表达不了的
@@ -44,7 +44,7 @@ excel-codegen check -c example_formula.yaml -x template_formula.xlsx
 
 ```bash
 cd nastran
-excel-codegen render -c nastran_case_control.yaml -x nastran_case_control.xlsx --outdir generated
+spreadsheet-codegen render -c nastran_case_control.yaml -x nastran_case_control.xlsx --outdir generated
 ```
 
 Local 表是**竖着**的（`local_direction: vertical`）：一行一个工况，下拉即增行，
@@ -63,7 +63,7 @@ cd abs_fpi
 #   abs_fpi_external.xlsx     外压单用（3 个工况）
 #   abs_fpi_internal.xlsx     内压单用（4 个工况）
 #   ABS_FPI_load_cases.xlsx   项目工作簿：两套规则共用一张 Global 表（7 个工况）
-excel-codegen render -c abs_fpi_internal.yaml -x abs_fpi_internal.xlsx --outdir generated
+spreadsheet-codegen render -c abs_fpi_internal.yaml -x abs_fpi_internal.xlsx --outdir generated
 ```
 
 > 用例里的舱容与工况组合只是**示意数值**（随手取的几个数），不代表任何真实船舶。

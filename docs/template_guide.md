@@ -56,7 +56,7 @@ Jinja2 语法速查、Excel 表结构与填写规则、输出布局、导出代�
 | 字段 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | `output` | str | `template.xlsx` | `init` 默认输出路径（相对当前工作目录） |
-| `template_sheet` | str \| null | `Template` | 隐藏参考表的名字（模板原文 + `## excel-codegen-meta` 元信息）；设为 `null` 不生成 |
+| `template_sheet` | str \| null | `Template` | 隐藏参考表的名字（模板原文 + `## spreadsheet-codegen-meta` 元信息）；设为 `null` 不生成 |
 | `howto_sheet` | str \| null | `HOWTO` | 使用说明表，`create_template` 生成、`write_results` 刷新，**放第一张**；设为 `null` 不生成 |
 | `sheets.global` | str | `Global Parameter` | 全局表名（≤31 字符，不含 `[]:*?/\`） |
 | `sheets.local` | str | `Local Parameter` | 局部表名 |
@@ -474,7 +474,7 @@ A11: 2               B11: UART_Init({{ baud }}, {{ port }}, {{ mode }});
 底部还有一段机器可读的元信息（`render --write-excel` 写、`check` 读）：
 
 ```
-A20: ## excel-codegen-meta
+A20: ## spreadsheet-codegen-meta
 A21: 时间          B21: 2026-09-24 15:23:26
 A22: 输出指纹      B22: 80ecfe5dc6e7
 A23: 参数指纹      B23: c1273da2acb5
@@ -518,14 +518,14 @@ basic/
 脚本里做了三件事：
 
 1. `cd` 到自己的工作簿所在目录，所以工作簿/配置在哪儿都行；
-2. 优先用 `uv run excel-codegen`，**没装 uv 就退回** PATH 里的 `excel-codegen`
+2. 优先用 `uv run spreadsheet-codegen`，**没装 uv 就退回** PATH 里的 `spreadsheet-codegen`
    （venv 已激活的情形）；
 3. 出错时把常见原因打出来（依赖没装 / Excel 正开着文件）并**以非 0 退出**，
    所以在批处理或 CI 里也能用。
 
 两个平台都生成，不是只生成当前的 —— 一本工作簿常常在 Windows 与 Linux 之间传来传去。
 脚本每次 `init` 都会被覆盖，所以**不要在里面手写自己的逻辑**（要改就改 YAML 重新 init，
-或者另写一个脚本调 `excel-codegen`）。
+或者另写一个脚本调 `spreadsheet-codegen`）。
 
 ---
 
@@ -570,8 +570,8 @@ direction: "vertical"
 ## 8. 导出代码文件（`--outdir`）
 
 ```bash
-excel-codegen examples --copy ./examples    # 先拿到内置示例
-excel-codegen render --config examples/basic/example.yaml --excel examples/basic/template.xlsx --outdir generated/
+spreadsheet-codegen examples --copy ./examples    # 先拿到内置示例
+spreadsheet-codegen render --config examples/basic/example.yaml --excel examples/basic/template.xlsx --outdir generated/
 ```
 
 - 文件名优先级：`template.filename`（Jinja2 渲染，可用 `{{ case_name }}`、`{{ template_name }}`、这个 Case 的任意变量）→ 否则 `<模板名>_<Case名><extension>`。
@@ -602,11 +602,11 @@ templates:
    - 不要引用未定义的变量（`StrictUndefined` 会报错）；
    - 控制结构用 `{% ... %}`，注意空白控制（空行会各占一行）。
 5. **需要"一本工作簿两套规则"时**加 `case_filter`（见 9.2），并确认 Global 表只填一次。
-6. **校验**：`excel-codegen validate --config xxx.yaml`（只看配置）→ 加 `--excel` 校验填写内容。
-7. **重新生成模板**：`excel-codegen init --config xxx.yaml --output template.xlsx --force`
+6. **校验**：`spreadsheet-codegen validate --config xxx.yaml`（只看配置）→ 加 `--excel` 校验填写内容。
+7. **重新生成模板**：`spreadsheet-codegen init --config xxx.yaml --output template.xlsx --force`
    （已有填写内容时先备份，`init` 会重建工作簿）。
-8. **渲染验证**：`excel-codegen render --config xxx.yaml --excel template.xlsx --show`（先预览再写回）。
-9. **写回并确认不过期**：`render … --write-excel` 之后跑 `excel-codegen check --config xxx.yaml`（应当 exit 0）。
+8. **渲染验证**：`spreadsheet-codegen render --config xxx.yaml --excel template.xlsx --show`（先预览再写回）。
+9. **写回并确认不过期**：`render … --write-excel` 之后跑 `spreadsheet-codegen check --config xxx.yaml`（应当 exit 0）。
 10. **补测试**：在 `tests/` 中按现有风格加一条端到端用例，保证模板库后续可回归。
 
 ### 9.1 外部模板文件示例
@@ -739,8 +739,8 @@ Prefix/Suffix 是按变量（不是按 Case）生效的。见 4.4：再加一个
 **Q10：能否在 CI 中校验模板库？**
 可以，而且分两层：
 
-1. `excel-codegen validate --config xxx.yaml --excel xxx.xlsx`：配置 / 模板语法 / 变量引用 / Excel 结构；
-2. **`excel-codegen check --config xxx.yaml --excel xxx.xlsx`**：表里的代码与当前参数是否一致（过期 → exit 1）。
+1. `spreadsheet-codegen validate --config xxx.yaml --excel xxx.xlsx`：配置 / 模板语法 / 变量引用 / Excel 结构；
+2. **`spreadsheet-codegen check --config xxx.yaml --excel xxx.xlsx`**：表里的代码与当前参数是否一致（过期 → exit 1）。
    `check` 用"重新渲染 + 逐行比对 + 指纹比对"，所以它同时能抓到"改了参数没重跑"和"被手工改过的输出表"。
 
 **Q11：怎么知道一份工作簿是什么时候、用哪套参数生成的？**
@@ -770,12 +770,13 @@ Prefix/Suffix 是按变量（不是按 Case）生效的。见 4.4：再加一个
 | **0.4.0** | 公式求值器（`check` 默认把公式算一遍再与 Python 渲染比对）、公式模式差异信息改为贴模板行、空 Case 列 / 超长公式告警、§14.5「改结构什么要重跑」、**更正 0.3.0 文档里"有 if/else 就不能用公式模式"的错误判断** |
 | **0.5.0** | **派生参数（`derived:`）**：参数引用参数（同 Case 的 local + global），Excel 侧写成公式自动重算；数值形态改成"两边都按 15 位有效数字"（不再用 `TEXT()`）。见 §15 |
 | 0.5.1 | 只动环境与文档（Windows → Ubuntu 迁移）：新增 `setup.sh`（探测文件系统后选 venv 位置）与 `.gitattributes`（行尾统一），README「安装」补 Ubuntu 三个坑，`compare_with_rules.js` 缺外部依赖时明确 `SKIP`（退出码 2）。**工具行为无变化** |
-| 0.5.2 | **多平台零配置**：新增跨平台锁文件 `uv.lock` 与 `.python-version`，`pyproject.toml` 加 `[dependency-groups] dev`（PEP 735）—— 装上 uv 之后 `uv run pytest` / `uv run excel-codegen …` 在 Windows / macOS / Linux 完全一致，不需要 venv、pip、apt。`setup.sh` 同步支持 uv 路径。**支持下限 3.10 → 3.11**（3.10 于 2026-10 结束支持），CI 改为测「底线 3.11 + 3.13」。**工具行为无变化** |
+| 0.5.2 | **多平台零配置**：新增跨平台锁文件 `uv.lock` 与 `.python-version`，`pyproject.toml` 加 `[dependency-groups] dev`（PEP 735）—— 装上 uv 之后 `uv run pytest` / `uv run spreadsheet-codegen …` 在 Windows / macOS / Linux 完全一致，不需要 venv、pip、apt。`setup.sh` 同步支持 uv 路径。**支持下限 3.10 → 3.11**（3.10 于 2026-10 结束支持），CI 改为测「底线 3.11 + 3.13」。**工具行为无变化** |
 | **0.6.0** | **取值约束**（`min`/`max`/`choices`/`pattern`：越界在 render/validate 报错，Excel 里变下拉与数值范围，见 §3.5）；**跨文件复用 `extends`**（见 §16）；**公式模式支持行内 `{% if %}`**（编译成 `IF()`，见 §14.1.1）；**质量护栏**（ruff + mypy + 覆盖率门槛进 CI）。另修掉两个真 bug：`and`/`or` 在派生表达式里从未生效；`excel_io` 用了未导入的 `DerivedError` |
-| **0.7.0** | **跨变量校验 `asserts`**（§3.6）、**模板片段 `{% include %}`**（§17）、**第三层作用域成员表**（§18）、取值约束补齐到成员表、`check --json` + 报全部差异、Excel 批注（含 `unit`）、`init` 生成一键刷新脚本、`excel-codegen doctor` 体检、质量护栏补 sdist 自包含检查 |
+| **0.7.0** | **跨变量校验 `asserts`**（§3.6）、**模板片段 `{% include %}`**（§17）、**第三层作用域成员表**（§18）、取值约束补齐到成员表、`check --json` + 报全部差异、Excel 批注（含 `unit`）、`init` 生成一键刷新脚本、`spreadsheet-codegen doctor` 体检、质量护栏补 sdist 自包含检查 |
 | **0.8.0** | **行列风格 `excel.local_direction`**：Local 表可切成“一行一个工况”（见 §19）；公式模式与求值器支持二维 `INDEX` / 行区间 `MATCH`；**`filename` 里可用任意参数**；abs_fpi 舱数据改用成员表；新增 NASTRAN 工况控制用例（§20） |
 | 0.8.1 | 只动开发环境脚本 `setup.sh` 与测试：复用旧 venv 之前先体检（解释器版本 / `site-packages` / `pip`），拦住在换过 Python 后"能执行却什么也 import 不到"的坏环境（见 `docs/setup.md`）。**工具行为无变化** |
-| **0.9.0** | **内置示例随包发布 + 新增 `excel-codegen examples`**：`basic` / `nastran` / `abs_fpi` 三个示例（含已填好样例参数的工作簿）进 wheel 与 sdist，`--copy DIR` 一键拷出 —— 装了 pip 包、没克隆仓库的人也能用（见 [`excel_codegen/examples/README.md`](../excel_codegen/examples/README.md)）；`docs/setup.md` 补 Windows 用法。另修一个真 bug：**`setup.sh` 在 macOS（bash 3.2）上第一屏就 `unbound variable` 退出** —— `$VAR` 紧邻中文要写成 `${VAR}` |
+| **0.9.0** | **内置示例随包发布 + 新增 `excel-codegen examples`**：`basic` / `nastran` / `abs_fpi` 三个示例（含已填好样例参数的工作簿）进 wheel 与 sdist，`--copy DIR` 一键拷出 —— 装了 pip 包、没克隆仓库的人也能用；`docs/setup.md` 补 Windows 用法。另修一个真 bug：**`setup.sh` 在 macOS（bash 3.2）上第一屏就 `unbound variable` 退出** —— `$VAR` 紧邻中文要写成 `${VAR}` |
+| **1.0.0** | **改名为 `spreadsheet_codegen`**（旧名带 Microsoft 商标 "Excel"，有被投诉下架的风险）：包目录 / 导入名 / CLI / 文档 / 打包全部改名；旧 PyPI 项目名保留一个弃用版并 yank；新增 [`NOTICE.md`](../NOTICE.md)（商标归属、ABS 规范版权、工程免责、AI 生成说明）；改名前的 `## excel-codegen-meta` 工作簿仍能读。见 CHANGELOG |
 | 0.9.1 | 纯文档：0.9.0 的 PyPI 项目描述取自打包时的 README，上面还写着"尚未首次发布"，发这个补丁版覆盖；README「安装」拆成"只是要用 / 改工具本身"两路；`docs/publishing.md` 记下首次发布并新增 `invalid-publisher` 排错。**工具行为无变化** |
 
 ---
@@ -1344,9 +1345,9 @@ SUBCOM   3    SUBTITLE=LC3    SUBSEQ=1, 1.2, 1.3
 ```bash
 # 1) 备份旧工作簿里的参数（或直接照抄）
 # 2) 换布局重新生成
-excel-codegen init -c project.yaml --force
+spreadsheet-codegen init -c project.yaml --force
 # 3) 重新填参数 → 重跑
-excel-codegen render -c project.yaml --write-excel
+spreadsheet-codegen render -c project.yaml --write-excel
 ```
 
 `check` 与 `doctor` 里的提示会跟着说"Case 列"或"Case 行"，看到"Case 行"就说明当前是纵向布局。
@@ -1355,7 +1356,7 @@ excel-codegen render -c project.yaml --write-excel
 
 ## 20. 用例：NASTRAN 工况控制语句
 
-内置示例 `nastran`（`excel-codegen examples --copy .` 后是 `examples/nastran/`）
+内置示例 `nastran`（`spreadsheet-codegen examples --copy .` 后是 `examples/nastran/`）
 是一个完整可跑的示例，它把 §19 的纵向布局用在**工况控制语句**上。
 两个模板都是 `engine: excel`（公式模式）—— 改 Excel 里的参数，
 Code 表里的语句自己就变了，不用跑命令。
@@ -1394,7 +1395,7 @@ Code 表里的语句自己就变了，不用跑命令。
   "省略"只能表现为"这一格是空的"。把一列粘进文本编辑器后删掉空行即可：
 
 ```bash
-excel-codegen render -c examples/nastran/nastran_case_control.yaml --outdir deck
+spreadsheet-codegen render -c examples/nastran/nastran_case_control.yaml --outdir deck
 sed '/^$/d' deck/cc_*.inc > deck/case_control.deck
 ```
 

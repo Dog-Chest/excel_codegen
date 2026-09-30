@@ -19,18 +19,18 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from excel_codegen.excel_io import (
+from spreadsheet_codegen.excel_io import (
     check_required_sheets,
     check_value_constraints,
     create_template,
     read_cases,
     write_results,
 )
-from excel_codegen.formula import compile_formulas, local_cell
-from excel_codegen.formula_eval import evaluate_template_values
-from excel_codegen.models import ProjectConfig, load_config
-from excel_codegen.renderer import render_all
-from excel_codegen.utils import ExcelError
+from spreadsheet_codegen.formula import compile_formulas, local_cell
+from spreadsheet_codegen.formula_eval import evaluate_template_values
+from spreadsheet_codegen.models import ProjectConfig, load_config
+from spreadsheet_codegen.renderer import render_all
+from spreadsheet_codegen.utils import ExcelError
 
 VERTICAL_YAML = """\
 version: 1

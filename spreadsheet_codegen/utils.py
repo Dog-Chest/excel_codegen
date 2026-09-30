@@ -35,7 +35,7 @@ __all__ = [
 # 错误类型
 # --------------------------------------------------------------------------- #
 class CodeGenError(Exception):
-    """excel_codegen 所有面向用户的错误的基类（CLI 会友好地打印它们）。"""
+    """spreadsheet_codegen 所有面向用户的错误的基类（CLI 会友好地打印它们）。"""
 
 
 class ConfigError(CodeGenError):
@@ -124,7 +124,7 @@ def to_text(value: Any) -> str:
     所以这里对齐它。Jinja2 侧还通过 ``finalize`` 对 ``{{ x.value }}`` 施加同一规则。
 
     > 残留差异：有效数字超过 15 位的量（例如 17 位整数部分）两边仍可能不同 ——
-    > ``excel-codegen check`` 会在公式模式下把公式算一遍来发现它。
+    > ``spreadsheet-codegen check`` 会在公式模式下把公式算一遍来发现它。
     """
     if value is None:
         return ""

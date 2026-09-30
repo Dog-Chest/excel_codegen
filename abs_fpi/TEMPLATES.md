@@ -42,7 +42,7 @@
 ## 2. 一条命令
 
 ```bash
-cd abs_fpi                  # 现场脚本在这里；示例资产在 ../excel_codegen/examples/abs_fpi/
+cd abs_fpi                  # 现场脚本在这里；示例资产在 ../spreadsheet_codegen/examples/abs_fpi/
 python build.py            # compose → 建骨架（缺哪个建哪个）→ 渲染写回 → 导出代码 → 两层验证
 python build.py --check    # 只验证，不动文件（CI 可用）
 python build.py --init     # 骨架不存在时也重建（会清掉你填的参数）
@@ -64,7 +64,7 @@ wrote abs_fpi.yaml: 17 全局 / 35 局部变量, 4 模板 → Code EXT, Summary 
   [公式] abs_fpi_internal.xlsx        8 项, 0 项失败
   [公式] ABS_FPI_load_cases.xlsx     14 项, 0 项失败
 
-== 验证     excel-codegen check
+== 验证     spreadsheet-codegen check
   [check] abs_fpi_external.xlsx      OK
   [check] abs_fpi_internal.xlsx      OK
   [check] ABS_FPI_load_cases.xlsx    OK
@@ -76,8 +76,8 @@ wrote abs_fpi.yaml: 17 全局 / 35 局部变量, 4 模板 → Code EXT, Summary 
 
 ## 3. 加下一个规范（DNV / BV / CSR…）的清单
 
-1. **抄一份规则集**：从 `../excel_codegen/examples/abs_fpi/` 抄
-   （`cp ../excel_codegen/examples/abs_fpi/abs_fpi_external.yaml dnv_rp_c201.yaml`），
+1. **抄一份规则集**：从 `../spreadsheet_codegen/examples/abs_fpi/` 抄
+   （`cp ../spreadsheet_codegen/examples/abs_fpi/abs_fpi_external.yaml dnv_rp_c201.yaml`），
    改 `excel.output`（例如 `dnv_rp_c201.xlsx`）与 `templates` 列表。
 2. **写变量**：`variables.global` 放全船数据，`variables.local` 放逐工况数据。
    - 名字必须是 `[A-Za-z_][A-Za-z0-9_]*`，不能是 `case_name` / `template_name`；
@@ -120,8 +120,8 @@ wrote abs_fpi.yaml: 17 全局 / 35 局部变量, 4 模板 → Code EXT, Summary 
 
 | 层 | 命令 | 抓什么 | 抓不到什么 |
 |---|---|---|---|
-| 工具自带校验 | `excel-codegen validate -c <yaml>` | YAML 结构、模板语法、变量未定义 / 定义了没人用、`output_sheet` 未声明、公式模式的越界写法（带行内容） | 生成出来的代码对不对 |
-| 工具自带过期检查 | `excel-codegen check` | ① 公式 / 快照是否与当前 YAML + 参数一致；② **把公式在 Python 里算一遍**与 Python 渲染逐行比对（0.4.0 起默认开，`--no-values` 可关） | 公式在**真 Excel** 里的行为（区域设置、`TEXT()` 格式串、浮点显示） |
+| 工具自带校验 | `spreadsheet-codegen validate -c <yaml>` | YAML 结构、模板语法、变量未定义 / 定义了没人用、`output_sheet` 未声明、公式模式的越界写法（带行内容） | 生成出来的代码对不对 |
+| 工具自带过期检查 | `spreadsheet-codegen check` | ① 公式 / 快照是否与当前 YAML + 参数一致；② **把公式在 Python 里算一遍**与 Python 渲染逐行比对（0.4.0 起默认开，`--no-values` 可关） | 公式在**真 Excel** 里的行为（区域设置、`TEXT()` 格式串、浮点显示） |
 | **本目录的公式求值（第二重证据）** | `python verify_excel_engine.py <yaml> <xlsx>` | 同样"把公式算一遍再比对"，但**实现是独立的**（另一套解析器）—— 两条独立实现都过，才说明不是同一个 bug 在两处复现 | 同上（真 Excel 行为） |
 | 与独立实现比对 | `node compare_with_rules.js` | 与 `GeniE/Rules` 那套带量纲检查的产物逐行一致 | 规范本身理解错了 |
 
@@ -148,7 +148,7 @@ wrote abs_fpi.yaml: 17 全局 / 35 局部变量, 4 模板 → Code EXT, Summary 
 abs_fpi/                             ← 现场脚本与实测报告（不进包）
 ├── TEMPLATES.md                  ← 本文件：数据库索引 + 加规范的清单
 ├── README.md                     开发侧索引：脚本 / 探针 / 校验链
-├── FINDINGS.md                   对 excel_codegen 的实测报告（含修复复测）
+├── FINDINGS.md                   对 spreadsheet_codegen 的实测报告（含修复复测）
 │
 ├── build.py                      一条命令：compose + 生成 + 导出 + 两层验证
 ├── compose.py                    规则集 → 项目 YAML（合并 + 冲突检查）
@@ -157,7 +157,7 @@ abs_fpi/                             ← 现场脚本与实测报告（不进包
 ├── compare_with_rules.js         与 GeniE/Rules 逐行比对
 └── probes/                       对这一版工具的最小复现与探针
 
-excel_codegen/examples/abs_fpi/      ← 示例资产（随包发布，用户用这份）
+spreadsheet_codegen/examples/abs_fpi/      ← 示例资产（随包发布，用户用这份）
 ├── README.md                     怎么用、什么免重跑、已知边界
 ├── abs_fpi_external.yaml         规则集 1（真源）
 ├── abs_fpi_internal.yaml         规则集 2（真源）

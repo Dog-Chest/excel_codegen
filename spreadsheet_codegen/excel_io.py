@@ -94,7 +94,12 @@ LOCAL_HEADERS: tuple[str, ...] = ("Variable", "Description", "Prefix", "Suffix")
 LOCAL_CASE_HEADER = "Case"
 
 #: 隐藏 Template 表里"机器可读元信息块"的起始标记。
-META_MARKER = "## excel-codegen-meta"
+META_MARKER = "## spreadsheet-codegen-meta"
+
+#: 改名前的标记（`excel_codegen` 时代写进工作簿的）。只为**向后兼容**保留：
+#: 0.9.x 生成的工作簿里存的是它，读的时候要认得，写回时顺手换成新标记。
+LEGACY_META_MARKERS = ("## excel-codegen-meta",)
+_META_MARKERS = (META_MARKER, *LEGACY_META_MARKERS)
 
 #: 元信息键名（Template 表与 HOWTO 表共用同一套键，读取方不必区分来源）。
 META_TIME = "时间"
@@ -427,7 +432,7 @@ def _attach_comment(cell, variable: VariableDef, *, where: str) -> None:
     只加在名字格（A 列）而不是每个取值格：取值格已经有数据有效性的输入提示，
     而 A 列是冻结的、永远可见 —— 鼠标一放就知道这是什么、该填什么、有没有约束。
     """
-    comment = Comment(_variable_comment(variable, where=where), "excel_codegen")
+    comment = Comment(_variable_comment(variable, where=where), "spreadsheet_codegen")
     comment.width = 340
     comment.height = 190
     cell.comment = comment
@@ -447,7 +452,7 @@ def _relative_to(path: Path, base: Path, *, windows: bool) -> str:
 
 
 def _render_command(config: ProjectConfig, target: Path, *, windows: bool) -> str:
-    """生成那条 render 命令（用 uv 优先，没装 uv 就退回 PATH 里的 excel-codegen）。"""
+    """生成那条 render 命令（用 uv 优先，没装 uv 就退回 PATH 里的 spreadsheet-codegen）。"""
     x_flag = target.name if target.parent else str(target)
     if config.config_path is not None:
         c_flag = _relative_to(config.config_path, target.parent or Path("."), windows=windows)
@@ -470,16 +475,16 @@ def write_run_scripts(config: ProjectConfig, target: Path) -> list[Path]:
 
     bat = f"""@echo off
 REM ===========================================================================
-REM  由 excel_codegen 生成 —— 改完参数双击本文件即可把结果写回 Output 表。
+REM  由 spreadsheet_codegen 生成 —— 改完参数双击本文件即可把结果写回 Output 表。
 REM  重新生成工作簿（init）时会一并覆盖本文件。
 REM ===========================================================================
 cd /d "%~dp0"
 
 where uv >nul 2>nul
 if %errorlevel%==0 (
-  uv run excel-codegen {_render_command(config, target, windows=True)}
+  uv run spreadsheet-codegen {_render_command(config, target, windows=True)}
 ) else (
-  excel-codegen {_render_command(config, target, windows=True)}
+  spreadsheet-codegen {_render_command(config, target, windows=True)}
 )
 
 echo.
@@ -494,16 +499,16 @@ pause
 
     sh = f"""#!/usr/bin/env bash
 # ===========================================================================
-#  由 excel_codegen 生成 —— 改完参数跑一次本文件即可把结果写回 Output 表。
+#  由 spreadsheet_codegen 生成 —— 改完参数跑一次本文件即可把结果写回 Output 表。
 #  重新生成工作簿（init）时会一并覆盖本文件。
 # ===========================================================================
 set -uo pipefail
 cd "$(dirname "$0")"
 
 if command -v uv >/dev/null 2>&1; then
-  uv run excel-codegen {command}
+  uv run spreadsheet-codegen {command}
 else
-  excel-codegen {command}
+  spreadsheet-codegen {command}
 fi
 status=$?
 
@@ -798,14 +803,14 @@ def write_howto_sheet(
         add("  3.  改完参数直接看输出表：里面是公式，Excel 会自己重算，**不用跑任何命令**。", _HOWTO_NOTE, None)
         add("      只有『要把代码导成文件』时才回到命令行：", _HOWTO_NOTE, None)
         add(
-            f"          excel-codegen render -c <配置>.yaml -x {config.excel.output} --outdir <目录>",
+            f"          spreadsheet-codegen render -c <配置>.yaml -x {config.excel.output} --outdir <目录>",
             _HOWTO_MONO,
             _HOWTO_FILL,
         )
     else:
         add("  3.  改完参数后回到命令行执行：", _HOWTO_NOTE, None)
         add(
-            f"          excel-codegen render -c <配置>.yaml -x {config.excel.output} --write-excel",
+            f"          spreadsheet-codegen render -c <配置>.yaml -x {config.excel.output} --write-excel",
             _HOWTO_MONO,
             _HOWTO_FILL,
         )
@@ -818,7 +823,7 @@ def write_howto_sheet(
             _HOWTO_NOTE,
             None,
         )
-    add("      想确认表里的代码是不是已经过期：excel-codegen check -c <配置>.yaml", _HOWTO_NOTE, None)
+    add("      想确认表里的代码是不是已经过期：spreadsheet-codegen check -c <配置>.yaml", _HOWTO_NOTE, None)
     add("", _HOWTO_NOTE, None)
     formula_templates = [t for t in config.templates if t.engine == "excel"]
     snapshot_templates = [t for t in config.templates if t.engine != "excel"]
@@ -851,7 +856,7 @@ def write_howto_sheet(
         if command:
             add(f"  {'命令':<8}{command}", _HOWTO_MONO, None)
     else:
-        add("  （尚未渲染：本文件由 excel-codegen init 生成，还没有写回结果）", _HOWTO_WARN, None)
+        add("  （尚未渲染：本文件由 spreadsheet-codegen init 生成，还没有写回结果）", _HOWTO_WARN, None)
     add("", _HOWTO_NOTE, None)
     add("工况一览（来自上一次渲染）", _HOWTO_HEAD, None)
     cases = (metadata or {}).get("cases") or "（未知）"
@@ -874,7 +879,7 @@ def _write_meta_block(worksheet: Worksheet, metadata: Mapping[str, str]) -> None
     """在隐藏 Template 表末尾写入/刷新机器可读元信息块。"""
     marker_row = None
     for row in range(1, worksheet.max_row + 1):
-        if to_text(worksheet.cell(row=row, column=1).value).strip() == META_MARKER:
+        if to_text(worksheet.cell(row=row, column=1).value).strip() in _META_MARKERS:
             marker_row = row
             break
     start = marker_row if marker_row else worksheet.max_row + 2
@@ -900,7 +905,7 @@ def read_metadata(workbook: Workbook, config: ProjectConfig) -> dict[str, str]:
         for row in range(1, worksheet.max_row + 1):
             key = to_text(worksheet.cell(row=row, column=1).value).strip()
             value = to_text(worksheet.cell(row=row, column=2).value)
-            if key == META_MARKER:
+            if key in _META_MARKERS:
                 collecting = True
                 continue
             if collecting:
@@ -934,7 +939,7 @@ def load_workbook_file(path: str | Path) -> Workbook:
     """打开 Excel 文件，失败时给出可读的提示。"""
     target = Path(path)
     if not target.exists():
-        raise ExcelError(f"Excel 文件不存在: {target}（请先运行 `excel-codegen init` 生成模板）")
+        raise ExcelError(f"Excel 文件不存在: {target}（请先运行 `spreadsheet-codegen init` 生成模板）")
     if target.is_dir():
         raise ExcelError(f"路径是目录而不是 Excel 文件: {target}")
     try:
@@ -962,7 +967,7 @@ def check_required_sheets(workbook: Workbook, config: ProjectConfig) -> None:
             "Excel 缺少工作表: "
             + ", ".join(repr(name) for name in missing)
             + f"。当前工作表: {', '.join(workbook.sheetnames)}"
-            + "（可重新运行 `excel-codegen init --force` 生成模板）"
+            + "（可重新运行 `spreadsheet-codegen init --force` 生成模板）"
         )
     _check_header(workbook[config.excel.sheets.global_], GLOBAL_HEADERS, config.excel.sheets.global_)
     local_sheet = workbook[config.excel.sheets.local]

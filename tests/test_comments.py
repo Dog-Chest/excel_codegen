@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from excel_codegen import create_template, load_config
+from spreadsheet_codegen import create_template, load_config
 
 CONFIG = """\
 version: 1
@@ -118,7 +118,7 @@ def test_author_is_the_tool(project, tmp_path: Path) -> None:
     path = create_template(project, tmp_path / "t.xlsx", cases=1, overwrite=True)
     book = load_workbook(path)
     try:
-        assert book["Global Parameter"]["A2"].comment.author == "excel_codegen"
+        assert book["Global Parameter"]["A2"].comment.author == "spreadsheet_codegen"
     finally:
         book.close()
 

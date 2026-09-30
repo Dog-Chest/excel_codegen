@@ -2,7 +2,7 @@
 
     python run_probes.py
 
-这些探针最初是给 0.1.0 写的"最小复现"（当时不改 excel_codegen 的任何文件）。
+这些探针最初是给 0.1.0 写的"最小复现"（当时不改 spreadsheet_codegen 的任何文件）。
 修复会话（0.2.0）之后**原样重跑**，用来对照每一条的行为变化；
 探针 J / K 是修复新增的：分别验证 case_filter 与 render/check 的写回判定。
 """
@@ -19,7 +19,7 @@ ROOT = HERE.parent
 
 from openpyxl import load_workbook  # noqa: E402
 
-from excel_codegen import (  # noqa: E402
+from spreadsheet_codegen import (  # noqa: E402
     create_template,
     export_files,
     load_config,
@@ -225,7 +225,7 @@ def probe_gbk() -> None:
     env = dict(os.environ, PYTHONIOENCODING="gbk")
     env.pop("PYTHONUTF8", None)
     proc = subprocess.run(
-        [sys.executable, "-m", "excel_codegen", "validate", "-c", "probe_suffix.yaml"],
+        [sys.executable, "-m", "spreadsheet_codegen", "validate", "-c", "probe_suffix.yaml"],
         cwd=str(HERE),
         capture_output=True,
         env=env,
@@ -245,7 +245,7 @@ def probe_cli_writeback() -> None:
 
     def run(*args: str) -> tuple[int, list[str]]:
         proc = subprocess.run(
-            [sys.executable, "-m", "excel_codegen", *args],
+            [sys.executable, "-m", "spreadsheet_codegen", *args],
             cwd=str(HERE),
             capture_output=True,
             text=True,
@@ -299,7 +299,7 @@ def probe_cli_cases() -> None:
     banner("探针 G  init --cases：数量或 Case 名字   (FINDINGS #7)")
     import inspect
 
-    from excel_codegen import cli
+    from spreadsheet_codegen import cli
 
     sig = inspect.signature(cli.init_command)
     print(f"  cli.init_command 的 --cases 类型: {sig.parameters['cases'].annotation}")
@@ -314,7 +314,7 @@ def probe_cli_cases() -> None:
         [
             sys.executable,
             "-m",
-            "excel_codegen",
+            "spreadsheet_codegen",
             "init",
             "-c",
             "probe_suffix.yaml",
@@ -373,9 +373,11 @@ def probe_vertical_shrink() -> None:
 
 
 def main() -> int:
-    import excel_codegen
+    import spreadsheet_codegen
 
-    print(f"excel_codegen {excel_codegen.__version__} 探针复测（探针标题里的 FINDINGS 编号指向 0.1.0 的原始报告）")
+    print(
+        f"spreadsheet_codegen {spreadsheet_codegen.__version__} 探针复测（探针标题里的 FINDINGS 编号指向 0.1.0 的原始报告）"
+    )
     probe_suffix()
     probe_value()
     probe_twosets()

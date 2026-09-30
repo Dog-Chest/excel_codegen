@@ -1,7 +1,7 @@
-"""（项目侧工具，**不是** excel_codegen 的一部分）把 ``engine: excel`` 的公式在 Python 里算一遍。
+"""（项目侧工具，**不是** spreadsheet_codegen 的一部分）把 ``engine: excel`` 的公式在 Python 里算一遍。
 
-⚠ 如果你是 excel_codegen 的**使用者**，你要找的大概率不是这个脚本 ——
-工具自带 ``excel-codegen check --values`` 就能把公式算一遍再与 Python 渲染比对，
+⚠ 如果你是 spreadsheet_codegen 的**使用者**，你要找的大概率不是这个脚本 ——
+工具自带 ``spreadsheet-codegen check --values`` 就能把公式算一遍再与 Python 渲染比对，
 而且文法更全（含算术与派生格递归求值）。本脚本是本仓库 ``abs_fpi`` 项目侧的
 **独立复核**（另一套实现），用来给"公式引擎算得对"再加一条独立证据。
 
@@ -26,7 +26,7 @@ Python 渲染结果（``render_all``）逐行比对。两边一致 ⇒ 公式模
 
 已知边界：本求值器的文法**不含算术**（见 FINDINGS 0.5.0）。模板一旦用上 ``derived:``
 （参数表里会出现 ``+`` / ``*`` 之类），本脚本会报"不能识别的公式片段"，
-那时以工具自带的 ``excel-codegen check --values`` 为准（它含算术、且会递归求值派生格）。
+那时以工具自带的 ``spreadsheet-codegen check --values`` 为准（它含算术、且会递归求值派生格）。
 
 用法::
 
@@ -48,8 +48,8 @@ from openpyxl import load_workbook
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from excel_codegen import load_config, render_all  # noqa: E402
-from excel_codegen.utils import parse_cell, to_text  # noqa: E402
+from spreadsheet_codegen import load_config, render_all  # noqa: E402
+from spreadsheet_codegen.utils import parse_cell, to_text  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 # 词法

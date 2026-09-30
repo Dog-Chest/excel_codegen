@@ -7,9 +7,9 @@
 
 | 想要什么 | 去哪 |
 |---|---|
-| 三本工作簿 / 规则集 YAML / 模板（用户向） | [`../excel_codegen/examples/abs_fpi/`](../excel_codegen/examples/abs_fpi/) |
-| 怎么用、公式模式下什么免重跑、已知边界 | [那份示例的 README](../excel_codegen/examples/abs_fpi/README.md) |
-| **对 `excel_codegen` 的实测报告**（逐轮发现的问题与修复复测） | [`FINDINGS.md`](FINDINGS.md) |
+| 三本工作簿 / 规则集 YAML / 模板（用户向） | [`../spreadsheet_codegen/examples/abs_fpi/`](../spreadsheet_codegen/examples/abs_fpi/) |
+| 怎么用、公式模式下什么免重跑、已知边界 | [那份示例的 README](../spreadsheet_codegen/examples/abs_fpi/README.md) |
+| **对 `spreadsheet_codegen` 的实测报告**（逐轮发现的问题与修复复测） | [`FINDINGS.md`](FINDINGS.md) |
 | 模板库索引、怎么加下一个规范（DNV / BV …） | [`TEMPLATES.md`](TEMPLATES.md) |
 
 > ⚠️ **规范版权与免责**：本目录及其产出的示例依据 **ABS《Rules for Building and
@@ -23,7 +23,7 @@
 
 ## 这里的脚本做什么
 
-这些脚本按**绝对路径**指向 `../excel_codegen/examples/abs_fpi/` 里的示例资产
+这些脚本按**绝对路径**指向 `../spreadsheet_codegen/examples/abs_fpi/` 里的示例资产
 （`build.py` / `compose.py` / 两个探针里都有 `EXAMPLES` 常量），所以仓库结构变了不会指错。
 
 ```bash
@@ -69,5 +69,5 @@ node compare_with_rules.js             # 第 4 层：与外部 GeniE/Rules 逐�
 | `fill_cases.py` | 样例工况取值（只有首次 `--init` 用） |
 | `compare_with_rules.js` | 与 `GeniE/Rules` 逐行比对（第 4 层，需外部仓库） |
 | `probes/` | 对这一版工具的最小复现与探针（`_probe_run.txt` 是运行记录） |
-| `FINDINGS.md` | 对 `excel_codegen` 的实测报告（逐轮） |
+| `FINDINGS.md` | 对 `spreadsheet_codegen` 的实测报告（逐轮） |
 | `TEMPLATES.md` | 模板数据库索引 + 加新规范的清单 |

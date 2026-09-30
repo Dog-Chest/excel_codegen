@@ -1,11 +1,56 @@
 # 变更历史（CHANGELOG）
 
-本项目遵循"每个版本对应一次真实测试驱动"的节奏：0.1.0 落地 → 0.2.0 修实测报告 →
-0.3.0 加公式模式 → 0.4.0 补齐公式模式的验证链 → 0.5.0 派生参数 → 0.5.x 跨平台与文档 →
-0.6.0 取值约束 / `extends` / 行内 `{% if %}` / 质量护栏 → 0.7.0 校验与复用补齐 →
-0.8.0 行列风格 / 成员表落地 / NASTRAN 工况控制 → 0.8.1 环境体检（`setup.sh`）→
-0.9.0 内置示例随包发布（`excel-codegen examples`）→ 0.9.1 文档修正。逐条实测证据见
-[`abs_fpi/FINDINGS.md`](abs_fpi/FINDINGS.md)。
+> **项目已改名**：0.1.0 – 0.9.1 的历史属于**旧名字 `excel_codegen`**（PyPI 上叫
+> `excel-codegen`），本文件下半部分如实保留当时的名字。新名字 **`spreadsheet_codegen`**
+> 从 **1.0.0** 起算，改名原因见下面的 1.0.0 条目与 [`NOTICE.md`](NOTICE.md)。
+
+---
+
+## 1.0.0 — 改名为 spreadsheet_codegen（2026-09-30）
+
+**破坏性变更**：项目名从 `excel_codegen` 改为 **`spreadsheet_codegen`**
+（分发包 `excel-codegen` → `spreadsheet-codegen`，命令同理）。
+
+### 为什么改
+
+原名里带 **Microsoft 的商标 "Excel"**。把他人商标用作**产品名**，是商标法上最容易触发
+"混淆可能性"的用法；而 PyPI 的 [Acceptable Use Policy](https://policies.python.org/pypi.org/Acceptable-Use-Policy/)
+明文禁止"infringes any proprietary right of any party, including … trademark …"，
+且处罚是 *permanent and there is no basis to reverse* —— 投诉成立即下架、不可申诉恢复。
+风险不对称（收益只是名字直观，代价可能是包被永久下架），所以在几乎没有用户时改名最便宜。
+
+> **`excel` / `xlsx` 仍保留在关键词与文档正文里** —— 那是说明兼容性的**描述性使用**，
+> 合法，而且保住了搜索发现性。有风险的只是把商标放进**产品名**。
+
+### 改了什么
+
+- 包目录 `excel_codegen/` → `spreadsheet_codegen/`；导入名 `import excel_codegen` →
+  `import spreadsheet_codegen`（**不提供旧名兼容别名** —— 改名时几乎无人使用，干净切换）；
+- 分发包 `excel-codegen` → `spreadsheet-codegen`，CLI 命令同理；
+- 文档、示例、`pyproject.toml`、`MANIFEST.in`、`uv.lock`、GitHub 链接与 CI 徽章全部同步；
+- 示例里**已生成**的一键刷新脚本（`*_render.sh` / `.bat`）按新命令重新生成；
+- `setup.sh` 的环境变量 `EXCEL_CODEGEN_VENV` → `SPREADSHEET_CODEGEN_VENV`
+  （旧名仍然认，作为兼容回退）；默认 venv 位置随之改为 `~/.venvs/spreadsheet_codegen`；
+- 新增 [`NOTICE.md`](NOTICE.md)：商标归属、ABS 规范版权、工程免责与 AI 生成说明，
+  并随 wheel（`.dist-info/licenses/`）与 sdist 一起分发。
+
+### 不动的（有意为之）
+
+- YAML 配置里的 **`excel:` 段名**、`excel_io` 模块名、`excel_path` 等内部标识符 ——
+  它们描述的是**文件格式**而非产品名；改 `excel:` 还会破坏所有已有配置；
+- 文档与 `NOTICE.md` 里对 "Microsoft Excel" 的描述性提及。
+
+### 旧名字怎么处理
+
+- PyPI 项目名**不能改**，`excel-codegen` 会一直留在那里。它的最后版本是 **`0.9.2` 弃用版**
+  （README 引导到新名字），随后旧版本被 **yank**：新装的人装不到，已被锁定的依赖不受影响；
+- GitHub 仓库改名后旧 URL 自动重定向，外链不丢。
+
+### 回归
+
+349 项测试、覆盖率 87.91%、ruff / format / mypy 全过；`abs_fpi/build.py --check`
+公式求值 28 项 0 失败、三个探针通过；wheel / sdist 干净安装后
+`examples --copy` / `check` / `render` / `init` 全通。
 
 ---
 

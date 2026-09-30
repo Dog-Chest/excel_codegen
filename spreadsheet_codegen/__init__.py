@@ -1,8 +1,8 @@
-"""excel_codegen —— Excel 模板参数填写 + Jinja2 代码生成器。
+"""spreadsheet_codegen —— Excel 模板参数填写 + Jinja2 代码生成器。
 
 典型用法::
 
-    from excel_codegen import load_config, create_template, render_all, write_results
+    from spreadsheet_codegen import load_config, create_template, render_all, write_results
 
     config = load_config("examples/example.yaml")
     create_template(config, "template.xlsx", cases=2, overwrite=True)
@@ -10,7 +10,7 @@
     output = render_all(config, "template.xlsx")
     write_results("template.xlsx", config, output.results)
 
-命令行入口见 :mod:`excel_codegen.cli`（命令 ``excel-codegen``：init / render / validate / check）。
+命令行入口见 :mod:`spreadsheet_codegen.cli`（命令 ``spreadsheet-codegen``：init / render / validate / check）。
 """
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ from .utils import (
     to_text,
 )
 
-__version__ = "0.9.1"
+__version__ = "1.0.0"
 
 __all__ = [
     "FIRST_CASE_COLUMN",

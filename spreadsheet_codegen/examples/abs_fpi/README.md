@@ -1,6 +1,6 @@
 # 现场用例：ABS FPI 内外压 → GeniE
 
-用 `excel_codegen` 生成 **GeniE 面载荷函数体**（ABS FPI 2025 Part 5A Ch.3 Sec.2 的内压与外压）。
+用 `spreadsheet_codegen` 生成 **GeniE 面载荷函数体**（ABS FPI 2025 Part 5A Ch.3 Sec.2 的内压与外压）。
 
 **成品是一本 Excel**：在 `Global Parameter` / `Local Parameter` 表里填参数，`Code` 表里就是
 可以直接粘进 GeniE 的整段函数体 —— 而且是 **Excel 公式**，改参数后 Excel / WPS 打开即重算，
@@ -55,13 +55,13 @@ B 列起一个变量一列。舱的参数只写一遍，工况用 `tank_ref` 指
 
 ```bash
 # 打开工作簿改参数即可；要把代码导出成文件时：
-excel-codegen render -c abs_fpi_internal.yaml -x abs_fpi_internal.xlsx --outdir generated
+spreadsheet-codegen render -c abs_fpi_internal.yaml -x abs_fpi_internal.xlsx --outdir generated
 
 # 核对「Excel 里算出来的」与「Python 渲染的」是否一致：
-excel-codegen check -c abs_fpi_internal.yaml -x abs_fpi_internal.xlsx
+spreadsheet-codegen check -c abs_fpi_internal.yaml -x abs_fpi_internal.xlsx
 
 # 改了模板 / YAML 之后，要把新公式写回 Excel：
-excel-codegen render -c abs_fpi_internal.yaml -x abs_fpi_internal.xlsx --write-excel
+spreadsheet-codegen render -c abs_fpi_internal.yaml -x abs_fpi_internal.xlsx --write-excel
 ```
 
 同目录的 `*_render.bat`（Windows 双击）/ `*_render.sh` 就是最后一条命令。

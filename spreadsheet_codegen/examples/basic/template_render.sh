@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # ===========================================================================
-#  由 excel_codegen 生成 —— 改完参数跑一次本文件即可把结果写回 Output 表。
+#  由 spreadsheet_codegen 生成 —— 改完参数跑一次本文件即可把结果写回 Output 表。
 #  重新生成工作簿（init）时会一并覆盖本文件。
 # ===========================================================================
 set -uo pipefail
 cd "$(dirname "$0")"
 
 if command -v uv >/dev/null 2>&1; then
-  uv run excel-codegen render -c "abs_fpi_external.yaml" -x "abs_fpi_external.xlsx" --write-excel
+  uv run spreadsheet-codegen render -c "example.yaml" -x "template.xlsx" --write-excel
 else
-  excel-codegen render -c "abs_fpi_external.yaml" -x "abs_fpi_external.xlsx" --write-excel
+  spreadsheet-codegen render -c "example.yaml" -x "template.xlsx" --write-excel
 fi
 status=$?
 

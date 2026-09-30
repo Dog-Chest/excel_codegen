@@ -1,15 +1,15 @@
 @echo off
 REM ===========================================================================
-REM  由 excel_codegen 生成 —— 改完参数双击本文件即可把结果写回 Output 表。
+REM  由 spreadsheet_codegen 生成 —— 改完参数双击本文件即可把结果写回 Output 表。
 REM  重新生成工作簿（init）时会一并覆盖本文件。
 REM ===========================================================================
 cd /d "%~dp0"
 
 where uv >nul 2>nul
 if %errorlevel%==0 (
-  uv run excel-codegen render -c "abs_fpi_internal.yaml" -x "abs_fpi_internal.xlsx" --write-excel
+  uv run spreadsheet-codegen render -c "nastran_case_control.yaml" -x "nastran_case_control.xlsx" --write-excel
 ) else (
-  excel-codegen render -c "abs_fpi_internal.yaml" -x "abs_fpi_internal.xlsx" --write-excel
+  spreadsheet-codegen render -c "nastran_case_control.yaml" -x "nastran_case_control.xlsx" --write-excel
 )
 
 echo.

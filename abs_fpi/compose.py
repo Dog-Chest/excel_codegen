@@ -43,10 +43,10 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 #: 示例资产（compose.yaml 的配方与它产出/引用的 YAML）随包发布，见 examples/README.md
-EXAMPLES = HERE.parent / "excel_codegen" / "examples" / "abs_fpi"
+EXAMPLES = HERE.parent / "spreadsheet_codegen" / "examples" / "abs_fpi"
 sys.path.insert(0, str(HERE))
 
-from excel_codegen import load_config  # noqa: E402
+from spreadsheet_codegen import load_config  # noqa: E402
 
 MANIFEST = EXAMPLES / "compose.yaml"
 

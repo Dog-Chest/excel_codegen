@@ -13,15 +13,15 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from excel_codegen import (
+from spreadsheet_codegen import (
     ExcelError,
     create_template,
     load_config,
     render_all,
 )
-from excel_codegen.excel_io import check_value_constraints
-from excel_codegen.models import CaseData, VariableDef
-from excel_codegen.utils import ConfigError, VarValue
+from spreadsheet_codegen.excel_io import check_value_constraints
+from spreadsheet_codegen.models import CaseData, VariableDef
+from spreadsheet_codegen.utils import ConfigError, VarValue
 
 BASE = """\
 version: 1
@@ -314,7 +314,7 @@ def test_render_accepts_values_within_range(tmp_path: Path) -> None:
 def test_cli_validate_and_check_exit_nonzero(tmp_path: Path) -> None:
     from typer.testing import CliRunner
 
-    from excel_codegen.cli import app
+    from spreadsheet_codegen.cli import app
     from tests.test_cli import output_of
 
     _config, excel = _end_to_end(tmp_path)

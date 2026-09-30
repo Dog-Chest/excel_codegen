@@ -1,6 +1,6 @@
 # 商标、版权与免责声明（NOTICE）
 
-本文件是 [excel_codegen](README.md) 的法律声明汇总。
+本文件是 [spreadsheet_codegen](README.md) 的法律声明汇总。
 
 > **本项目与下列任何厂商均无关联，也未获得其赞助、认可或背书。**
 

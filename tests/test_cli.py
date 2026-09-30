@@ -12,7 +12,7 @@ import pytest
 from openpyxl import load_workbook
 from typer.testing import CliRunner
 
-from excel_codegen.cli import app
+from spreadsheet_codegen.cli import app
 
 runner = CliRunner()
 
@@ -35,7 +35,7 @@ def write_config(tmp_path: Path, config_text: str) -> Path:
 def test_cli_version() -> None:
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "excel-codegen" in output_of(result)
+    assert "spreadsheet-codegen" in output_of(result)
 
 
 def test_cli_init_render_validate(tmp_path: Path, config_text: str) -> None:
@@ -202,7 +202,7 @@ def test_cli_survives_gbk_stdout(tmp_path: Path, config_text: str, monkeypatch) 
 
     直接调用命令函数（绕开 CliRunner 的捕获），这样 rich 真正写到我们换上去的流上。
     """
-    from excel_codegen import cli
+    from spreadsheet_codegen import cli
 
     config_path = write_config(tmp_path, config_text)
     raw = io.BytesIO()
@@ -528,7 +528,7 @@ def test_cli_check_verifies_formula_values(tmp_path: Path) -> None:
     ① 结构破坏（插 Case 列）—— 公式文本/表头/行数会报出不一致，退出码 1；
     ② 值校验这条链路本身 —— 把求值结果替换成错的，必须被抓出来（否则默认开就没意义）。
     """
-    from excel_codegen import cli as cli_module
+    from spreadsheet_codegen import cli as cli_module
 
     config_path = tmp_path / "formula_cli.yaml"
     config_path.write_text(FORMULA_CLI_YAML, encoding="utf-8")

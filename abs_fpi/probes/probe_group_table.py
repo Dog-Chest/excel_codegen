@@ -11,7 +11,7 @@
 4. **指针指向不存在的成员 → 明确报错并列出可选成员**（不是悄悄回落默认值）。
 
 外加一条：`case_name` / 派生参数 / 公式模式都照常工作 —— 第 4 步用的是
-`excel-codegen check`（工具自带，含"把公式在 Python 里算一遍"）。
+`spreadsheet-codegen check`（工具自带，含"把公式在 Python 里算一遍"）。
 
 注意：探针只在 `probes/_out/` 里的**副本**上动手，不会碰仓库里的工作簿。
 """
@@ -27,8 +27,8 @@ from openpyxl import load_workbook
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent  # abs_fpi/：现场脚本与实测报告
-#: 示例资产随包发布（0.9.0 起从 abs_fpi/ 挪到 excel_codegen/examples/abs_fpi/，见 examples/README.md）
-EXAMPLES = ROOT.parent / "excel_codegen" / "examples" / "abs_fpi"
+#: 示例资产随包发布（0.9.0 起从 abs_fpi/ 挪到 spreadsheet_codegen/examples/abs_fpi/，见 examples/README.md）
+EXAMPLES = ROOT.parent / "spreadsheet_codegen" / "examples" / "abs_fpi"
 YAML = EXAMPLES / "abs_fpi_internal.yaml"
 BOOK = EXAMPLES / "abs_fpi_internal.xlsx"
 OUT = HERE / "_out"
@@ -43,13 +43,13 @@ def banner(text: str) -> None:
 
 def load():
     sys.path.insert(0, str(ROOT))
-    from excel_codegen import load_config
+    from spreadsheet_codegen import load_config
 
     return load_config(YAML)
 
 
 def render(cfg, book: Path) -> dict[str, list[str]]:
-    from excel_codegen import render_all
+    from spreadsheet_codegen import render_all
 
     out = render_all(cfg, book)
     return {result.case_name: result.lines for result in out.results[TEMPLATE]}
@@ -167,7 +167,7 @@ def step4(cfg, book: Path) -> None:
     raw["excel"]["output"] = "probe_group_nokeys.xlsx"
     plain.write_text(_yaml.safe_dump(raw, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
-    from excel_codegen import load_config
+    from spreadsheet_codegen import load_config
 
     plain_cfg = load_config(plain)
     try:
@@ -202,7 +202,7 @@ def step5(cfg, book: Path) -> None:
     print("Code 表里引用成员表的公式（节选）：")
     print("   ", hit[:200], "…")
     proc = subprocess.run(
-        [sys.executable, "-m", "excel_codegen", "check", "-c", str(YAML), "-x", str(book)],
+        [sys.executable, "-m", "spreadsheet_codegen", "check", "-c", str(YAML), "-x", str(book)],
         capture_output=True,
         text=True,
         encoding="utf-8",

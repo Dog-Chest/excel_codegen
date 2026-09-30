@@ -8,7 +8,7 @@
 
 本探针用两份副本各做一次，并看两件事：
   1. `verify_excel_engine.py` 的求值比对是否失败（说明"Excel 里算出来的代码"已经和参数不一致）；
-  2. `excel-codegen check` 是否能发现（这决定它能不能放进 CI 当护栏）。
+  2. `spreadsheet-codegen check` 是否能发现（这决定它能不能放进 CI 当护栏）。
 
     python probe_formula_structure.py
 """
@@ -25,8 +25,8 @@ from openpyxl import load_workbook
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent  # abs_fpi/：现场脚本与实测报告
-#: 示例资产随包发布（0.9.0 起从 abs_fpi/ 挪到 excel_codegen/examples/abs_fpi/，见 examples/README.md）
-EXAMPLES = ROOT.parent / "excel_codegen" / "examples" / "abs_fpi"
+#: 示例资产随包发布（0.9.0 起从 abs_fpi/ 挪到 spreadsheet_codegen/examples/abs_fpi/，见 examples/README.md）
+EXAMPLES = ROOT.parent / "spreadsheet_codegen" / "examples" / "abs_fpi"
 PROJECT = EXAMPLES / "abs_fpi.yaml"
 BOOK = EXAMPLES / "ABS_FPI_load_cases.xlsx"
 PY = Path(sys.executable)
@@ -44,7 +44,7 @@ def verify(book: Path) -> tuple[int, str]:
 
 
 def check(book: Path) -> tuple[int, str]:
-    return run([str(PY), "-m", "excel_codegen", "check", "-c", str(PROJECT), "-x", str(book)])
+    return run([str(PY), "-m", "spreadsheet_codegen", "check", "-c", str(PROJECT), "-x", str(book)])
 
 
 def banner(text: str) -> None:
@@ -75,7 +75,7 @@ def main() -> int:
         print("   " + "\n   ".join(out.strip().splitlines()[-6:]))
     code2, out2 = check(n1)
     print(
-        f"  excel-codegen check    → exit {code2}   "
+        f"  spreadsheet-codegen check    → exit {code2}   "
         f"{'（插变量行不影响公式文本，所以 check 也不该报过期）' if code2 == 0 else '报过期'}"
     )
     if code2:
@@ -99,7 +99,7 @@ def main() -> int:
     for line in out.strip().splitlines()[-8:]:
         print("   " + line)
     code2, out2 = check(n2)
-    print(f"  excel-codegen check    → exit {code2}   {'没发现' if code2 == 0 else '发现过期 ✓（可放进 CI）'}")
+    print(f"  spreadsheet-codegen check    → exit {code2}   {'没发现' if code2 == 0 else '发现过期 ✓（可放进 CI）'}")
     for line in out2.strip().splitlines():
         if "ERROR" in line or "不同" in line or "参数指纹" in line or "输出指纹" in line:
             print("   " + line.strip())

@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from excel_codegen.excel_io import create_template, write_results
-from excel_codegen.formula import FormulaError, compile_formulas, compile_line
-from excel_codegen.models import ProjectConfig, load_config
-from excel_codegen.renderer import render_all
+from spreadsheet_codegen.excel_io import create_template, write_results
+from spreadsheet_codegen.formula import FormulaError, compile_formulas, compile_line
+from spreadsheet_codegen.models import ProjectConfig, load_config
+from spreadsheet_codegen.renderer import render_all
 
 FORMULA_YAML = """\
 version: 1

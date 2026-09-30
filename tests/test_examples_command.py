@@ -1,7 +1,7 @@
-"""内置示例（`excel_codegen/examples/`）与 `excel-codegen examples` 命令。
+"""内置示例（`spreadsheet_codegen/examples/`）与 `spreadsheet-codegen examples` 命令。
 
 0.9.0 起示例是**包数据**：wheel 与 sdist 里都有一份，所以"装了 pip 包、没克隆仓库"的人
-也能 `excel-codegen examples --copy ./demo` 拿到完整示例（含已填好样例参数的工作簿）。
+也能 `spreadsheet-codegen examples --copy ./demo` 拿到完整示例（含已填好样例参数的工作簿）。
 这里守住三件事：
 
 1. **清单不漂移**：`examples/` 下的目录与 `example_pack.EXAMPLES` 一一对应（新增目录忘了
@@ -18,10 +18,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from excel_codegen.cli import app
-from excel_codegen.example_pack import EXAMPLES, copy_examples, examples_root
-from excel_codegen.models import load_config
-from excel_codegen.utils import CodeGenError
+from spreadsheet_codegen.cli import app
+from spreadsheet_codegen.example_pack import EXAMPLES, copy_examples, examples_root
+from spreadsheet_codegen.models import load_config
+from spreadsheet_codegen.utils import CodeGenError
 
 runner = CliRunner()
 

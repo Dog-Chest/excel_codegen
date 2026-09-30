@@ -12,14 +12,14 @@ from typing import ClassVar
 import pytest
 from openpyxl import load_workbook
 
-from excel_codegen.excel_io import create_template, write_results
-from excel_codegen.formula_eval import (
+from spreadsheet_codegen.excel_io import create_template, write_results
+from spreadsheet_codegen.formula_eval import (
     FormulaEvalError,
     evaluate_formula,
     evaluate_template_values,
 )
-from excel_codegen.models import ProjectConfig, load_config
-from excel_codegen.renderer import render_all
+from spreadsheet_codegen.models import ProjectConfig, load_config
+from spreadsheet_codegen.renderer import render_all
 
 FORMULA_YAML = """\
 version: 1
@@ -79,7 +79,7 @@ class FakeReader:
         self.names = names
 
     def cell_value(self, sheet: str, column: int, row: int):
-        from excel_codegen.utils import column_index_to_letter
+        from spreadsheet_codegen.utils import column_index_to_letter
 
         address = f"{column_index_to_letter(column)}{row}"
         if sheet not in self.cells:

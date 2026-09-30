@@ -2,7 +2,7 @@
 
 目标用户是工程师而不是终端爱好者 —— HOWTO 表里写了命令，但还得自己开终端敲。
 这组测试除了检查生成物，还会**真的执行一遍** ``.sh``（用一个桩程序冒充
-``excel-codegen``），确认 cd、参数、退出码都对。
+``spreadsheet-codegen``），确认 cd、参数、退出码都对。
 """
 
 from __future__ import annotations
@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from excel_codegen import create_template, load_config
+from spreadsheet_codegen import create_template, load_config
 
-#: 这两个用例**真的执行**生成的 ``.sh``（用桩程序冒充 excel-codegen）。
+#: 这两个用例**真的执行**生成的 ``.sh``（用桩程序冒充 spreadsheet-codegen）。
 #: Windows 上跑不了：PATH 是 Unix 格式、桩程序是无扩展名的 shell 脚本。
 #: ``.bat`` 那一路改为断言内容（见 test_bat_uses_windows_separators_and_crlf）。
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="执行 .sh 需要 POSIX shell")
@@ -110,12 +110,12 @@ def test_config_path_is_relative_to_script_dir(config_path: Path, tmp_path: Path
 
 
 def test_bat_prefers_uv_with_fallback(config_path: Path, tmp_path: Path) -> None:
-    """装了 uv 用 uv run；没装则退回 PATH 里的 excel-codegen。"""
+    """装了 uv 用 uv run；没装则退回 PATH 里的 spreadsheet-codegen。"""
     create_template(load_config(config_path), tmp_path / "template.xlsx", cases=1, overwrite=True)
     bat = (tmp_path / "template_render.bat").read_text(encoding="utf-8")
     assert "where uv" in bat
-    assert "uv run excel-codegen render" in bat
-    assert "\n  excel-codegen render" in bat.replace("\r\n", "\n")
+    assert "uv run spreadsheet-codegen render" in bat
+    assert "\n  spreadsheet-codegen render" in bat.replace("\r\n", "\n")
 
 
 @posix_only
@@ -126,7 +126,7 @@ def test_generated_sh_actually_runs(config_path: Path, tmp_path: Path) -> None:
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
     recorded = tmp_path / "args.txt"
-    stub = stub_dir / "excel-codegen"
+    stub = stub_dir / "spreadsheet-codegen"
     stub.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{recorded}"\n', encoding="utf-8")
     stub.chmod(0o755)
 
@@ -161,7 +161,7 @@ def test_generated_sh_propagates_failure(tmp_path: Path) -> None:
 
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
-    stub = stub_dir / "excel-codegen"
+    stub = stub_dir / "spreadsheet-codegen"
     stub.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
     stub.chmod(0o755)
 

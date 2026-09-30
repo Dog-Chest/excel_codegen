@@ -14,13 +14,13 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from excel_codegen import create_template, load_config, render_all
-from excel_codegen.cli import app
-from excel_codegen.excel_io import write_results
-from excel_codegen.formula import FormulaError, compile_formulas
-from excel_codegen.jinja_env import build_environment
-from excel_codegen.renderer import collect_variables, render_template, validate_template
-from excel_codegen.utils import RenderError
+from spreadsheet_codegen import create_template, load_config, render_all
+from spreadsheet_codegen.cli import app
+from spreadsheet_codegen.excel_io import write_results
+from spreadsheet_codegen.formula import FormulaError, compile_formulas
+from spreadsheet_codegen.jinja_env import build_environment
+from spreadsheet_codegen.renderer import collect_variables, render_template, validate_template
+from spreadsheet_codegen.utils import RenderError
 
 runner = CliRunner()
 

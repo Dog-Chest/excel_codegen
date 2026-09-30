@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from excel_codegen.excel_io import create_template  # noqa: E402
-from excel_codegen.models import ProjectConfig, load_config  # noqa: E402
+from spreadsheet_codegen.excel_io import create_template  # noqa: E402
+from spreadsheet_codegen.models import ProjectConfig, load_config  # noqa: E402
 
 CONFIG_YAML = """\
 version: 1

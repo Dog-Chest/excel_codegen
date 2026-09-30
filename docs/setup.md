@@ -17,9 +17,9 @@ pipx install uv                                                 # 任何系统
 
 # 之后在任何系统、任何目录，命令完全一样
 uv run pytest                                   # 自动建环境 + 按 uv.lock 装依赖 + 跑测试
-uv run excel-codegen --version                  # 跑 CLI，不用 activate
-uv run excel-codegen examples --copy ./examples # 内置示例（带已填好样例参数的工作簿）
-uv run excel-codegen render -c examples/basic/example.yaml -x examples/basic/template.xlsx --write-excel
+uv run spreadsheet-codegen --version                  # 跑 CLI，不用 activate
+uv run spreadsheet-codegen examples --copy ./examples # 内置示例（带已填好样例参数的工作簿）
+uv run spreadsheet-codegen render -c examples/basic/example.yaml -x examples/basic/template.xlsx --write-excel
 uv run python abs_fpi/build.py --check
 ```
 
@@ -31,14 +31,14 @@ uv run python abs_fpi/build.py --check
 | 各机器装到的依赖版本不一致 | `uv.lock` 是**跨平台锁文件**，同一份锁同时含 `win_amd64` / `macosx_*` / `manylinux` / `musllinux` 的 wheel，三个系统装出来完全一致 |
 | 测试依赖要额外加参数 | `[dependency-groups] dev` 是 uv 的**默认**依赖组，`uv run` 会一起装上 —— 所以 `uv run pytest` 不需要 `--extra dev` |
 
-这个仓库只需要记住两条命令：**`uv run pytest`**（验证）和 **`uv run excel-codegen ...`**（干活）。
+这个仓库只需要记住两条命令：**`uv run pytest`**（验证）和 **`uv run spreadsheet-codegen ...`**（干活）。
 
 > **环境放哪**：uv 默认在仓库里建 `.venv/`（在原生盘上这是最优的）。仓库在外置 NTFS / exFAT
 > 盘上、想把环境挪走时用环境变量（这是 uv 唯一支持的方式，`pyproject.toml` 里没有对应开关）：
 >
 > ```bash
-> export UV_PROJECT_ENVIRONMENT=~/.venvs/excel_codegen                # Linux / macOS
-> $env:UV_PROJECT_ENVIRONMENT = "$HOME\.venvs\excel_codegen"          # Windows PowerShell
+> export UV_PROJECT_ENVIRONMENT=~/.venvs/spreadsheet_codegen                # Linux / macOS
+> $env:UV_PROJECT_ENVIRONMENT = "$HOME\.venvs\spreadsheet_codegen"          # Windows PowerShell
 > ```
 >
 > 或者直接跑 `./setup.sh`，它会自动探测文件系统并替你设好。
@@ -50,7 +50,7 @@ uv run python abs_fpi/build.py --check
 ## 经典方式：venv + pip
 
 ```bash
-cd excel_codegen
+cd spreadsheet_codegen
 
 python3 -m venv .venv
 # Windows
@@ -61,7 +61,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"        # 含测试依赖
 ```
 
-安装后会得到命令 `excel-codegen`（也可用 `python -m excel_codegen`）。
+安装后会得到命令 `spreadsheet-codegen`（也可用 `python -m spreadsheet_codegen`）。
 
 `[project.optional-dependencies] dev` 与 `[dependency-groups] dev` 内容一致：pip 侧用 extra，
 uv 侧用依赖组。**改一处记得改另一处。**
@@ -72,7 +72,7 @@ uv 侧用依赖组。**改一处记得改另一处。**
 ./setup.sh                                       # 自动选位置 + 装依赖 + 跑测试
 ./setup.sh --no-test                             # 只装环境
 ./setup.sh --recreate                            # 删掉旧环境重建（环境半坏时用这个）
-EXCEL_CODEGEN_VENV=/data/venvs/ecg ./setup.sh    # 也可以自己指定环境位置
+SPREADSHEET_CODEGEN_VENV=/data/venvs/ecg ./setup.sh    # 也可以自己指定环境位置
 ```
 
 它会做几件事：挑 uv / venv 路径、探测仓库所在文件系统决定环境放哪、装依赖、跑一遍测试，
@@ -100,8 +100,8 @@ EXCEL_CODEGEN_VENV=/data/venvs/ecg ./setup.sh    # 也可以自己指定环境�
 
 ```powershell
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"   # 装 uv（一次性）
-uv tool install excel-codegen                                # 装工具
-excel-codegen examples --copy .\examples                     # 拿示例（含已填好的工作簿）
+uv tool install spreadsheet-codegen                                # 装工具
+spreadsheet-codegen examples --copy .\examples                     # 拿示例（含已填好的工作簿）
 start .\examples\abs_fpi\abs_fpi_internal.xlsx               # 打开改参数
 ```
 
@@ -109,7 +109,7 @@ start .\examples\abs_fpi\abs_fpi_internal.xlsx               # 打开改参数
 
 ```powershell
 uv run pytest
-uv run excel-codegen --version
+uv run spreadsheet-codegen --version
 ```
 
 几个 Windows 特有的点：
@@ -146,8 +146,8 @@ uv run excel-codegen --version
    所以：环境放原生盘更省心，且**不要在装依赖时 Ctrl-C**。
 
    ```bash
-   python3 -m venv ~/.venvs/excel_codegen
-   source ~/.venvs/excel_codegen/bin/activate
+   python3 -m venv ~/.venvs/spreadsheet_codegen
+   source ~/.venvs/spreadsheet_codegen/bin/activate
    pip install -e ".[dev]" && pytest
    ```
 

@@ -1,14 +1,14 @@
-# excel_codegen 实测报告（ABS FPI 内外压移植）
+# spreadsheet_codegen 实测报告（ABS FPI 内外压移植）
 
-日期：2026-09-24 ｜ 被测版本：`excel_codegen 0.1.0`，Python 3.14.5，Windows / 中文区域
-被测对象：`excel_codegen`（`pyproject.toml`、`excel_codegen/*.py`、`docs/template_guide.md`）
+日期：2026-09-24 ｜ 被测版本：`spreadsheet_codegen 0.1.0`，Python 3.14.5，Windows / 中文区域
+被测对象：`spreadsheet_codegen`（`pyproject.toml`、`spreadsheet_codegen/*.py`、`docs/template_guide.md`）
 测试方式：把 `GeniE/Rules` 里已经过量纲校验的 ABS FPI 内外压 GeniE 加载代码，
 按本项目的 YAML + Jinja2 格式重写一遍（见 [README.md](README.md)），跑通全流程并逐个试探边界。
 
-**本报告只记录问题，没有改动 `excel_codegen` 的任何文件。**
+**本报告只记录问题，没有改动 `spreadsheet_codegen` 的任何文件。**
 每条都给了最小复现，`probes/run_probes.py` 可以一次跑完全部探针。
 
-> **修复会话（2026-09-24 ｜ `excel_codegen` 0.2.0）**：本报告的 12 条待修项中 **11 条已修**，
+> **修复会话（2026-09-24 ｜ `spreadsheet_codegen` 0.2.0）**：本报告的 12 条待修项中 **11 条已修**，
 > #3(a)「第三层作用域」当时判定为**能力边界**，0.7.0 补上了能力（`variables.group` 成员表，
 > 指南 §18）、0.8.0 在本项目里落地（`Tank Data` 表，见 `probes/probe_group_table.py`）。
 > 另一条（#3(b) per-template Case 过滤）由 0.6.0 的 `case_filter` 解决。
@@ -164,7 +164,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 ## #1（高）GBK 控制台：收尾打印 `✓` 抛 UnicodeEncodeError，退出码 1
 
-**位置**：`excel_codegen/cli.py:217`（`render_command` 末尾）、`cli.py:332`（`validate_command` 末尾）
+**位置**：`spreadsheet_codegen/cli.py:217`（`render_command` 末尾）、`cli.py:332`（`validate_command` 末尾）
 
 ```python
 console.print("[bold green]✓[/] 渲染完成")
@@ -177,7 +177,7 @@ console.print("[bold green]✓[/] 配置校验通过")
 **复现**
 
 ```powershell
-python -m excel_codegen validate -c abs_fpi_external.yaml -x external.xlsx
+python -m spreadsheet_codegen validate -c abs_fpi_external.yaml -x external.xlsx
 ```
 
 **实际**
@@ -215,7 +215,7 @@ $env:PYTHONUTF8='1'      # 或 chcp 65001
 
 ## #2（高）Prefix / Suffix 被 `.strip()`，带前导空格的单位被吞掉
 
-**位置**：`excel_codegen/excel_io.py:316-317`（`read_global_values`）、`excel_io.py:361-362`（`read_cases`）
+**位置**：`spreadsheet_codegen/excel_io.py:316-317`（`read_global_values`）、`excel_io.py:361-362`（`read_cases`）
 
 ```python
 prefix = to_text(worksheet.cell(row=row, column=_GLOBAL_COL["prefix"]).value).strip()
@@ -474,7 +474,7 @@ _NoDupLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _no
 **复现**
 
 ```
-$ python -m excel_codegen init -c probe_suffix.yaml --cases Case1
+$ python -m spreadsheet_codegen init -c probe_suffix.yaml --cases Case1
 Invalid value for '--cases': 'Case1' is not a valid int range.
 exit=2
 ```
@@ -494,7 +494,7 @@ exit=2
 
 先说清楚**不是**哪一类问题：生成本身是对的。作者实测过（见下面的证据），
 只要跑 `render --write-excel`，`Code!B6` 会立刻从 `var L = 340 m;` 变成 `var L = 400 m;`。
-`excel_codegen` 是**快照式**工具：Excel 是"表单"，`Code` 表是 `render` 写下的一份快照，
+`spreadsheet_codegen` 是**快照式**工具：Excel 是"表单"，`Code` 表是 `render` 写下的一份快照，
 不是活公式 —— 这一点在 `README.md` 与 `template_guide.md` §1 的心智模型里是讲了的。
 
 但这里有三个真实的缺陷叠在一起，使得"改了参数、代码没变"变成**默认结局**。
@@ -512,12 +512,12 @@ if write_excel:
 **实测**（`external.xlsx` 里把 L 改成 500，然后两种跑法）：
 
 ```
-$ excel-codegen render -c abs_fpi_external.yaml -x external.xlsx --no-show
+$ spreadsheet-codegen render -c abs_fpi_external.yaml -x external.xlsx --no-show
 │ 渲染结果 │ 6 个（2 模板 × 3 Case） │
 ✓ 渲染完成                            ← 什么都没写回，但说了"完成"
   -> Code!B6 = 'var L = 340 m;'       ← 还是旧值
 
-$ excel-codegen render -c abs_fpi_external.yaml -x external.xlsx --write-excel --no-show
+$ spreadsheet-codegen render -c abs_fpi_external.yaml -x external.xlsx --write-excel --no-show
 │ 写回 Excel │ 是 │
 ✓ 渲染完成
   -> Code!B6 = 'var L = 500 m;'       ← 这次才变
@@ -563,7 +563,7 @@ Code!A2 = None                       ← Code 表本身也没有一句说明
 配合 #5（清理范围算错、旧行残留），旧代码还会以"多出来几行"的形式混进去。
 
 **建议修法**（不实施）：渲染时把参数的指纹写进 `Template` 表（它已经是隐藏的元信息表），
-再给 CLI 加一个 `excel-codegen check`（或 `render --check`）：重算指纹/重新渲染并与表内比对，
+再给 CLI 加一个 `spreadsheet-codegen check`（或 `render --check`）：重算指纹/重新渲染并与表内比对，
 不一致就非 0 退出。**这一条同时是 CI 里的护栏**：可以断言"提交的工作簿与其代码是同步的"。
 
 ### 8.4 顺带的兄弟陷阱：隐藏的 `Template` 表可编辑、但改了没用
@@ -632,8 +632,8 @@ external.xlsx
 
 # 修复复测记录（2026-09-24）
 
-被测版本从 `0.1.0` 升到 `0.2.0`（`pyproject.toml` / `excel_codegen/__init__.py` 同步）。
-本节记录"改了什么、拿什么证据确认改对了"。命令都在 `excel_codegen/` 下执行，
+被测版本从 `0.1.0` 升到 `0.2.0`（`pyproject.toml` / `spreadsheet_codegen/__init__.py` 同步）。
+本节记录"改了什么、拿什么证据确认改对了"。命令都在 `spreadsheet_codegen/` 下执行，
 `<venv>` 指仓库内的 `.venv\Scripts\python.exe`。
 
 ## 复测命令与结果
@@ -645,7 +645,7 @@ external.xlsx
 | `<venv> abs_fpi/build.py` | 两个工作簿刷新成功（`[ok] … 参数指纹 abc6f4021c38 / 7a723e97e95a`） |
 | `<venv> abs_fpi/build.py --check` | `[ok] Code 表与当前参数一致`（两个工作簿，exit 0） |
 | `node abs_fpi/compare_with_rules.js` | **21 checks, 0 failure(s)**（与 `GeniE/Rules` 的产物仍然逐行一致） |
-| `PYTHONIOENCODING=gbk <venv> -m excel_codegen validate -c …` | exit 0（0.1.0 时是 `UnicodeEncodeError` + exit 1） |
+| `PYTHONIOENCODING=gbk <venv> -m spreadsheet_codegen validate -c …` | exit 0（0.1.0 时是 `UnicodeEncodeError` + exit 1） |
 
 ## 逐条状态
 
@@ -661,7 +661,7 @@ external.xlsx
 | 7 | 低 | **已修** | `cli._parse_cases`：`--cases` 接受 `3` 或 `EXT-T20,INT-T15`；`create_template(include_howto_sheet=…)` 同步暴露 | 探针 G：`--cases case_alpha,case_beta` → exit 0；`test_cli_init_accepts_case_names` |
 | 8.1 | 高 | **已修** | `cli.render_command`：摘要**永远**打印"写回 Excel"行，未落盘时再补一条 `!` 提示 | 探针 K：`写回 Excel │ 否（需要 --write-excel）` + `! 本次只预览…`；`test_cli_render_never_silently_skips_writeback` |
 | 8.2 | 高 | **已修** | `excel_io.write_howto_sheet`：`create_template` 生成 `HOWTO` 表（第一张），写清三步 + 命令 + 快照提醒 + 每个模板的输出位置 | 探针 H / `test_create_template_layout`；`--howto/--no-howto` 可关闭（`test_cli_init_no_howto`） |
-| 8.3 | 高 | **已修** | `write_results` 写入时间 / 参数指纹 / 输出指纹 / 工况一览（HOWTO 表 + 隐藏 Template 表的 `## excel-codegen-meta` 块）；新增 `excel-codegen check` 命令，过期即 exit 1 并指出第几行不同 | 探针 K：写回后 `check` → `记录 80ecfe5dc6e7 / 当前 80ecfe5dc6e7`、exit 0；`test_cli_check_reports_stale_and_fresh`、`test_cli_check_detects_missing_render`、`test_write_results_records_fingerprints` |
+| 8.3 | 高 | **已修** | `write_results` 写入时间 / 参数指纹 / 输出指纹 / 工况一览（HOWTO 表 + 隐藏 Template 表的 `## spreadsheet-codegen-meta` 块）；新增 `spreadsheet-codegen check` 命令，过期即 exit 1 并指出第几行不同 | 探针 K：写回后 `check` → `记录 80ecfe5dc6e7 / 当前 80ecfe5dc6e7`、exit 0；`test_cli_check_reports_stale_and_fresh`、`test_cli_check_detects_missing_render`、`test_write_results_records_fingerprints` |
 | 8.4 | 极小 | **已修** | `Template` 表首行加"!! 只读参考：模板真源是 YAML / template_file"红字提示 | `test_create_template_layout` 断言 |
 | 观察 1 | — | **已做** | `validate` 新增"YAML 定义了但没有被任何模板引用"的告警 | `test_cli_validate_warns_about_unused_variable` |
 | 观察 2 | — | **已做（文档）** | `template_guide.md` §8 说明 `safe_filename` 只替换 `<>:"/\|?*` 与控制字符（`+`、`.` 安全） | — |
@@ -670,7 +670,7 @@ external.xlsx
 ## 本轮新发现（报告里没有的）
 
 **元信息两条读取路径的键名不一致**：`read_metadata` 从隐藏 `Template` 表的
-`## excel-codegen-meta` 块读出来是中文键（`时间` / `参数指纹` / `输出指纹`），
+`## spreadsheet-codegen-meta` 块读出来是中文键（`时间` / `参数指纹` / `输出指纹`），
 而从 `HOWTO` 表（`template_sheet: null` 时的退化路径）读出来却是英文键
 （`generated_at` / `input_fingerprint` / `output_fingerprint`）。
 于是 `template_sheet: null` 的工作簿里，`check` 永远显示"记录 （无）"，
@@ -718,7 +718,7 @@ external.xlsx
 
 # 0.3.0 复测：内外压模板改用公式模式（本节更正上面那个结论）
 
-> 复测日期 2026-09-24 ｜ 被测：`excel_codegen 0.3.0`（`engine: excel`）
+> 复测日期 2026-09-24 ｜ 被测：`spreadsheet_codegen 0.3.0`（`engine: excel`）
 > 复测产物：`abs_fpi_external.xlsx` / `abs_fpi_internal.xlsx` / `ABS_FPI_load_cases.xlsx`
 > 一句话：**ABS FPI 的内外压模板可以进公式模式**，上面那段"必须留在 snapshot"的判断是错的。
 
@@ -866,14 +866,14 @@ ABS_FPI_load_cases.xlsx    公式格  958 个，最长 2702 字符（汇总表�
 
 # 0.4.0 回应：本轮 A–H 的处置（修复会话）
 
-> 修复日期 2026-09-24 ｜ 被测：`excel_codegen 0.4.0`
+> 修复日期 2026-09-24 ｜ 被测：`spreadsheet_codegen 0.4.0`
 > 复测：`pytest` 86 项全过；`python build.py` 的公式求值 28 项 0 失败；
 > `node compare_with_rules.js` 21 项 0 失败；三个工作簿 `check`（含值校验）exit 0。
 
 | 条目 | 处置 | 落点 / 证据 |
 | --- | --- | --- |
 | **A. 错误判断** | ✅ **已更正** | `docs/template_guide.md` §14.6 + 根 `README.md`：判断标准改成"有没有 `{%`"，并写明"生成目标语言自己的 `if/else` 只是字面文本"。上节末尾也加了指向本节的更正提示。 |
-| **B. 公式值没人验** | ✅ **已做进工具** | 新增 `excel_codegen/formula_eval.py`（`&` / `IF` / `ISBLANK` / `TEXT` / `INDEX`+`MATCH` / 相对列）；`check` **默认**在公式模式下把 Output 表里的公式算一遍，与 `render_all` 逐行比对（`--no-values` 可关，参数单元格本身是公式时自动降级并提示）。`abs_fpi/verify_excel_engine.py` 仍然保留 —— 它是项目侧的独立回归工具，现在是**第二重**证据。 |
+| **B. 公式值没人验** | ✅ **已做进工具** | 新增 `spreadsheet_codegen/formula_eval.py`（`&` / `IF` / `ISBLANK` / `TEXT` / `INDEX`+`MATCH` / 相对列）；`check` **默认**在公式模式下把 Output 表里的公式算一遍，与 `render_all` 逐行比对（`--no-values` 可关，参数单元格本身是公式时自动降级并提示）。`abs_fpi/verify_excel_engine.py` 仍然保留 —— 它是项目侧的独立回归工具，现在是**第二重**证据。 |
 | **C. 改结构的两面性** | ✅ **已写进文档** | §14.5 新增表格：改参数 / 插删变量行 / 改前后缀 → 不用重跑；增删移动 Case 列 / 改 YAML / 改 `case_filter` → 要重跑。差异信息也改成人读的形态。 |
 | **D. 空 Case 列悄悄改归属** | ✅ **已加告警** | `read_cases` 记录 `explicit_values`，`render` / `check` 对"整列都空的 Case"提示它可能悄悄落进某个 `case_filter` 规则集，并点名归属变量。 |
 | **E. 公式模式下贴公式片段** | ✅ **已改** | 公式模式不一致时贴**模板第几行 + 该行原文**，并对长文本做截断（`_clip`）；`check` 的输出现在能直接指向"哪一行模板错了"。 |
@@ -890,7 +890,7 @@ ABS_FPI_load_cases.xlsx    公式格  958 个，最长 2702 字符（汇总表�
 
 # 0.5.0 回应：派生参数（`derived:`）与数值形态统一
 
-> 修复日期 2026-09-24 ｜ 被测：`excel_codegen 0.5.0`
+> 修复日期 2026-09-24 ｜ 被测：`spreadsheet_codegen 0.5.0`
 > 需求（来自本项目的移植经验）：中间参数（"先算好、表里看得到、模板直接引用"）此前
 > 只能写死在 Jinja 模板里；希望参数之间能有引用关系 —— 仅限**同 Case 的其他参数**与**全局参数**。
 
@@ -901,7 +901,7 @@ ABS_FPI_load_cases.xlsx    公式格  958 个，最长 2702 字符（汇总表�
 | **故意不翻译的写法** | `round` / `ceil` / `floor` / `//`：Python 与 Excel 语义不同，翻过去会让"Excel 里看到的"与"导出文件"不一致 —— 宁可降级成"写值 + 告警" |
 | **数值形态统一（会影响本目录）** | 公式里**不再用 `TEXT()`**：`TEXT(20.559,"0.###############")` 会打出 `20.559000000000001`。现在两边都按 **15 位有效数字**（Excel General / Python `utils.to_text` 的 `%.15g`） |
 | **同步改了本目录的 `verify_excel_engine.py`** | 它的 `as_text` 原来用 `str()`（会出现同样的二进制尾巴），现在直接复用工具侧 `to_text`，与本目录工作簿的公式语义保持一致 |
-| **它的局限（用到 derived 时要注意）** | `verify_excel_engine.py` 的解析器只覆盖拼接 / `IF` / `ISBLANK` / `TEXT` / `INDEX`+`MATCH`，**不含算术**。本目录现在没有派生参数，所以照旧全过；一旦用上 `derived:`，它会对含算术的公式报"不能识别的公式片段" —— 那时要么给它补算术文法，要么用工具自带的 `excel-codegen check --values`（0.4.0 起已含算术、且会递归求值派生格） |
+| **它的局限（用到 derived 时要注意）** | `verify_excel_engine.py` 的解析器只覆盖拼接 / `IF` / `ISBLANK` / `TEXT` / `INDEX`+`MATCH`，**不含算术**。本目录现在没有派生参数，所以照旧全过；一旦用上 `derived:`，它会对含算术的公式报"不能识别的公式片段" —— 那时要么给它补算术文法，要么用工具自带的 `spreadsheet-codegen check --values`（0.4.0 起已含算术、且会递归求值派生格） |
 | **本目录的产物未改动** | 三本工作簿 / 模板 / `compose.py` / `compare_with_rules.js` 都没动；复测：`build.py` 公式求值 28 项 0 失败、`check` 全过、`node compare_with_rules.js` 21 项 0 失败 |
 
 **为什么 `round` 要故意不翻译**（值得记一笔）：`round(2.5)` 在 Python 里是 2（银行家舍入），

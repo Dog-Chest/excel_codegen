@@ -1,8 +1,8 @@
-# excel_codegen
+# spreadsheet_codegen
 
 **在 Microsoft Excel 里填参数，用 YAML + Jinja2 出代码。**
 
-[![ci](https://github.com/Dog-Chest/excel_codegen/actions/workflows/ci.yml/badge.svg)](https://github.com/Dog-Chest/excel_codegen/actions/workflows/ci.yml)
+[![ci](https://github.com/Dog-Chest/spreadsheet_codegen/actions/workflows/ci.yml/badge.svg)](https://github.com/Dog-Chest/spreadsheet_codegen/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
@@ -29,29 +29,29 @@
 
 ```bash
 # 1) 把内置示例拷出来 —— 示例随包发布，装了 pip 包就够，不用克隆仓库
-excel-codegen examples                      # 看有哪些、各自演示什么
-excel-codegen examples --copy ./examples
+spreadsheet-codegen examples                      # 看有哪些、各自演示什么
+spreadsheet-codegen examples --copy ./examples
 
 # 2) 打开示例里那本已经填好样例参数的工作簿就能改：
 #    Global Parameter 的 B 列、Local Parameter 的 E/F 列
 #    Output 表里是活公式 —— 改完参数**它自己就重算了**，不需要任何命令
 
 # 3) 只有「要把代码导成文件」时才回到命令行
-excel-codegen render -c examples/basic/example_formula.yaml \
+spreadsheet-codegen render -c examples/basic/example_formula.yaml \
     -x examples/basic/template_formula.xlsx --outdir out
 ```
 
-想核对「Excel 里算出来的」与「Python 渲染的」是否一致（CI 里很有用）：`excel-codegen check`。
+想核对「Excel 里算出来的」与「Python 渲染的」是否一致（CI 里很有用）：`spreadsheet-codegen check`。
 
 没装 uv 就去掉 `uv run`，先按下面「安装」把环境准备好。
 
-内置示例（`excel-codegen examples`，源码在 [`excel_codegen/examples/`](excel_codegen/examples/)）：
+内置示例（`spreadsheet-codegen examples`，源码在 [`spreadsheet_codegen/examples/`](spreadsheet_codegen/examples/)）：
 
 | 示例 | 演示什么 |
 | --- | --- |
-| [`basic`](excel_codegen/examples/basic/) | 入门：`example_formula.yaml` 是**默认的公式模式**（改参数后打开 Excel 就重算）；`example.yaml` 显式 `engine: snapshot`，演示过滤器 / 循环 / 导出文件 |
-| [`nastran`](excel_codegen/examples/nastran/) | **一行一个工况**（`local_direction: vertical`）+ 公式模式生成 NASTRAN 工况控制语句：语句留空就不输出，在 Excel 里改一格 Code 列立刻跟着变（指南 §19 / §20） |
-| [`abs_fpi`](excel_codegen/examples/abs_fpi/) | **现场用例**：ABS FPI 内外压 → GeniE。两个规则集可各自单用，也可合成一本项目工作簿共用一张 Global 表；内压用成员表 `Tank Data` 把舱参数只写一遍 |
+| [`basic`](spreadsheet_codegen/examples/basic/) | 入门：`example_formula.yaml` 是**默认的公式模式**（改参数后打开 Excel 就重算）；`example.yaml` 显式 `engine: snapshot`，演示过滤器 / 循环 / 导出文件 |
+| [`nastran`](spreadsheet_codegen/examples/nastran/) | **一行一个工况**（`local_direction: vertical`）+ 公式模式生成 NASTRAN 工况控制语句：语句留空就不输出，在 Excel 里改一格 Code 列立刻跟着变（指南 §19 / §20） |
+| [`abs_fpi`](spreadsheet_codegen/examples/abs_fpi/) | **现场用例**：ABS FPI 内外压 → GeniE。两个规则集可各自单用，也可合成一本项目工作簿共用一张 Global 表；内压用成员表 `Tank Data` 把舱参数只写一遍 |
 
 ## 特性
 
@@ -68,12 +68,12 @@ excel-codegen render -c examples/basic/example_formula.yaml \
 | **三层作用域** | 船（global）→ 工况（local）→ **舱 / 设备（成员表）**：被多个工况引用的舱参数只写一遍，改一处就够 |
 | **可导出代码文件** | 文件名支持 Jinja2，**参数也能用**（`cc_{{ seq }}_{{ case_name }}.inc`），一次生成多份 |
 | **建表时就把错误拦住** | 模板语法、`{% include %}` 片段、以及公式模式表达不了的写法（过滤器 / 循环 / 跨行 `{% if %}`）在 `init` 就报，并告诉你怎么改 |
-| **自带说明与指纹** | 工作簿里有 `HOWTO` 表与生成指纹；`excel-codegen check` 判定"表里的代码是否已过期"，**CI 可用** |
+| **自带说明与指纹** | 工作簿里有 `HOWTO` 表与生成指纹；`spreadsheet-codegen check` 判定"表里的代码是否已过期"，**CI 可用** |
 
 ## 现场用例：ABS FPI 内外压 → GeniE
 
-[`excel_codegen/examples/abs_fpi/`](excel_codegen/examples/abs_fpi/) 是拿这个工具干真活的现场用例
-（`excel-codegen examples --copy .` 就能拿到）—— 把 **ABS FPI**（5A-3-2/5.5 外压、
+[`spreadsheet_codegen/examples/abs_fpi/`](spreadsheet_codegen/examples/abs_fpi/) 是拿这个工具干真活的现场用例
+（`spreadsheet-codegen examples --copy .` 就能拿到）—— 把 **ABS FPI**（5A-3-2/5.5 外压、
 5.7 内压）的面载荷计算，生成可直接粘进 GeniE 的 JavaScript 函数体。
 
 | 工作簿 | 内容 | 工况 |
@@ -100,7 +100,7 @@ excel-codegen render -c examples/basic/example_formula.yaml \
 | [`docs/template_guide.md`](docs/template_guide.md) | **模板库扩展指南**：YAML 字段、Prefix/Suffix、Jinja2 速查、Excel 表结构、`case_filter`、排错、FAQ、能力边界、公式模式与派生参数 |
 | [`docs/cli.md`](docs/cli.md) | 命令参考（六个命令的全部选项）、作为 Python 库使用、错误类型 |
 | [`docs/setup.md`](docs/setup.md) | 安装与跨平台环境：uv 零配置、venv + pip、Windows / Ubuntu 的坑、Python 版本策略 |
-| [`excel_codegen/examples/README.md`](excel_codegen/examples/README.md) | **内置示例**：三个示例各自演示什么、怎么拷出来、怎么改 |
+| [`spreadsheet_codegen/examples/README.md`](spreadsheet_codegen/examples/README.md) | **内置示例**：三个示例各自演示什么、怎么拷出来、怎么改 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本变更历史 |
 | [`abs_fpi/README.md`](abs_fpi/README.md) | 现场项目：怎么用、边界、四层校验链 |
 | [`docs/publishing.md`](docs/publishing.md) | 维护者向：发布到 GitHub / PyPI、密钥与隐私 |
@@ -113,13 +113,13 @@ excel-codegen render -c examples/basic/example_formula.yaml \
 **只是要用它**（不克隆仓库）：
 
 ```bash
-uv tool install excel-codegen        # 推荐
-pipx install excel-codegen           # 或
-pip install excel-codegen            # 或
+uv tool install spreadsheet-codegen        # 推荐
+pipx install spreadsheet-codegen           # 或
+pip install spreadsheet-codegen            # 或
 ```
 
-装好后得到命令 `excel-codegen`（也可用 `python -m excel_codegen`），
-`excel-codegen examples --copy ./examples` 就能拿到带工作簿的示例。
+装好后得到命令 `spreadsheet-codegen`（也可用 `python -m spreadsheet_codegen`），
+`spreadsheet-codegen examples --copy ./examples` 就能拿到带工作簿的示例。
 
 **改这个工具本身**（开发）：
 
@@ -128,14 +128,16 @@ pip install excel-codegen            # 或
 curl -LsSf https://astral.sh/uv/install.sh | sh     # Windows 见 docs/setup.md
 
 # 或经典方式
-python3 -m venv ~/.venvs/excel_codegen && source ~/.venvs/excel_codegen/bin/activate
+python3 -m venv ~/.venvs/spreadsheet_codegen && source ~/.venvs/spreadsheet_codegen/bin/activate
 pip install -e ".[dev]"
 ```
 
 跨平台细节、外置盘注意事项与 Python 版本策略见 [`docs/setup.md`](docs/setup.md)。
 
-> **已发布到 PyPI**：当前版本 **0.9.1**（[PyPI 页面](https://pypi.org/project/excel-codegen/)）。
-> 之后的发版流程（Trusted Publishing，仓库里不存 token）见 [`docs/publishing.md`](docs/publishing.md)。
+> **项目已改名**：原名 `excel-codegen`（名字里带 Microsoft 的商标 "Excel"），现为
+> **`spreadsheet-codegen`**，当前版本 **1.0.0**（[PyPI 页面](https://pypi.org/project/spreadsheet-codegen/)）。
+> 旧名在 PyPI 上只保留一个弃用版，请勿再使用；改名原因与法律声明见 [`NOTICE.md`](NOTICE.md)。
+> 发版流程（Trusted Publishing，仓库里不存 token）见 [`docs/publishing.md`](docs/publishing.md)。
 
 ## 开发
 

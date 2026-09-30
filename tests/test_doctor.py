@@ -1,4 +1,4 @@
-"""``excel-codegen doctor``：一条命令体检环境 / 配置 / 工作簿。
+"""``spreadsheet-codegen doctor``：一条命令体检环境 / 配置 / 工作簿。
 
 它的价值在"把散在各处的常见坑一次说清"，所以测试关注三件事：
 ① 正常项目退出码 0 且该报的"值得留意"都报了；② 真有问题时退出码 1 且**不甩 traceback**；
@@ -13,9 +13,9 @@ import pytest
 from openpyxl import load_workbook
 from typer.testing import CliRunner
 
-from excel_codegen import create_template, load_config, render_all
-from excel_codegen.cli import app
-from excel_codegen.excel_io import write_results
+from spreadsheet_codegen import create_template, load_config, render_all
+from spreadsheet_codegen.cli import app
+from spreadsheet_codegen.excel_io import write_results
 
 runner = CliRunner()
 

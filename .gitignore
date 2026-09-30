@@ -15,7 +15,7 @@ htmlcov/
 *.bak
 ~$*.xlsx
 
-# 根目录上一次 render 的临时产物（内置示例 excel_codegen/examples/ 是刻意保留的）
+# 根目录上一次 render 的临时产物（内置示例 spreadsheet_codegen/examples/ 是刻意保留的）
 /template.xlsx
 /template_formula.xlsx
 /generated/
@@ -27,7 +27,7 @@ abs_fpi/probes/*.xlsx
 abs_fpi/probes/_out/
 
 # abs_fpi 现场目录的一次性产物：渲染脚本按示例资产生成，产物落在
-# excel_codegen/examples/abs_fpi/（那边的是刻意保留的样板，不忽略）
+# spreadsheet_codegen/examples/abs_fpi/（那边的是刻意保留的样板，不忽略）
 abs_fpi/**/*_render.sh
 abs_fpi/**/*_render.bat
 

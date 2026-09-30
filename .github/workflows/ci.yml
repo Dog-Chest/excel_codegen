@@ -49,7 +49,7 @@ jobs:
         run: uv run --python ${{ matrix.python }} pytest --cov
 
       - name: CLI 冒烟
-        run: uv run --python ${{ matrix.python }} excel-codegen --version
+        run: uv run --python ${{ matrix.python }} spreadsheet-codegen --version
 
       # 守卫：sdist 必须自包含 —— 解包后能直接跑测试、内置示例能拷出来用。
       # 这条曾经真的坏过：setuptools 默认只收 test*.py，把 tests/conftest.py 漏了，
@@ -60,15 +60,15 @@ jobs:
           uv build --sdist
           mkdir -p /tmp/sdist-check
           tar -xzf dist/*.tar.gz -C /tmp/sdist-check
-          cd /tmp/sdist-check/excel_codegen-*
+          cd /tmp/sdist-check/spreadsheet_codegen-*
           test -f tests/conftest.py || { echo "::error::sdist 里缺少 tests/conftest.py"; exit 1; }
           # setup.sh：docs/setup.md 让人跑它，tests/test_setup_script.py 也执行它
           test -f setup.sh || { echo "::error::sdist 里缺少 setup.sh"; exit 1; }
           # 示例是包数据：连 abs_fpi 的 .j2 模板都要在（漏了 *.j2 示例就解不开）
-          test -f excel_codegen/examples/abs_fpi/templates/int_body.js.j2 \
+          test -f spreadsheet_codegen/examples/abs_fpi/templates/int_body.js.j2 \
             || { echo "::error::sdist 里缺少内置示例（含 .j2 模板）"; exit 1; }
           uv run --python ${{ matrix.python }} pytest
-          uv run --python ${{ matrix.python }} excel-codegen examples --copy /tmp/sdist-examples
+          uv run --python ${{ matrix.python }} spreadsheet-codegen examples --copy /tmp/sdist-examples
           test -f /tmp/sdist-examples/abs_fpi/templates/ext_body.js.j2 \
-            || { echo "::error::excel-codegen examples --copy 没拷全"; exit 1; }
-          uv run --python ${{ matrix.python }} excel-codegen validate -c /tmp/sdist-examples/basic/example.yaml
+            || { echo "::error::spreadsheet-codegen examples --copy 没拷全"; exit 1; }
+          uv run --python ${{ matrix.python }} spreadsheet-codegen validate -c /tmp/sdist-examples/basic/example.yaml

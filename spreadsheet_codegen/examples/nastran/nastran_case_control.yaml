@@ -20,7 +20,7 @@ version: 1
 #
 #   注意：Excel 里"空语句"是一格空单元格（横向布局下这一行是所有工况共用的，
 #   没法为某个工况单独删掉一整行）。把一列粘到文本编辑器后删掉空行即可：
-#       excel-codegen render -c nastran_case_control.yaml --outdir deck
+#       spreadsheet-codegen render -c nastran_case_control.yaml --outdir deck
 #       sed '/^$/d' deck/cc_*.inc > deck/case_control.deck
 #   快照模式（engine: snapshot）能用"把换行写进 if 里面"的办法完全不留空行 ——
 #   见指南 §20.2；这里为了"改 Excel 就改输出"选了公式模式。
@@ -106,7 +106,7 @@ templates:
   # --------------------------------------------------------------------- 主产物 --
   # 一个子工况一个 .inc 片段。拼成整段 case control 就是按 seq 顺序连起来
   # （空语句在文件里是空行，删掉即可）：
-  #     excel-codegen render -c nastran_case_control.yaml --outdir deck
+  #     spreadsheet-codegen render -c nastran_case_control.yaml --outdir deck
   #     sed '/^$/d' deck/cc_*.inc > deck/case_control.deck
   - name: case_control
     description: "NASTRAN Case Control 子工况块（每个子工况一列，公式模式）"

@@ -1,11 +1,11 @@
 # 命令参考 / Python 库 / 错误类型
 
 五个命令：`init` → 填写 → `render` → `validate` / `check`；另有 `doctor` 体检。
-全局选项：`excel-codegen --version`。
+全局选项：`spreadsheet-codegen --version`。
 
 ---
 
-## `excel-codegen init`
+## `spreadsheet-codegen init`
 
 生成 Excel 表单。
 
@@ -26,7 +26,7 @@
 | `--scripts / --no-scripts` | 是否在工作簿旁边生成**一键刷新脚本** `<工作簿名>_render.bat` / `.sh`（指南 §6.6） | 生成 |
 | `--prerender / --no-prerender` | 建完表就把输出写进去（公式模式下工作簿因此开箱可用）；`--no-prerender` 只要骨架 | 预填 |
 
-## `excel-codegen render`
+## `spreadsheet-codegen render`
 
 | 选项 | 说明 | 默认 |
 | --- | --- | --- |
@@ -41,7 +41,7 @@
 不传 `--write-excel` 和 `--outdir` 时只在终端预览（安全模式）；摘要里会明确写出
 「写回 Excel │ 否（需要 --write-excel）」，不会让人误以为已经落盘。
 
-## `excel-codegen validate`
+## `spreadsheet-codegen validate`
 
 | 选项 | 说明 |
 | --- | --- |
@@ -59,7 +59,7 @@
 一起求值）—— 一次列出全部越界处，指出是哪张表、哪一列、哪个变量。
 配了 `variables.group`（指南 §18）时，成员表的取值约束也会一起查。
 
-## `excel-codegen check`
+## `spreadsheet-codegen check`
 
 | 选项 | 说明 |
 | --- | --- |
@@ -78,7 +78,7 @@
   / `current{...}` / `drift` / `warnings` / `problems`。例如：
 
   ```bash
-  excel-codegen check -c project.yaml --json | jq -r '.problems[]'
+  spreadsheet-codegen check -c project.yaml --json | jq -r '.problems[]'
   ```
 * `render` 与 `check` 都会先校验取值约束（指南 §3.5），越界时以退出码 1 结束 ——
   所以"参数填错"与"输出过期"是两类不同的失败，报错信息里能直接分辨。
@@ -88,7 +88,7 @@
 ## 作为 Python 库使用
 
 ```python
-from excel_codegen import (
+from spreadsheet_codegen import (
     load_config,
     create_template,
     render_all,
@@ -100,7 +100,7 @@ from excel_codegen import (
     read_metadata,
 )
 
-config = load_config("examples/basic/example.yaml")  # 读取并校验 YAML（示例：excel-codegen examples --copy .）
+config = load_config("examples/basic/example.yaml")  # 读取并校验 YAML（示例：spreadsheet-codegen examples --copy .）
 create_template(config, "template.xlsx", cases=3, overwrite=True)
 
 output = render_all(config, "template.xlsx")  # 读取填写的参数并渲染
@@ -130,7 +130,7 @@ print(input_fingerprint(output.global_values, output.cases))
 
 ---
 
-## `excel-codegen doctor`
+## `spreadsheet-codegen doctor`
 
 体检**环境 / 配置 / 工作簿**三层，把常见坑一次说清。**有 ERROR 时退出码 1**（没 ERROR 时
 只有 `!` 提示也算通过）。
@@ -149,7 +149,7 @@ print(input_fingerprint(output.global_values, output.cases))
 | 工作簿 | 工作表是否齐全、Case 列 / 行、取值约束与 `asserts` 是否满足、**整行/整列都空的 Case**、渲染记录（指纹是否一致）、一键脚本在不在 |
 
 ```bash
-excel-codegen doctor -c project.yaml
+spreadsheet-codegen doctor -c project.yaml
 ```
 
 典型用途：**新同事拿到仓库的第一条命令**（"我这儿跑不起来"）、发布前自检、
@@ -157,10 +157,10 @@ excel-codegen doctor -c project.yaml
 
 ---
 
-## `excel-codegen examples`
+## `spreadsheet-codegen examples`
 
 列出**随包发布的内置示例**，或把它们拷出来直接用。示例是包数据（wheel 与 sdist 里都有），
-所以 `pip install excel-codegen` / `uv tool install excel-codegen` 的人**不需要克隆仓库**。
+所以 `pip install spreadsheet-codegen` / `uv tool install spreadsheet-codegen` 的人**不需要克隆仓库**。
 
 | 选项 | 说明 |
 | --- | --- |
@@ -169,13 +169,13 @@ excel-codegen doctor -c project.yaml
 | `--force` | 目标目录已存在且非空时覆盖（默认拒绝，避免覆盖你改过的文件） |
 
 ```bash
-excel-codegen examples                       # 看有哪些、各自演示什么
-excel-codegen examples --copy ./examples     # 全部拷出来
-excel-codegen examples --copy . --only abs_fpi   # 只要现场用例那个
+spreadsheet-codegen examples                       # 看有哪些、各自演示什么
+spreadsheet-codegen examples --copy ./examples     # 全部拷出来
+spreadsheet-codegen examples --copy . --only abs_fpi   # 只要现场用例那个
 ```
 
 拷出来的每个示例都带一本**已经填好样例参数**的工作簿，打开就能改；
 公式模式下改完自动重算，不需要跑命令。示例清单与说明见
-[`excel_codegen/examples/README.md`](../excel_codegen/examples/README.md)。
+[`spreadsheet_codegen/examples/README.md`](../spreadsheet_codegen/examples/README.md)。
 
 > 拷出来的目录是**你的**：`--force` 之外不会覆盖已有内容，改坏了再拷一份就行。

@@ -1,6 +1,6 @@
 """渲染核心：组装上下文、渲染模板、导出代码文件。
 
-Jinja2 环境与 ``pvs`` / ``wrap`` 过滤器在 :mod:`excel_codegen.jinja_env` 里
+Jinja2 环境与 ``pvs`` / ``wrap`` 过滤器在 :mod:`spreadsheet_codegen.jinja_env` 里
 （``derived`` 求值也要用同一套语义），这里只是转出（re-export）。
 """
 
@@ -184,7 +184,7 @@ class FilterValue(str):
         case_filter: "kind == 'EXT'"          # 组合值（无前后缀时就是值本身）
         case_filter: "draft.value > 20"       # 纯值，可做数值比较
 
-    :class:`~excel_codegen.utils.VarValue` 本身是 dataclass，直接拿它和字符串比较永远不等，
+    :class:`~spreadsheet_codegen.utils.VarValue` 本身是 dataclass，直接拿它和字符串比较永远不等，
     所以过滤器上下文用的是本类。
     """
 

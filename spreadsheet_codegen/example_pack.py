@@ -1,10 +1,10 @@
-"""随包发布的内置示例（``excel_codegen/examples/``）：定位、列出、复制。
+"""随包发布的内置示例（``spreadsheet_codegen/examples/``）：定位、列出、复制。
 
-示例是**包数据** —— wheel 与 sdist 里都有一份，所以 ``pip install excel-codegen`` /
-``uv tool install excel-codegen`` 装完、没有克隆仓库的人也能拿到：
+示例是**包数据** —— wheel 与 sdist 里都有一份，所以 ``pip install spreadsheet-codegen`` /
+``uv tool install spreadsheet-codegen`` 装完、没有克隆仓库的人也能拿到：
 
-    excel-codegen examples                  # 看有哪些示例、各自演示什么
-    excel-codegen examples --copy ./demo    # 拷出来直接用
+    spreadsheet-codegen examples                  # 看有哪些示例、各自演示什么
+    spreadsheet-codegen examples --copy ./demo    # 拷出来直接用
 
 它同时是仓库里的回归夹具（``abs_fpi/`` 的现场脚本与 ``tests/`` 都直接读这几个 YAML），
 所以仓库根目录**不再**单独放一份 ``examples/``，免得两份漂移。

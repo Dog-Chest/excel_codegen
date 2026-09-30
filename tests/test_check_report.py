@@ -14,9 +14,9 @@ import pytest
 from openpyxl import load_workbook
 from typer.testing import CliRunner
 
-from excel_codegen import create_template, load_config, render_all
-from excel_codegen.cli import _differences, app
-from excel_codegen.excel_io import write_results
+from spreadsheet_codegen import create_template, load_config, render_all
+from spreadsheet_codegen.cli import _differences, app
+from spreadsheet_codegen.excel_io import write_results
 
 runner = CliRunner()
 

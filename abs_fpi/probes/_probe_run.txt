@@ -1,4 +1,4 @@
-excel_codegen 0.5.0 探针复测（探针标题里的 FINDINGS 编号指向 0.1.0 的原始报告）
+spreadsheet_codegen 0.5.0 探针复测（探针标题里的 FINDINGS 编号指向 0.1.0 的原始报告）
 
 ==============================================================================
 探针 A  prefix / suffix 的首尾空格   (FINDINGS #2 · probe_suffix.yaml)
@@ -111,7 +111,7 @@ draft  (float) combined = 20    .value = 20
   -> 现在 CLI 的 --cases 也接受逗号分隔的工况名（0.1.0 时只接受整数）。
   试一下 CLI（--cases 直接给名字）：
     │ probe_suffix.xlsx --write-excel                                             │
-    │    excel-codegen render --config probe_suffix.yaml --excel                  │
+    │    spreadsheet-codegen render --config probe_suffix.yaml --excel                  │
     │ probe_suffix.xlsx --outdir generated/                                       │
     └─────────────────────────────────────────────────────────────────────────────┘
     exit=0
