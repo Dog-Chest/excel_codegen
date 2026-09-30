@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from openpyxl import load_workbook
 from typer.testing import CliRunner
 
 from spreadsheet_codegen.cli import app
@@ -51,6 +52,27 @@ def test_example_files_exist_and_load(example) -> None:
 
     config = load_config(yaml_path)
     assert config.templates, f"{example.name} 一个模板都没有"
+
+
+def test_shipped_workbooks_carry_no_old_name() -> None:
+    """工作簿里烘焙进去的文字也不能留着旧名字。
+
+    HOWTO 表会告诉用户"跑 excel-codegen render …"，Template 表里还藏着机器读的元信息标记。
+    改名时如果只改代码不改这些二进制，用户打开示例就会被指去一个**不存在**的命令。
+    """
+    stale = ("excel-codegen", "excel_codegen")
+    offenders: list[str] = []
+    for path in sorted(examples_root().rglob("*.xlsx")):
+        workbook = load_workbook(path)
+        try:
+            for worksheet in workbook.worksheets:
+                for row in worksheet.iter_rows():
+                    for cell in row:
+                        if isinstance(cell.value, str) and any(token in cell.value for token in stale):
+                            offenders.append(f"{path.name}:{worksheet.title}!{cell.coordinate}")
+        finally:
+            workbook.close()
+    assert not offenders, f"随包工作簿里还残留旧名字：{offenders}"
 
 
 # --------------------------------------------------------------------------- #
