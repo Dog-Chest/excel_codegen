@@ -97,22 +97,25 @@ git push -u origin main
    > 已确认 PyPI 上 `excel-codegen` 与 `excel_codegen` 都还没被占用。
 3. GitHub 仓库 → Settings → Environments → 新建一个叫 **`pypi`** 的环境
    （可以顺手加 "Required reviewers"，发版前多一道人工确认）。
-4. 把 `pyproject.toml` 里注释掉的 `Documentation` URL 换成真地址 —— 占位符在 PyPI
-   页面上会变成一个打不开的链接。
+4. 确认 `pyproject.toml` 的 `[project.urls]` 都是真地址（占位符在 PyPI 页面上会变成
+   一个打不开的链接）。**当前四项都已指向 `github.com/Dog-Chest/excel_codegen`**，无需再改。
 
 ### 每次发版
 
 ```bash
 # 1) 改版本号（pyproject.toml 与 excel_codegen/__init__.py 两处）+ 写 CHANGELOG
-# 2) 重新锁定（版本号变化会写进 uv.lock）
+# 2) 重新锁定（版本号变化会写进 uv.lock）—— CI 有 uv lock --check，忘了会红
 uv lock
 # 3) 本地过一遍质量闸
 uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov
-# 4) 提交、打 tag、推
-git commit -am "0.8.0：……"
-git tag v0.8.0
+# 4) 提交、打 tag、推（tag 必须与 pyproject 版本一致，release.yml 会校验）
+git commit -am "0.9.0：……"
+git tag v0.9.0
 git push origin main --tags
 ```
+
+> 示例：本次发布准备的是 `0.9.0`。**推 tag 那一刻才会真正发到 PyPI** ——
+> 想先演练就走 Actions 页面手动触发 `release`、`target` 选 `testpypi`。
 
 tag 一推，`release.yml` 就会：校验 tag 与 `pyproject.toml` 版本一致 → 再跑一遍质量闸 →
 `uv build` → `twine check` → 发到 PyPI。
