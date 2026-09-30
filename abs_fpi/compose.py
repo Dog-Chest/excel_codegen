@@ -42,7 +42,7 @@ from pathlib import Path
 import yaml
 
 HERE = Path(__file__).resolve().parent
-#: 示例资产（compose.yaml 的配方与它产出/引用的 YAML）随包发布，见 examples/README.md
+#: 示例资产（compose.yaml 的配方与它产出/引用的 YAML）随包发布，见 spreadsheet_codegen/examples/README.md
 EXAMPLES = HERE.parent / "spreadsheet_codegen" / "examples" / "abs_fpi"
 sys.path.insert(0, str(HERE))
 

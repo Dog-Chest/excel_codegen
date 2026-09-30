@@ -41,7 +41,7 @@ from pathlib import Path
 #: 本目录：现场脚本与实测报告（FINDINGS.md / TEMPLATES.md / probes/）
 HERE = Path(__file__).resolve().parent
 #: 示例资产：YAML + 模板 + 工作簿 + 导出产物，随包发布
-#: （0.9.0 起从 abs_fpi/ 挪进 spreadsheet_codegen/examples/abs_fpi/，见 examples/README.md）
+#: （0.9.0 起从 abs_fpi/ 挪进 spreadsheet_codegen/examples/abs_fpi/，见 spreadsheet_codegen/examples/README.md）
 EXAMPLES = HERE.parent / "spreadsheet_codegen" / "examples" / "abs_fpi"
 sys.path.insert(0, str(HERE))
 

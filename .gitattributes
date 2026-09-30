@@ -19,5 +19,5 @@
 *.cmd   text eol=crlf
 
 # 生成物：在 diff / 统计里降噪（不影响内容）
-abs_fpi/generated/**   linguist-generated=true
-examples/generated*/** linguist-generated=true
+# 0.9.0 起示例搬进了包内（spreadsheet_codegen/examples/），这里的路径要跟着走
+spreadsheet_codegen/examples/*/generated*/**  linguist-generated=true
