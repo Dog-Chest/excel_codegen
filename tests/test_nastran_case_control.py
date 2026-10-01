@@ -44,7 +44,7 @@ from spreadsheet_codegen.example_pack import examples_root
 from spreadsheet_codegen.formula_eval import evaluate_template_values
 from spreadsheet_codegen.models import ProjectConfig, load_config
 from spreadsheet_codegen.renderer import collect_variables, export_files, render_all
-from spreadsheet_codegen.utils import ExcelError
+from spreadsheet_codegen.utils import InputError
 
 CASE_CONTROL_YAML = """\
 version: 1
@@ -408,7 +408,7 @@ def test_subcom_without_subseq_is_rejected(workbook_path: Path, project: Project
         workbook.save(workbook_path)
     finally:
         workbook.close()
-    with pytest.raises(ExcelError, match=r"(?s)COMB4.*subseq"):
+    with pytest.raises(InputError, match=r"(?s)COMB4.*subseq"):
         render_all(project, workbook_path)
 
 
@@ -421,7 +421,7 @@ def test_subseq_on_a_plain_subcase_is_rejected(workbook_path: Path, project: Pro
         workbook.save(workbook_path)
     finally:
         workbook.close()
-    with pytest.raises(ExcelError, match=r"asserts"):
+    with pytest.raises(InputError, match=r"asserts"):
         render_all(project, workbook_path)
 
 
@@ -435,7 +435,7 @@ def test_unknown_kind_is_rejected(workbook_path: Path, project: ProjectConfig) -
         workbook.save(workbook_path)
     finally:
         workbook.close()
-    with pytest.raises(ExcelError, match=r"choices|允许列表"):
+    with pytest.raises(InputError, match=r"choices|允许列表"):
         render_all(project, workbook_path)
 
 

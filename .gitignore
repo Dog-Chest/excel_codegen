@@ -15,6 +15,11 @@ htmlcov/
 *.bak
 ~$*.xlsx
 
+# pytest 的临时目录。正常情况它在系统临时区（%TEMP% / /tmp），但若环境里
+# tempfile.gettempdir() 不可写（受限制的 shell、沙箱等），pytest 会退到**当前目录**，
+# 于是仓库根目录多出 pytest-of-<用户名>/。那是测试残留，永远不该提交。
+pytest-of-*/
+
 # 根目录上一次 render 的临时产物（内置示例 spreadsheet_codegen/examples/ 是刻意保留的）
 /template.xlsx
 /template_formula.xlsx

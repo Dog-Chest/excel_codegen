@@ -485,12 +485,16 @@ class Evaluator:
                 if not isinstance(ref, ColRef):
                     raise FormulaEvalError("MATCH 的第二个参数不是整列 / 整行引用")
                 return self.reader.name_row(ref.sheet, str(self._scalar(needle)))
-            if upper in {"MIN", "MAX", "ABS", "TRUNC", "MOD"}:
+            if upper in {"MIN", "MAX", "ABS", "TRUNC", "MOD", "LEN"}:
                 arguments = [self.comparison()]
                 while self._peek(","):
                     self._next()
                     arguments.append(self.comparison())
                 self._expect(")")
+                if upper == "LEN":
+                    # LEN 要的是文本长度（不是数值）：as_text 与 utils.to_text 同一套规则，
+                    # 所以"公式算出来的长度"与 Python 侧 len() 是一致的。
+                    return len(as_text(self._scalar(arguments[0])))
                 numbers = [self._number(argument) for argument in arguments]
                 if upper == "MIN":
                     return min(numbers)

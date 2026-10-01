@@ -61,10 +61,13 @@ __all__ = [
     "FormulaError",
     "compile_formulas",
     "compile_line",
+    "count_placeholders",
     "excel_literal",
     "guard_default",
     "guarded_lookup",
     "local_cell",
+    "long_formula_warning",
+    "longest_formula",
     "lookup_expr",
     "lookup_expr_at",
 ]
@@ -252,15 +255,18 @@ class _VarRef:
 
     def value(self) -> str:
         base = self._lookup(self.value_column, absolute=not self.value_column_is_relative)
-        default = self.definition.default if self.definition else ""
+        # effective_default：fallback: false 时是 ""，于是空单元格在 Excel 里也保持空
+        # （与 Python 侧读表口径一致 —— 见 models.VariableDef.effective_default）
+        default = self.definition.effective_default if self.definition else ""
         return _typed(_with_default(base, default), self.definition)
 
     def decor(self, which: str) -> str:
         column = self.prefix_column if which == "prefix" else self.suffix_column
-        default = getattr(self.definition, which, "") if self.definition else ""
         if column is None:
             # 成员表的变量：前缀/后缀写死在 YAML 里，表里没有这一列
+            default = getattr(self.definition, which, "") if self.definition else ""
             return _quote_text(default)
+        default = getattr(self.definition, which, "") if self.definition else ""
         return _with_default(self._lookup(column, absolute=True), default)
 
     def combined(self) -> str:
@@ -566,7 +572,7 @@ class _Compiler:
             return False
         if definition.type in ("int", "float"):
             return True
-        default = definition.default
+        default = definition.effective_default
         return isinstance(default, (int, float)) and not isinstance(default, bool)
 
     # -- 递归编译 ---------------------------------------------------------- #
@@ -593,7 +599,8 @@ class _Compiler:
                     if keyword in ("else", "elif", "endif"):
                         raise FormulaError(
                             f"模板 {self.template_name!r} 里的 {{% {keyword} %}} 没有对应的 "
-                            f"{{% if %}}；行内容：{line.strip()!r}"
+                            "{% if %}（{% elif %} 要和 {% if %} 写在同一行内）；"
+                            f"行内容：{line.strip()!r}"
                         )
                     raise FormulaError(
                         f"模板 {self.template_name!r} 的公式模式不支持 {{% {keyword} %}}："
@@ -622,18 +629,107 @@ class _Compiler:
             return join(parts)
 
         def parse_if() -> str:
+            """``{% if c1 %}A{% elif c2 %}B{% else %}C{% endif %}`` -> 嵌套 ``IF``。
+
+            ``elif`` 是**无损**降级：``IF(c1, A, IF(c2, B, C))`` 与 Jinja 的语义完全一致
+            （Jinja 的 ``elif`` 本来就等价于 ``else`` 里再套一个 ``if``），所以直接支持，
+            不再报"``{% else %}`` 没有对应的 ``{% if %}``"那种把人带偏的错。
+            """
             nonlocal index
-            condition_source = tokens[index - 1].value[len("if") :].strip()
-            then_expr = parse_block(("else", "elif", "endif"))
+            # 收集 (条件源码, 分支体)：第一个是 if，其余是 elif
+            branches: list[tuple[str, str]] = [
+                (tokens[index - 1].value[len("if") :].strip(), parse_block(("else", "elif", "endif")))
+            ]
+            while index < len(tokens) and tokens[index].value.split()[0] == "elif":
+                elif_token = tokens[index]
+                index += 1
+                branches.append((elif_token.value[len("elif") :].strip(), parse_block(("else", "elif", "endif"))))
+
             else_expr = '""'
-            if tokens[index].value.split()[0] == "else":
+            if index < len(tokens) and tokens[index].value.split()[0] == "else":
                 index += 1
                 else_expr = parse_block(("endif",))
+            if index >= len(tokens) or tokens[index].value.split()[0] != "endif":
+                raise FormulaError(
+                    f"模板 {self.template_name!r} 的 {{{{ if }}}} 没有闭合（这一行少了 "
+                    f"{{% endif %}}）。公式模式**每行对应一个单元格**，所以 {{% if %}} 必须"
+                    f"写在同一行内 —— 要写跨行的 {{{{ if }}}} 就给这个模板加 engine: snapshot；"
+                    f"行内容：{line.strip()!r}"
+                )
             index += 1  # 跳过 endif
-            condition = self.condition(condition_source, case_axis=case_axis, line=line)
-            return f"IF({condition},{then_expr},{else_expr})"
+
+            # 从最后一个分支往前套：IF(c1, A, IF(c2, B, …))
+            result = else_expr
+            for source, body in reversed(branches):
+                condition = self.condition(source, case_axis=case_axis, line=line)
+                result = f"IF({condition},{body},{result})"
+            return result
 
         return parse_block(())
+
+
+def long_formula_warning(
+    template_name: str,
+    longest: int,
+    *,
+    placeholders: int = 0,
+    limit: int = LONG_FORMULA_WARN,
+) -> str:
+    """长公式告警：既说"有多长"，也说"离硬上限还有多少"和"怎么拆"。
+
+    为什么要这几项：只有"6120 字符（警告阈值 3000）"时用户不知道该不该理它 ——
+    硬上限是 8000，6120 其实**能跑**。所以把余量算出来（"还能再放 N 个占位符"），
+    并给出按字段拆行的具体建议，而不是笼统的"建议拆行"。
+    """
+    headroom = MAX_FORMULA_CHARS - longest
+    if placeholders > 0:
+        per_placeholder = longest / placeholders
+        spare = max(0, int(headroom // per_placeholder)) if per_placeholder else 0
+        detail = (
+            f"这一行有 {placeholders} 个占位符（平均每个约 {per_placeholder:.0f} 字符），"
+            f"距硬上限 {MAX_FORMULA_CHARS} 还有 {headroom} 字符 ≈ 再放 {spare} 个占位符"
+        )
+        if placeholders >= 4:
+            suggestion = f"可按字段拆成 2–3 行（每行约 {placeholders // 3 or 1}–{placeholders // 2 or 1} 个占位符）"
+        else:
+            suggestion = "占位符不多，通常是前缀/后缀或公式包装太长"
+    else:
+        detail = f"距硬上限 {MAX_FORMULA_CHARS} 还有 {headroom} 字符"
+        suggestion = "把这一行拆成多行"
+    return (
+        f"模板 {template_name!r} 的最长公式 {longest} 字符（警告阈值 {limit}）：{detail}；"
+        f"{suggestion}。拆行会让「一个 Case 占更多单元格」（横向布局下变成竖条），"
+        "所以先确认这一行是否真的需要那么长"
+    )
+
+
+def count_placeholders(source: str) -> int:
+    """模板源码里 ``{{ }}`` 占位符的个数（用来判断"这一行塞了几个字段"）。"""
+    return len(re.findall(r"\{\{.*?\}\}", source, re.DOTALL))
+
+
+def longest_formula(lines_per_case: Sequence[Sequence[str]], source: str) -> tuple[int, int]:
+    """最长公式有多长 + **那一行**有几个占位符 —— 返回 ``(字符数, 占位符数)``。
+
+    为什么要回到源码行去数占位符：这俩数是配套用的（"平均每个字段占多少字符"
+    /"还能再放几个字段"），而 ``compile_formulas`` 的 ``[case][line]`` 与
+    ``source.splitlines()`` **一一对应**，所以"最长的那一格"能精确定位到"哪一行模板"。
+
+    早先的写法是拿**整份模板**的占位符总数去配"最长那一行"的长度：多行模板上
+    分母直接翻好几倍，"平均每个占位符 N 字符"和"还能再放 N 个"全是错的，
+    而且模板越长错得越离谱 —— 越是需要这条告警的模板，给出的数字越没用。
+    """
+    source_lines = source.splitlines()
+    best_length = 0
+    best_index = -1
+    for case_lines in lines_per_case:
+        for index, text in enumerate(case_lines):
+            if len(text) > best_length:
+                best_length = len(text)
+                best_index = index
+    if not 0 <= best_index < len(source_lines):
+        return best_length, 0
+    return best_length, count_placeholders(source_lines[best_index])
 
 
 # --------------------------------------------------------------------------- #

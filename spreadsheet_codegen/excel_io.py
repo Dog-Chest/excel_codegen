@@ -45,9 +45,12 @@ from .derived import validate_config as derived_validate_config
 from .formula import (
     LONG_FORMULA_WARN,
     compile_formulas,
+    excel_literal,
     guard_default,
     guarded_lookup,
     local_cell,
+    long_formula_warning,
+    longest_formula,
 )
 from .models import (
     FIRST_CASE_COLUMN,
@@ -58,8 +61,11 @@ from .models import (
 )
 from .utils import (
     CodeGenError,
+    DerivedValue,
     ExcelError,
+    InputError,
     VarValue,
+    WorkbookIOError,
     column_index_to_letter,
     fingerprint,
     parse_cell,
@@ -145,9 +151,121 @@ def _text_or(cell_value: Any, default: Any) -> str:
     return to_text(_cell_or(cell_value, default))
 
 
+def _prefill_value(variable: VariableDef) -> Any:
+    """``init`` 往新格子里写什么：``prefill: false`` 时**什么都不写**（留空）。
+
+    与"回落"分开是有意的：作者写 ``default`` 的本意常常只是"给新表一个提示值"，
+    而运行时"空 = 用默认值"会让"某类型才有的字段"被默认值污染。
+    两个开关各管一头，默认都开着（老行为不变）。
+    """
+    return variable.default if variable.prefill else None
+
+
 # --------------------------------------------------------------------------- #
 # 生成 Excel 模板
 # --------------------------------------------------------------------------- #
+def _fresh_value(variable: VariableDef) -> VarValue:
+    """``init`` 刚建好、还没人动过时，这个变量在表里长什么样。
+
+    ``prefill: false`` 的格子是**空的**（``init`` 根本不写），读回来就是回落值
+    （``fallback`` 默认跟着 ``prefill`` 走，所以那就是空串）。基线必须照这个来 ——
+    否则"刚生成的工作簿"会被误判成"人填过东西"，``init --force`` 莫名其妙被拦。
+    """
+    return VarValue(
+        variable.default if variable.prefill else variable.effective_default,
+        variable.prefix,
+        variable.suffix,
+    )
+
+
+def default_input_fingerprint(config: ProjectConfig, *, cases: Sequence[str] | None = None) -> str:
+    """「所有参数都还是 YAML 默认值」时的参数指纹。
+
+    用来判断一本已有工作簿里"人有没有填过东西"：与 :func:`input_fingerprint` 同一套算法，
+    只是参数全部取自配置（``default`` + ``prefix`` / ``suffix``），并且**按 ``prefill``
+    的口径**（不预填的变量就是空的，见 :func:`_fresh_value`）。
+
+    派生参数不在里面：它不是"人填的东西"，而是输入的函数 —— 比输入就够了，
+    见 :func:`_input_only_fingerprint`。
+    """
+    global_values = {
+        variable.name: _fresh_value(variable) for variable in config.global_variables if not variable.is_derived
+    }
+    case_values = {
+        variable.name: _fresh_value(variable) for variable in config.local_variables if not variable.is_derived
+    }
+    names = list(cases) if cases is not None else ["Case1"]
+    case_data = [
+        CaseData(name=name, column=FIRST_CASE_COLUMN + offset, values=dict(case_values))
+        for offset, name in enumerate(names)
+    ]
+    return input_fingerprint(global_values, case_data)
+
+
+def _input_only_fingerprint(
+    config: ProjectConfig,
+    global_values: Mapping[str, VarValue],
+    cases: Sequence[CaseData],
+) -> str:
+    """只对**用户能填的**参数取指纹（派生参数剔掉）。
+
+    为什么要剔：派生值是表达式算出来的。读工作簿时是"现算"（读表 → 求值），
+    而基线是"直接取 default + prefix/suffix"，两套口径稍微差一点（哪怕只是
+    ``prefill: false`` 的空格子），"刚生成的工作簿"就会被判成"人填过东西"。
+
+    比输入既**充分**（派生值是输入的函数，输入没变派生值就不会变）又**稳**。
+    """
+    derived = {item.name for item in (*config.global_variables, *config.local_variables) if item.is_derived}
+    only_globals = {name: value for name, value in global_values.items() if name not in derived}
+    only_cases = [
+        CaseData(
+            name=case.name,
+            column=case.column,
+            values={name: value for name, value in case.values.items() if name not in derived},
+        )
+        for case in cases
+    ]
+    return input_fingerprint(only_globals, only_cases)
+
+
+def workbook_deviates_from_defaults(path: str | Path, config: ProjectConfig) -> str | None:
+    """这本工作簿里的参数是不是**已经偏离** YAML 默认值（即"人填过东西"）？
+
+    :returns: 一句给人看的说明；"看起来还是默认值"或读不出来时返回 ``None``。
+
+    判据是**参数指纹**：等于"全部取 default"的指纹时，这本表就是刚生成的、没人动过
+    —— 覆盖它没有代价（老行为不变）。偏离了才提示，避免每次 ``--force`` 都来问。
+
+    只看**输入**参数（派生值剔掉），也**不看渲染记录**：记录里存的是"上次渲染时的参数"，
+    它等于当前参数只能说明"渲染过"，**完全不能说明参数还是默认值** —— 早先拿它当短路条件，
+    于是"改了参数 → 渲染 → init --force"这条路会绕过防呆，把用户填的值静默换成默认值。
+    """
+    try:
+        workbook = load_workbook_file(path)
+    except CodeGenError:
+        return None  # 读不出来（不是 Excel / 已损坏）：交给 init 自己的覆盖与报错逻辑
+    try:
+        try:
+            values = read_global_values(workbook, config)
+            cases = read_cases(workbook, config, global_values=values)
+        except CodeGenError:
+            return None  # 结构对不上（老版本生成的？）：保守起见不拦
+        names = [case.name for case in cases]
+        current = _input_only_fingerprint(config, values, cases)
+        baseline = default_input_fingerprint(config, cases=names)
+    finally:
+        workbook.close()
+
+    if not names:
+        return None
+    if current == baseline:
+        return None  # 表里就是 YAML 的默认值 —— 刚生成、没人动过
+    return (
+        f"这本工作簿里 {len(names)} 个 Case 的参数已经不是 YAML 默认值"
+        f"（当前指纹 {current}，默认值应为 {baseline}）—— 看起来人填过东西"
+    )
+
+
 def create_template(
     config: ProjectConfig,
     path: str | Path,
@@ -230,7 +348,7 @@ def create_template(
     try:
         workbook.save(target)
     except OSError as exc:
-        raise ExcelError(f"无法写入 Excel 模板 {target}: {exc}（文件被 Excel 占用？）") from exc
+        raise WorkbookIOError(f"无法写入 Excel 模板 {target}: {exc}（文件被 Excel 占用？）") from exc
     finally:
         workbook.close()
 
@@ -290,7 +408,7 @@ def _build_global_sheet(worksheet: Worksheet, config: ProjectConfig, *, comments
                 resolve=_global_resolver(config),
             )
         else:
-            value_cell = worksheet.cell(row=row, column=_GLOBAL_COL["value"], value=variable.default)
+            value_cell = worksheet.cell(row=row, column=_GLOBAL_COL["value"], value=_prefill_value(variable))
             value_cell.fill = _INPUT_FILL
             value_cell.alignment = _TOP_ALIGN
             _add_value_validation(worksheet, variable, [value_cell.coordinate])
@@ -346,7 +464,7 @@ def _build_local_sheet_horizontal(
             if variable.is_derived:
                 _write_derived_cell(cell, variable, resolve=_local_resolver(config, CaseData(name="", column=column)))
             else:
-                cell.value = variable.default
+                cell.value = _prefill_value(variable)
                 cell.fill = _INPUT_FILL
                 cell.alignment = _TOP_ALIGN
                 input_cells.append(cell.coordinate)
@@ -391,7 +509,7 @@ def _build_local_sheet_vertical(
             if variable.is_derived:
                 _write_derived_cell(cell, variable, resolve=_local_resolver(config, CaseData(name="", row=row)))
             else:
-                cell.value = variable.default
+                cell.value = _prefill_value(variable)
                 cell.fill = _INPUT_FILL
                 cell.alignment = _TOP_ALIGN
                 input_cells.append(cell.coordinate)
@@ -420,8 +538,16 @@ def _variable_comment(variable: VariableDef, *, where: str) -> str:
         lines.append(f"约束：{variable.constraint_text}")
     if variable.prefix or variable.suffix:
         lines.append(f"前缀 / 后缀：{variable.prefix!r} / {variable.suffix!r}")
-    if to_text(variable.default) != "":
-        lines.append(f"默认值：{to_text(variable.default)}")
+    if variable.prefill:
+        if to_text(variable.default) != "":
+            lines.append(f"默认值：{to_text(variable.default)}")
+    else:
+        lines.append("默认值：（本变量不预填 —— 新表格里这一格是空的）")
+    # "清空这一格"是什么意思，必须写在格子上：默认语义下它会回落到默认值
+    if not variable.fallback:
+        lines.append("★ 留空 = 这个参数没有值（本变量不回落到默认值）")
+    elif to_text(variable.default) != "":
+        lines.append("留空 = 使用上面的默认值")
     lines.append(f"模板里引用：{{{{ {variable.name} }}}}")
     return "\n".join(lines)
 
@@ -451,8 +577,12 @@ def _relative_to(path: Path, base: Path, *, windows: bool) -> str:
     return text.replace("\\", "/")
 
 
-def _render_command(config: ProjectConfig, target: Path, *, windows: bool) -> str:
-    """生成那条 render 命令（用 uv 优先，没装 uv 就退回 PATH 里的 spreadsheet-codegen）。"""
+def _render_args(config: ProjectConfig, target: Path, *, windows: bool) -> str:
+    """生成 render 的**参数**部分（不含 ``render`` 这个词，也不含怎么调用）。
+
+    拆出来是因为"进程内的模块调用"与"命令行调用"拼法不同：
+    ``python -m spreadsheet_codegen render -c …`` 里有 ``-m`` 这一段。
+    """
     x_flag = target.name if target.parent else str(target)
     if config.config_path is not None:
         c_flag = _relative_to(config.config_path, target.parent or Path("."), windows=windows)
@@ -461,43 +591,94 @@ def _render_command(config: ProjectConfig, target: Path, *, windows: bool) -> st
     return f'render -c "{c_flag}" -x "{x_flag}" --write-excel'
 
 
-def write_run_scripts(config: ProjectConfig, target: Path) -> list[Path]:
-    """在**工作簿旁边**生成 ``<工作簿名>_render.bat`` 与 ``<工作簿名>_render.sh``。
+def _render_command(config: ProjectConfig, target: Path, *, windows: bool) -> str:
+    """兼容旧签名：命令行形态的 render 命令（不含程序名）。
 
-    为什么要它：目标用户是工程师，不是终端爱好者。HOWTO 表里写了命令，但还得自己开终端敲；
-    双击脚本就能"改完参数 → 刷新 Output 表"，而把 uv / venv 的差异封在脚本里。
-
-    两个平台都生成（不是只生成当前的）：一本工作簿常常在 Windows 和 Linux 之间传来传去。
+    .. deprecated:: 0.11.0
+       生成脚本改用 :func:`_render_args` + 完整回退链；本函数只给调用方与测试留着。
     """
-    directory = target.parent or Path(".")
-    stem = target.stem
-    command = _render_command(config, target, windows=False)
+    return _render_args(config, target, windows=windows)
 
-    bat = f"""@echo off
+
+def _bat_text(config: ProjectConfig, target: Path) -> str:
+    """Windows 批处理：按"最可能可用"的顺序试遍三种调用方式。
+
+    为什么要有回退链：只会在 PATH 上找 ``spreadsheet-codegen`` 的脚本，在"用源码 /
+    ``python -m`` 跑"的机器上**两条路都不通**，而失败提示还指向"依赖没装"这个
+    不存在的原因。包名是 ``spreadsheet_codegen``（下划线）、命令才是
+    ``spreadsheet-codegen``（连字符）—— ``python -m`` 那条路最稳，必须覆盖。
+
+    ``chcp 65001`` 是必需的：本文件里有中文，而中文 Windows 的控制台默认是 GBK，
+    会把 UTF-8 字节读成乱码甚至当成命令去执行。
+    """
+    args = _render_args(config, target, windows=True)
+    return f"""@echo off
 REM ===========================================================================
 REM  由 spreadsheet_codegen 生成 —— 改完参数双击本文件即可把结果写回 Output 表。
 REM  重新生成工作簿（init）时会一并覆盖本文件。
 REM ===========================================================================
+REM  本文件是 UTF-8 编码，先切到 65001 代码页，否则中文提示在 GBK 控制台是乱码。
+chcp 65001 >nul
 cd /d "%~dp0"
+
+REM 依次尝试：uv + 安装好的命令 / uv + 模块 / 本机 python + 模块。
+REM SPREADSHEET_CODEGEN_PY 可以指定一个"能跑 -m spreadsheet_codegen"的解释器。
+set "SPREADSHEET_CODEGEN_OK="
 
 where uv >nul 2>nul
 if %errorlevel%==0 (
-  uv run spreadsheet-codegen {_render_command(config, target, windows=True)}
-) else (
-  spreadsheet-codegen {_render_command(config, target, windows=True)}
+  uv run spreadsheet-codegen {args} && set "SPREADSHEET_CODEGEN_OK=1"
+  if defined SPREADSHEET_CODEGEN_OK goto :done
+  uv run python -m spreadsheet_codegen {args} && set "SPREADSHEET_CODEGEN_OK=1"
+  if defined SPREADSHEET_CODEGEN_OK goto :done
 )
 
-echo.
-if errorlevel 1 (
-  echo [失败] 上面有报错信息。常见原因：依赖没装（跑一次 setup.sh / uv sync）、
-  echo        或者 Excel 正开着这个文件（先关掉再试）。
-) else (
-  echo [完成] 回到 Excel 打开「Output」表看结果。
+if defined SPREADSHEET_CODEGEN_PY (
+  "%SPREADSHEET_CODEGEN_PY%" -m spreadsheet_codegen {args} && set "SPREADSHEET_CODEGEN_OK=1"
+  if defined SPREADSHEET_CODEGEN_OK goto :done
 )
+
+spreadsheet-codegen {args} && set "SPREADSHEET_CODEGEN_OK=1"
+if defined SPREADSHEET_CODEGEN_OK goto :done
+python -m spreadsheet_codegen {args} && set "SPREADSHEET_CODEGEN_OK=1"
+if defined SPREADSHEET_CODEGEN_OK goto :done
+
+:done
+echo.
+if defined SPREADSHEET_CODEGEN_OK (
+  echo [OK] Done. Open the Output sheet in Excel to see the result.
+) else (
+  echo [FAILED] None of the ways to run spreadsheet_codegen worked.
+  echo           Tried: uv run spreadsheet-codegen / uv run python -m spreadsheet_codegen
+  echo                  %%SPREADSHEET_CODEGEN_PY%% -m spreadsheet_codegen / spreadsheet-codegen / python -m spreadsheet_codegen
+  echo           Please make sure the tool is installed: pip install spreadsheet-codegen
+  echo           or set SPREADSHEET_CODEGEN_PY to a Python that can run -m spreadsheet_codegen.
+  echo           Also check that Excel is not holding this file open.
+)
+REM pause 放在结论之后：双击运行时窗口留得住、看得见结论。
+REM 退出码必须**在 pause 之后显式给** —— echo / pause 这些内建命令会把 ERRORLEVEL
+REM 归零，不写这两行的话"五条路全失败"照样以 0 结束，批处理与 CI 都看不出失败。
 pause
+if defined SPREADSHEET_CODEGEN_OK (exit /b 0) else (exit /b 1)
 """
 
-    sh = f"""#!/usr/bin/env bash
+
+def _sh_text(config: ProjectConfig, target: Path) -> str:
+    """POSIX shell：与 ``.bat`` 同一套回退链（顺序一致，日志才可对照）。
+
+    这里有两处**很容易写错、而且错了不报错**的地方（都真踩过）：
+
+    * ``status`` 初始不能当成"已经试过并成功"，要用独立的 ``solved`` 标记。
+      早先的写法是 ``status=0`` + 每条路都套一个 ``[ "$status" -ne 0 ]`` ——
+      在**没装 uv** 的机器上第一条路根本不执行，``status`` 永远是 0，于是后面每条路
+      都被自己的守卫挡掉：脚本一件正事没干，却打印"[完成]"并以 0 退出。
+      这正是本版要消灭的"静默假成功"。
+    * 只有**命令不存在**时才该退到下一条路。``spreadsheet-codegen`` 存在却报错，
+      那是工具真的失败（工作簿被 Excel 占着、取值不合法……），再退到别的解释器
+      会把真错误盖成"没装"，也会让 ``check`` 的退出码在 CI 里失真。
+    """
+    args = _render_args(config, target, windows=False)
+    return f"""#!/usr/bin/env bash
 # ===========================================================================
 #  由 spreadsheet_codegen 生成 —— 改完参数跑一次本文件即可把结果写回 Output 表。
 #  重新生成工作簿（init）时会一并覆盖本文件。
@@ -505,25 +686,66 @@ pause
 set -uo pipefail
 cd "$(dirname "$0")"
 
+# 依次尝试：uv + 安装好的命令 / uv + 模块 / 本机 python + 模块。
+# SPREADSHEET_CODEGEN_PY 可以指定一个"能跑 -m spreadsheet_codegen"的解释器。
+status=0
+solved=0
+# 跑一条路；成功（退出码 0）就定案，后面的路不再执行。
+# 函数本身恒定返回 0：调用方只用全局的 status / solved，不靠返回值判断。
+run_route() {{
+  if [ "$solved" -ne 0 ]; then return 0; fi
+  "$@"
+  status=$?
+  if [ "$status" -eq 0 ]; then solved=1; fi
+  return 0
+}}
+
 if command -v uv >/dev/null 2>&1; then
-  uv run spreadsheet-codegen {command}
-else
-  spreadsheet-codegen {command}
+  run_route uv run spreadsheet-codegen {args}
+  run_route uv run python -m spreadsheet_codegen {args}
 fi
-status=$?
+
+if [ -n "${{SPREADSHEET_CODEGEN_PY:-}}" ]; then
+  run_route "$SPREADSHEET_CODEGEN_PY" -m spreadsheet_codegen {args}
+fi
+
+# 最后两条：命令与模块。命令**存在**时只试它 —— 见函数文档：它若报错，那是工具
+# 真的失败，退出码要原样带出去（CI 靠 1/2/3/4 分流），不该被"没装"的假象盖住。
+if command -v spreadsheet-codegen >/dev/null 2>&1; then
+  run_route spreadsheet-codegen {args}
+else
+  run_route python3 -m spreadsheet_codegen {args}
+fi
 
 echo
-if [ "$status" -ne 0 ]; then
-  echo "[失败] 上面有报错信息。常见原因：依赖没装（跑一次 ./setup.sh 或 uv sync）、"
-  echo "       或者 Excel / WPS 正开着这个文件（先关掉再试）。"
-else
+if [ "$solved" -ne 0 ]; then
   echo "[完成] 回到 Excel 打开「Output」表看结果。"
+else
+  echo "[失败] 这些调用方式都没成功：uv run spreadsheet-codegen / uv run python -m spreadsheet_codegen /"
+  echo "       spreadsheet-codegen / python3 -m spreadsheet_codegen。"
+  echo "       请确认已安装（pip install spreadsheet-codegen），"
+  echo "       或设置 SPREADSHEET_CODEGEN_PY 指向能跑 -m spreadsheet_codegen 的 Python。"
+  echo "       也请确认 Excel / WPS 没有占着这个文件。"
 fi
 exit "$status"
 """
 
+
+def write_run_scripts(config: ProjectConfig, target: Path) -> list[Path]:
+    """在**工作簿旁边**生成 ``<工作簿名>_render.bat`` 与 ``<工作簿名>_render.sh``。
+
+    为什么要它：目标用户是工程师，不是终端爱好者。HOWTO 表里写了命令，但还得自己开终端敲；
+    双击脚本就能"改完参数 → 刷新 Output 表"，而把 uv / venv / 源码运行方式的差异封在脚本里。
+
+    两个平台都生成（不是只生成当前的）：一本工作簿常常在 Windows 和 Linux 之间传来传去。
+    """
+    directory = target.parent or Path(".")
+    stem = target.stem
     written: list[Path] = []
-    for name, text in ((f"{stem}_render.bat", bat), (f"{stem}_render.sh", sh)):
+    for name, text in (
+        (f"{stem}_render.bat", _bat_text(config, target)),
+        (f"{stem}_render.sh", _sh_text(config, target)),
+    ):
         path = directory / name
         path.write_text(text, encoding="utf-8", newline="\r\n" if name.endswith(".bat") else "\n")
         if name.endswith(".sh"):
@@ -556,7 +778,7 @@ def _build_group_sheet(
     for row, member in enumerate(members, start=2):
         worksheet.cell(row=row, column=1, value=member)
         for offset, variable in enumerate(group.variables):
-            cell = worksheet.cell(row=row, column=_GROUP_FIRST_VAR_COLUMN + offset, value=variable.default)
+            cell = worksheet.cell(row=row, column=_GROUP_FIRST_VAR_COLUMN + offset, value=_prefill_value(variable))
             cell.fill = _INPUT_FILL
             cell.alignment = _TOP_ALIGN
 
@@ -577,7 +799,8 @@ def _add_value_validation(worksheet: Worksheet, variable: VariableDef, cells: Se
 
     这是"挡在输入口"的第一道闸，方便人填；**判据仍然是** :func:`check_value_constraints` ——
     读回来的取值一律再查一遍。原因：数据有效性挡不住粘贴、脚本写入和别人发来的老文件，
-    而且我们允许空单元格（``allow_blank``），而工具侧认为"声明了约束就不许为空"。
+    而且 Excel 的下拉列表总允许留空（``allow_blank=True``），而工具侧默认认为
+    "声明了约束就不许为空"（想放行要写 ``allow_blank: true``）。
 
     约束本身表达不了时（下拉列表的选项里带逗号、或拼起来超过 Excel 的 255 字符上限）
     直接报错 —— 与其写一个悄悄失效的校验，不如让人知道。
@@ -590,7 +813,14 @@ def _add_value_validation(worksheet: Worksheet, variable: VariableDef, cells: Se
         return
 
     if variable.choices:
-        allowed = [to_text(item) for item in variable.choices]
+        # 空串只是"允许留空"的一种表达（``choices: ["", "储蓄卡"]``）；它是校验层的概念，
+        # 不该出现在下拉列表里 —— 那会让第一项看起来像"允许空"的空选项。
+        allowed = [to_text(item) for item in variable.choices if to_text(item) != ""]
+        if not allowed:
+            raise ExcelError(
+                f"变量 {variable.name!r} 的 choices 里只有空串 —— 那不是约束。"
+                "想表达'可以留空'请写 allow_blank: true，否则删掉 choices"
+            )
         if any("," in item for item in allowed):
             raise ExcelError(
                 f"变量 {variable.name!r} 的 choices 里有取值含逗号（{', '.join(allowed)}）—— "
@@ -645,45 +875,93 @@ def _described(variable: VariableDef) -> str:
     return f"{variable.description} {note}".strip() if variable.description else note
 
 
+#: ``derived.to_excel`` 会调用的属性名 -> "取哪一列"。``value`` / ``text`` 都是取值列。
+_DERIVED_VALUE_ALIASES = frozenset({"value", "text"})
+
+
+def _attribute_column(attribute: str | None, definition: VariableDef) -> tuple[str, int]:
+    """把表达式里的属性名翻成"取哪一列 + 默认值取哪个字段"。
+
+    ``.value`` / ``.text`` 与裸变量都指向**取值**（默认值字段叫 ``default``；
+    前缀 / 后缀的默认值字段与属性同名）。
+
+    报错而不是静默降级：**属性拼错时最坏的结果是悄悄写进一个算好的值**
+    （公式模式的核心承诺就没了），所以这里必须抛 :class:`DerivedError`。
+    """
+    if attribute is None or attribute in _DERIVED_VALUE_ALIASES:
+        return "default", _GLOBAL_COL["value"]
+    if attribute in ("prefix", "suffix"):
+        return attribute, _GLOBAL_COL[attribute]
+    raise DerivedError(
+        f"派生表达式里的 .{attribute}（变量 {definition.name!r}）不支持："
+        "只有 .value / .text / .prefix / .suffix 四个属性"
+    )
+
+
 def _global_resolver(config: ProjectConfig):
-    """派生表达式里的变量名 -> Excel 引用（Global 表的取值列）。"""
+    """派生表达式里的变量名 -> Excel 引用（Global 表的取值列 / 前后缀列）。
+
+    签名是 ``resolve(name, attribute=None)`` —— ``derived.to_excel`` 翻译 ``x.value``
+    这类属性访问时会带上第二个参数。（此前这个回调只收一个参数，于是**任何** ``.value``
+    都会被当成"上下文不支持属性访问"而降级成"往格子里写算好的值"：公式模式下参数改了
+    它不再自动重算，而且没有任何提示。见 0.11.0 的 CHANGELOG。）
+    """
     sheet = config.excel.sheets.global_
     globals_by_name = {item.name: item for item in config.global_variables}
 
-    def resolve(name: str) -> str:
+    def resolve(name: str, attribute: str | None = None) -> str:
         definition = globals_by_name.get(name)
         if definition is None:
             raise DerivedError(
                 f"派生表达式引用了 {name!r}：global 的派生参数只能引用 global 变量（不能引用 local，也不存在别的表）"
             )
-        return guarded_lookup(sheet, name, _GLOBAL_COL["value"], definition.default, absolute=True)
+        which, column = _attribute_column(attribute, definition)
+        default = getattr(definition, which)
+        if which == "default":
+            default = definition.effective_default
+        return guarded_lookup(sheet, name, column, default, absolute=True)
 
     return resolve
 
 
 def _local_resolver(config: ProjectConfig, case: CaseData):
-    """派生表达式里的变量名 -> Excel 引用（本 Case 的那一格 / Global 取值列）。"""
+    """派生表达式里的变量名 -> Excel 引用（本 Case 的那一格 / Global 取值列 / 前后缀）。
+
+    同样的 ``resolve(name, attribute=None)`` 签名要求，见 :func:`_global_resolver`。
+    """
     local_sheet = config.excel.sheets.local
     global_sheet = config.excel.sheets.global_
     locals_by_name = {item.name: item for item in config.local_variables}
     globals_by_name = {item.name: item for item in config.global_variables}
     horizontal = config.excel.local_direction == "horizontal"
 
-    def resolve(name: str) -> str:
+    def resolve(name: str, attribute: str | None = None) -> str:
         if name in locals_by_name:
             definition = locals_by_name[name]
+            which, _ = _attribute_column(attribute, definition)
+            default = definition.effective_default if which == "default" else getattr(definition, which)
             # 派生格里没有"拖动"语义：坐标锁死（参数表由工具维护）
+            if which == "prefix":
+                column = _LOCAL_COL["prefix"]
+            elif which == "suffix":
+                column = _LOCAL_COL["suffix"]
+            else:
+                column = None
             if horizontal:
                 assert case.column is not None
-                expr = local_cell(local_sheet, name, column=case.column, absolute=True)
+                expr = local_cell(local_sheet, name, column=column or case.column, absolute=True)
             else:
                 assert case.row is not None
+                if column is not None:
+                    # 纵向布局没有前后缀列，它们只来自 YAML —— 写常量，与模板侧一致
+                    return excel_literal(default)
                 expr = local_cell(local_sheet, name, row=case.row, absolute=True)
-            return guard_default(expr, definition.default)
+            return guard_default(expr, default)
         if name in globals_by_name:
-            return guarded_lookup(
-                global_sheet, name, _GLOBAL_COL["value"], globals_by_name[name].default, absolute=True
-            )
+            definition = globals_by_name[name]
+            which, column = _attribute_column(attribute, definition)
+            default = definition.effective_default if which == "default" else getattr(definition, which)
+            return guarded_lookup(global_sheet, name, column, default, absolute=True)
         raise DerivedError(f"派生表达式引用了未定义的变量 {name!r}")
 
     return resolve
@@ -945,7 +1223,7 @@ def load_workbook_file(path: str | Path) -> Workbook:
     try:
         return load_workbook(target)
     except Exception as exc:  # openpyxl 会抛各种异常类型
-        raise ExcelError(f"无法读取 Excel 文件 {target}: {exc}") from exc
+        raise WorkbookIOError(f"无法读取 Excel 文件 {target}: {exc}") from exc
 
 
 def get_sheet(workbook: Workbook, name: str) -> Worksheet:
@@ -1038,7 +1316,7 @@ def read_global_values(
 
         raw_value = _cell_or(
             worksheet.cell(row=row, column=_GLOBAL_COL["value"]).value,
-            definition.default if definition else "",
+            definition.effective_default if definition else "",
         )
         kind = definition.type if definition else "auto"
         coerced = _coerce(raw_value, kind, name)
@@ -1057,6 +1335,57 @@ def read_global_values(
     return values
 
 
+def _derived_context(
+    definitions: Sequence[VariableDef],
+    values: Mapping[str, VarValue],
+    raw_values: Mapping[str, Any],
+) -> dict[str, VarValue]:
+    """给派生表达式组装上下文：``x`` / ``x.value`` / ``x.prefix`` / ``x.suffix`` 都能写。
+
+    为什么要包一层：派生表达式此前拿到的是**裸值**（一个 str / float），于是
+    ``derived: "len(secret.value)"`` 会在求值期报 ``'str' object has no attribute
+    'value'`` —— 配置期还查不出来。
+
+    包的是 :class:`~spreadsheet_codegen.utils.DerivedValue` 而**不是**模板侧的
+    ``VarValue``：派生表达式里裸名字必须代表**纯值**（指南 §15.1）—— 与 Excel 侧
+    ``resolve(name)`` 指向取值列完全一致。用 ``VarValue`` 会让 ``x`` 变成带前后缀的
+    组合串，于是 ``a ~ a`` Python 给 ``"XAZXAZ"``、Excel 给 ``"AA"``；
+    ``len(a)`` Python 给 3、Excel 给 1。两边对同一个名字的理解必须一样。
+
+    前缀 / 后缀一律取**表里读到的**（``values``）而不是 YAML 里的 —— Local 表允许在
+    C / D 列覆盖前后缀，公式模式读的是表里的那一格；用 YAML 的值会让"参数表里看到的"
+    与"导出的文件"悄悄不一致（真踩过：表里写 ``GPIOX``、派生表达式却按 ``GPIO`` 算长度）。
+    """
+    definitions_by_name = {item.name: item for item in definitions}
+    context: dict[str, VarValue] = {}
+    for name, raw in raw_values.items():
+        definition = definitions_by_name.get(name)
+        loaded = values.get(name)
+        if loaded is not None:
+            context[name] = DerivedValue(raw, loaded.prefix, loaded.suffix)
+        elif definition is None:
+            context[name] = DerivedValue(raw)
+        else:
+            context[name] = DerivedValue(raw, definition.prefix, definition.suffix)
+    return context
+
+
+def _unwrap_derived(context: dict[str, Any], definitions: Sequence[VariableDef]) -> None:
+    """把 ``_derived_context`` 里算出来的**派生结果**写回裸值形态。
+
+    其他调用方（指纹 / 模板上下文）要的是算好的值本身，不是 ``VarValue`` 包装；
+    非派生变量本来就该是裸值，原样放回。
+
+    注意算出来的结果**已经是裸值**（表达式求值返回的就是数值 / 文本），
+    所以这里只在"确实被包成 VarValue"时才拆 —— 不能假定一定是包装对象。
+    """
+    derived_names = {item.name for item in definitions if item.is_derived}
+    for name in [name for name in context if name in derived_names]:
+        value = context[name]
+        if isinstance(value, VarValue):
+            context[name] = value.value
+
+
 def _resolve_derived_globals(
     worksheet: Worksheet,
     config: ProjectConfig,
@@ -1068,14 +1397,18 @@ def _resolve_derived_globals(
     derived = [item for item in config.global_variables if item.is_derived]
     if not derived:
         return
+    context = _derived_context(config.global_variables, values, raw_values)
     evaluate_derived(
         config.global_variables,
-        raw_values,
+        context,
         scope="global 的派生参数",
         forbidden={
             item.name: "global 的派生参数不能引用 local 变量（那时还没有当前 Case）" for item in config.local_variables
         },
     )
+    _unwrap_derived(context, config.global_variables)
+    for definition in derived:
+        raw_values[definition.name] = context[definition.name]
     _warn_hand_edited_derived_global(worksheet, derived, _GLOBAL_COL["value"], raw_values, warnings, label="Global 表")
     for definition in derived:
         current = values.get(definition.name, VarValue(""))
@@ -1203,7 +1536,7 @@ def read_cases(
             cell = _case_cell(worksheet, config, slot, anchor)
             if cell.value is not None and not (isinstance(cell.value, str) and cell.value.strip() == ""):
                 explicit = True
-            raw_value = _cell_or(cell.value, slot.definition.default if slot.definition else "")
+            raw_value = _cell_or(cell.value, slot.definition.effective_default if slot.definition else "")
             kind = slot.definition.type if slot.definition else "auto"
             coerced = _coerce(raw_value, kind, f"{anchor.name}.{slot.name}")
             raw_values[slot.name] = coerced
@@ -1217,7 +1550,7 @@ def read_cases(
             if not definition.is_derived:
                 raw_values[definition.name] = _coerce(definition.default, definition.type, definition.name)
 
-        _resolve_derived_locals(worksheet, config, anchor, values, raw_values, warnings)
+        _resolve_derived_locals(worksheet, config, anchor, values, raw_values, warnings, global_values)
         cases.append(
             CaseData(
                 name=anchor.name,
@@ -1237,15 +1570,26 @@ def _resolve_derived_locals(
     values: dict[str, VarValue],
     raw_values: dict[str, Any],
     warnings: list[str] | None,
+    global_values: Mapping[str, VarValue] | None = None,
 ) -> None:
     derived = [item for item in config.local_variables if item.is_derived]
     if not derived:
         return
+    # 局部派生可以引用全局参数：两边都进上下文。
+    # 前后缀取**各自表里读到的**：local 的在 values 里、global 的在 global_values 里 ——
+    # 只传 values 会让 global 名字回落到 YAML 的前后缀，而公式侧读的是 Global 表的
+    # D/E 列，于是表里改过前缀就出现"Python 算一个数、Excel 算另一个数"。
+    lookup = {**(global_values or {}), **values}
+    definitions = [*config.global_variables, *config.local_variables]
+    context = _derived_context(definitions, lookup, raw_values)
     evaluate_derived(
         config.local_variables,
-        raw_values,
+        context,
         scope=f"Case {case.name!r} 的 local 派生参数",
     )
+    _unwrap_derived(context, config.local_variables)
+    for definition in derived:
+        raw_values[definition.name] = context[definition.name]
     _warn_hand_edited_derived(
         worksheet,
         config,
@@ -1308,7 +1652,7 @@ def read_group_members(
         for column_name, column in columns.items():
             definition = defined.get(column_name)
             raw = worksheet.cell(row=row, column=column).value
-            value = _cell_or(raw, definition.default if definition else "")
+            value = _cell_or(raw, definition.effective_default if definition else "")
             kind = definition.type if definition else "auto"
             values[column_name] = VarValue(
                 _coerce(value, kind, f"{name}.{column_name}"),
@@ -1453,22 +1797,48 @@ def _coerce(value: Any, kind: str, label: str) -> Any:
     return value
 
 
+def _warn_choices_with_blank(variables: Sequence[VariableDef], warnings: list[str] | None) -> None:
+    """``choices`` 里塞空串是"允许留空"的**老绕法**，现在有 ``allow_blank`` 了。
+
+    只提示、不改行为：老配置照常能跑；但把"为什么这么写、更好的写法是什么"说出来，
+    免得这个反直觉的写法继续被当成唯一出路（它没有任何文档提示）。
+    """
+    if warnings is None:
+        return
+    for variable in variables:
+        if not variable.choices:
+            continue
+        if any(to_text(item) == "" for item in variable.choices) and not variable.allow_blank:
+            warnings.append(
+                f"变量 {variable.name!r} 的 choices 里有空串（{variable.choices!r}）—— "
+                "那是「允许留空」的老写法。建议改成 choices 只写真实取值 + allow_blank: true："
+                "下拉列表里就不会再出现一个空选项，「可以留空」也写得明明白白"
+            )
+
+
 def check_value_constraints(
     config: ProjectConfig,
     global_values: Mapping[str, VarValue],
     cases: Sequence[CaseData],
     members: Mapping[str, Mapping[str, VarValue]] | None = None,
+    *,
+    warnings: list[str] | None = None,
 ) -> None:
     """校验表里填的取值是否满足变量声明的 ``min`` / ``max`` / ``choices`` / ``pattern``。
 
     为什么要它：工具此前只查"变量有没有定义、类型对不对"，**完全不看值** —— 把
     ``20.559`` 手滑打成 ``205.59`` 会一路渲染成错误代码，而 ``check`` 只会说"与参数一致"。
-    声明了约束就一定查，**空值也算不合格**（``choices`` 意味着"必须给一个合法取值"）。
+    声明了约束就一定查，**空值默认也算不合格**（``choices`` 意味着"必须给一个合法取值"）；
+    想让某个变量能留空就写 ``allow_blank: true``。
 
     不满足时抛 :class:`ExcelError`，一次列全部问题并指出是哪张表、哪一列、哪个变量。
+
+    :param warnings: 传一个列表进来，会把"``choices`` 里塞了空串"这类"能跑但该改"的写法写进去。
     """
     problems: list[str] = []
     global_sheet = config.excel.sheets.global_
+
+    _warn_choices_with_blank([*config.global_variables, *config.local_variables, *config.group_variables], warnings)
 
     for row, variable in enumerate(config.global_variables, start=2):
         if variable.is_derived or not variable.has_constraints:
@@ -1506,7 +1876,7 @@ def check_value_constraints(
                     problems.append(f"  {config.group.sheet} 成员 '{member}' 的 '{variable.name}'：{problem}")
 
     if problems:
-        raise ExcelError(
+        raise InputError(
             f"参数取值不满足变量声明的约束，共 {len(problems)} 处：\n"
             + "\n".join(problems)
             + "\n  → 改 Excel 里的取值，或放宽 YAML 里的 min / max / choices / pattern"
@@ -1717,13 +2087,10 @@ def write_results(
                 blocks = _formula_blocks(workbook, config, template, results, case_axes)
                 formula_written = True
                 if warnings is not None:
-                    longest = max((len(line) for block in blocks for line in block.lines), default=0)
+                    source = _template_source(template, config.source_dir)
+                    longest, placeholders = longest_formula([block.lines for block in blocks], source)
                     if longest > LONG_FORMULA_WARN:
-                        warnings.append(
-                            f"模板 {template.name!r} 的最长公式 {longest} 字符"
-                            f"（警告阈值 {LONG_FORMULA_WARN}）：一个 {{{{ x }}}} 约展开 300–400 字符，"
-                            "建议把这一行拆成多行"
-                        )
+                        warnings.append(long_formula_warning(template.name, longest, placeholders=placeholders))
             else:
                 blocks = [_Block(result.case_name, result.lines) for result in results]
 
@@ -1768,7 +2135,7 @@ def write_results(
         _record_metadata(workbook, config, metadata, command=command, update_howto=update_howto)
         workbook.save(target)
     except OSError as exc:
-        raise ExcelError(f"无法写回 Excel {target}: {exc}（文件被 Excel 占用？）") from exc
+        raise WorkbookIOError(f"无法写回 Excel {target}: {exc}（文件被 Excel 占用？）") from exc
     finally:
         workbook.close()
     return target

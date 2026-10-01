@@ -18,7 +18,7 @@ from spreadsheet_codegen.cli import app
 from spreadsheet_codegen.excel_io import check_value_constraints
 from spreadsheet_codegen.models import CaseData
 from spreadsheet_codegen.renderer import check_asserts, compile_asserts
-from spreadsheet_codegen.utils import ConfigError, ExcelError, RenderError, VarValue
+from spreadsheet_codegen.utils import ConfigError, InputError, RenderError, VarValue
 
 runner = CliRunner()
 
@@ -125,7 +125,7 @@ def test_passing_asserts_are_silent(tmp_path: Path) -> None:
 
 def test_violation_names_the_case_and_column(tmp_path: Path) -> None:
     config = make_config(tmp_path, ["draft.value <= d_tank.value"])
-    with pytest.raises(ExcelError) as excinfo:
+    with pytest.raises(InputError) as excinfo:
         check_asserts(config, GLOBALS, cases(("A", 5, 20, "EXT"), ("B", 6, 30, "INT")))
     message = str(excinfo.value)
     assert "共 1 处" in message
@@ -139,7 +139,7 @@ def test_multiple_asserts_and_cases_are_all_reported(tmp_path: Path) -> None:
         ["draft.value <= d_tank.value", "not (kind.value == 'INT' and draft.value > 22)"],
     )
     bad = cases(("A", 5, 30, "EXT"), ("B", 6, 23, "INT"))
-    with pytest.raises(ExcelError) as excinfo:
+    with pytest.raises(InputError) as excinfo:
         check_asserts(config, GLOBALS, bad)
     message = str(excinfo.value)
     assert "共 2 处" in message
@@ -151,7 +151,7 @@ def test_bare_name_is_the_combined_value(tmp_path: Path) -> None:
     """与 case_filter 同一套语义：裸变量是组合值，数值比较必须写 .value。"""
     config = make_config(tmp_path, ['kind == "EXT"'])
     check_asserts(config, GLOBALS, cases(("A", 5, 20, "EXT")))
-    with pytest.raises(ExcelError):
+    with pytest.raises(InputError):
         check_asserts(config, GLOBALS, cases(("A", 5, 20, "INT")))
 
 
@@ -212,11 +212,12 @@ def test_render_and_validate_reject_violation(tmp_path: Path) -> None:
     finally:
         book.close()
 
-    with pytest.raises(ExcelError):
+    with pytest.raises(InputError):
         render_all(config, excel)
     for command in ("validate", "check"):
         result = runner.invoke(app, [command, "-c", str(tmp_path / "a.yaml"), "-x", str(excel)])
-        assert result.exit_code == 1, f"{command} 应当以退出码 1 结束"
+        # 退出码 2 = "取值/配置不对"（0.11.0 起可区分，见 docs/cli.md）
+        assert result.exit_code == 2, f"{command} 应当以退出码 2（取值错误）结束"
         text = ((result.output or "") + (getattr(result, "stderr", "") or "")).replace("\n", "")
         assert "asserts" in text
 
@@ -232,6 +233,6 @@ def test_constraint_error_wins_over_assert(tmp_path: Path) -> None:
     )
     config = load_config(path)
     bad = [CaseData(name="A", column=5, values={"draft": VarValue(value=30), "kind": VarValue(value="EXT")})]
-    with pytest.raises(ExcelError) as excinfo:
+    with pytest.raises(InputError) as excinfo:
         check_value_constraints(config, GLOBALS, bad)
     assert "大于上限" in str(excinfo.value)

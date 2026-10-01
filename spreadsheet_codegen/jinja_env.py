@@ -89,4 +89,10 @@ def build_environment(
     environment.globals.setdefault("int", int)
     environment.globals.setdefault("float", float)
     environment.globals.setdefault("round", round)
+    # len 同时给"函数调用"与"过滤器"两种写法：`len(x)` / `x | len` / `x | length`。
+    # 三种在 Python 侧都是 len()，Excel 侧都是 LEN() —— 补齐它是因为它最常用
+    # （此前 `derived: "len(secret.value)"` 会报"引用了未定义的变量 'len'"）。
+    environment.globals.setdefault("len", len)
+    environment.filters.setdefault("len", len)
+    environment.filters.setdefault("length", len)
     return environment

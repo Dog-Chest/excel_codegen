@@ -6,6 +6,7 @@ Jinja2 环境与 ``pvs`` / ``wrap`` 过滤器在 :mod:`spreadsheet_codegen.jinja
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,7 +24,7 @@ from .excel_io import (
 )
 from .jinja_env import build_environment, pvs, wrap
 from .models import CaseData, ProjectConfig, RenderResult, TemplateDef
-from .utils import ExcelError, RenderError, VarValue, safe_filename, to_text
+from .utils import ExcelError, InputError, RenderError, VarValue, safe_filename, to_text
 
 __all__ = [
     "FilterValue",
@@ -36,8 +37,11 @@ __all__ = [
     "compile_asserts",
     "compile_case_filter",
     "export_files",
+    "filename_collisions",
+    "filename_variables",
     "filter_context",
     "member_of",
+    "plan_export_files",
     "pvs",
     "render_all",
     "render_template",
@@ -280,7 +284,7 @@ def check_asserts(
             if not passed:
                 problems.append(f"  Case '{case.name}'（Local 表{case.where}）不满足：{expression}")
     if problems:
-        raise ExcelError(
+        raise InputError(
             f"参数不满足 YAML 里的 asserts（跨变量校验），共 {len(problems)} 处：\n"
             + "\n".join(problems)
             + "\n  → 改 Excel 里的取值，或调整 YAML 里的 asserts"
@@ -437,7 +441,7 @@ def render_all(
         workbook.close()
 
     # 取值约束（min / max / choices / pattern）：声明了就一定查，别让手滑的数字生成出错误代码
-    check_value_constraints(config, global_values, cases, members=members)
+    check_value_constraints(config, global_values, cases, members=members, warnings=read_warnings)
     # 跨变量校验（asserts）：拦"吃水不能超过型深"这类组合错误
     check_asserts(config, global_values, cases, members=members)
 
@@ -507,15 +511,43 @@ def _case_warnings(config: ProjectConfig, cases: Sequence[CaseData]) -> list[str
 # --------------------------------------------------------------------------- #
 # 导出代码文件
 # --------------------------------------------------------------------------- #
-def export_files(
+@dataclass(frozen=True)
+class PlannedExport:
+    """一份**待导出**的结果：渲染好的文件名 + 内容 + 是谁的（给冲突报告用）。"""
+
+    template: TemplateDef
+    result: RenderResult
+    target: Path
+
+    @property
+    def text(self) -> str:
+        """要落盘的内容（保证以换行结尾）。"""
+        return self.result.text if self.result.text.endswith("\n") else self.result.text + "\n"
+
+
+#: ``filename`` 冲突报告里最多列几个 Case 名（其余折成"还有 N 个"）。
+_COLLISION_CASE_LIMIT = 6
+
+
+def filename_variables(template: TemplateDef, result: RenderResult) -> list[str]:
+    """这个 Case 的 ``filename`` 里**可以**用的变量名（冲突时用来给"改法"举例）。
+
+    顺序是"最可能有用"在前：``seq`` / ``case_name`` 之类的短名字优先 —— 它们放进文件名
+    最不容易把名字撑长。``case_name`` / ``template_name`` 也在这里，因为它们是合法的。
+    """
+    names = {"case_name", "template_name"}
+    names.update(result.context)
+    return sorted(names, key=lambda name: (name not in ("seq", "case_name"), len(name), name))
+
+
+def plan_export_files(
     config: ProjectConfig,
     results: Mapping[str, Sequence[RenderResult]],
     outdir: str | Path,
     *,
     env: Environment | None = None,
-    overwrite: bool = True,
-) -> list[Path]:
-    """把渲染结果导出为代码文件。
+) -> list[PlannedExport]:
+    """算出"将要写哪些文件"，但**不落盘** —— 冲突检测靠它。
 
     文件名由 ``template.filename`` 决定（支持 Jinja2）：``{{ case_name }}`` /
     ``{{ template_name }}`` / **这个 Case 的任意变量**（例如只用来排序的 ``seq``）；
@@ -526,8 +558,7 @@ def export_files(
     """
     environment = env or build_environment()
     directory = Path(outdir)
-    directory.mkdir(parents=True, exist_ok=True)
-    written: list[Path] = []
+    planned: list[PlannedExport] = []
 
     for template in config.templates:
         per_case = results.get(template.name)
@@ -545,14 +576,121 @@ def export_files(
             file_name = safe_filename(raw_name)
             if not file_name:
                 raise RenderError(f"模板 {template.name!r} 在 Case {result.case_name!r} 下生成了空文件名")
-            target = directory / file_name
-            if target.exists() and not overwrite:
-                raise RenderError(f"目标文件已存在: {target}（需要覆盖请去掉 --no-overwrite）")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            text = result.text if result.text.endswith("\n") else result.text + "\n"
-            try:
-                target.write_text(text, encoding="utf-8")
-            except OSError as exc:
-                raise RenderError(f"无法写入文件 {target}: {exc}") from exc
-            written.append(target)
+            planned.append(PlannedExport(template=template, result=result, target=directory / file_name))
+    return planned
+
+
+def filename_collisions(planned: Sequence[PlannedExport], outdir: str | Path) -> str | None:
+    """检查"多份结果会写进同一个文件"；有冲突就返回给用户看的说明，否则 ``None``。
+
+    为什么必须查：``filename: "vault.jsonl"`` 是**最自然的写法**，而 3 个 Case 会安静地
+    互相覆盖 —— 最后只剩一条记录，退出码 0，摘要里还把同一个路径打印了三遍。
+    这种"看起来成功、实际只含最后一条"的交付物比直接报错难发现得多，所以在写盘前拦住。
+
+    同一个模板内部的重复导出也算 —— 即使内容碰巧相同，那也几乎肯定是 ``filename``
+    忘了带区分用的变量。
+    """
+    grouped: dict[Path, list[PlannedExport]] = defaultdict(list)
+    for item in planned:
+        grouped[item.target].append(item)
+
+    clashes = {target: items for target, items in grouped.items() if len(items) > 1}
+    if not clashes:
+        return None
+
+    directory = Path(outdir)
+    lines: list[str] = []
+    for target, items in sorted(clashes.items(), key=lambda pair: str(pair[0])):
+        cases = [item.result.case_name for item in items]
+        shown = ", ".join(repr(name) for name in cases[:_COLLISION_CASE_LIMIT])
+        if len(cases) > _COLLISION_CASE_LIMIT:
+            shown += f" 等 {len(cases)} 个"
+        templates = sorted({item.template.name for item in items})
+        where = "、".join(repr(name) for name in templates)
+        try:
+            display = target.relative_to(directory)
+        except ValueError:  # pragma: no cover - target 一定在 directory 下
+            display = target
+        lines.append(f"  {display} ← {where} 的 {len(cases)} 份结果（{shown}）")
+
+        proposal = _collision_suggestion(items)
+        if proposal:
+            lines.append(f"    → 例如把 filename 改成 {proposal}")
+
+    return (
+        "这些导出文件名对多个 Case 求值成了同一个文件，会互相覆盖（最终只留下最后一份内容）：\n"
+        + "\n".join(lines)
+        + '\n  文件名里请带上区分用的变量，例如 "{{ case_name }}.jsonl" 或 "{{ case_name }}_{{ template_name }}.jsonl"'
+        + "（确实想只留最后一份，就在命令行加 --allow-overwrite-filename）"
+    )
+
+
+def _collision_suggestion(items: Sequence[PlannedExport]) -> str | None:
+    """给第一组冲突**验证过**的改法：先算出新名字，确认真的不再重复才推荐。"""
+    first = items[0]
+    candidates = filename_variables(first.template, first.result)
+    if not candidates:
+        return None
+    for name in candidates:
+        # 只用一个变量时先验证它在这组 Case 上确实各不相同
+        if len({str(item.result.context.get(name, item.result.case_name)) for item in items}) < len(items):
+            continue
+        pattern = "{{ " + name + " }}" + first.template.extension
+        rendered = {_safe_template_filename(item, pattern) for item in items}
+        if len(rendered) == len(items) and all(rendered):
+            return f'"{pattern}"（在这组 Case 上得到 {", ".join(sorted(rendered))}）'
+    for combination in (("case_name",), ("case_name", "template_name")):
+        pattern = "_".join("{{ " + name + " }}" for name in combination) + first.template.extension
+        rendered = {_safe_template_filename(item, pattern) for item in items}
+        if len(rendered) == len(items):
+            return f'"{pattern}"'
+    return None
+
+
+def _safe_template_filename(item: PlannedExport, pattern: str) -> str:
+    """把一段候选 ``filename`` 模板渲染成文件名（失败就返回空串，调用方据此放弃该建议）。"""
+    data = dict(item.result.context)
+    data["case_name"] = item.result.case_name
+    data["template_name"] = item.template.name
+    try:
+        return safe_filename(build_environment().from_string(pattern).render(**data))
+    except (TemplateError, TypeError):
+        return ""
+
+
+def export_files(
+    config: ProjectConfig,
+    results: Mapping[str, Sequence[RenderResult]],
+    outdir: str | Path,
+    *,
+    env: Environment | None = None,
+    overwrite: bool = True,
+    allow_collisions: bool = False,
+) -> list[Path]:
+    """把渲染结果导出为代码文件。
+
+    :param overwrite: 目标文件已存在（上一次运行的残留）时是否覆盖。
+    :param allow_collisions: 本次运行内部"多份结果写同一个文件名"是否放行。
+        **默认不放行** —— 那是静默产出错误交付物的经典场景（见 :func:`filename_collisions`）。
+    """
+    directory = Path(outdir)
+    directory.mkdir(parents=True, exist_ok=True)
+    planned = plan_export_files(config, results, directory, env=env)
+
+    if not allow_collisions:
+        problem = filename_collisions(planned, directory)
+        if problem is not None:
+            raise RenderError(problem)
+
+    written: list[Path] = []
+    for item in planned:
+        target = item.target
+        if target.exists() and not overwrite:
+            raise RenderError(f"目标文件已存在: {target}（需要覆盖请去掉 --no-overwrite）")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            target.write_text(item.text, encoding="utf-8")
+        except OSError as exc:
+            raise RenderError(f"无法写入文件 {target}: {exc}") from exc
+        written.append(target)
     return written

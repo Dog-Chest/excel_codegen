@@ -9,6 +9,301 @@
 
 ---
 
+## 0.11.0 — 按一次真实使用的反馈修掉"静默出错"的那几处（2026-10-01）
+
+这一版来自一份**实测反馈**（做"密码管理表"：三种密码类型 + JSONL/CSV/XML 导出 +
+行列风格与 `case_filter` 变体，跑了 57 项功能测试，见文末"来源"）。它按优先级列了 10 件事，
+其中最要紧的一类不是"缺功能"，而是**不报错、不告警、结果不对**。本版把它们全部修掉。
+
+> **兼容性**：默认行为**一律不变** —— 已有 YAML 与工作簿不用改。两处**破坏性变更**
+> 在 §3 / §4 单独标注（都带一个版本的告警期）。
+
+### 1. 导出文件名冲突会互相覆盖（P0，最危险的一处）
+
+`filename: "vault.jsonl"` 是**最自然的写法**：3 个 Case 渲染出 3 份结果，
+`--outdir` 后只剩 1 个文件，`render` 摘要把同一个路径打印 3 次，退出码 0，没有任何告警。
+实测里"12 个结果 → 2 个文件"。这是"看起来成功、实际只含最后一条"的交付物，比报错难发现得多。
+
+* 写盘**之前**做冲突检测（同一模板内部、以及跨模板写同一个 `--outdir` 都算），
+  冲突就 `RenderError` 并列出**是哪些 Case 抢的**；
+* 报错里给一条**验证过的**改法：工具会真的拿候选变量把文件名渲染一遍，
+  确认这组 Case 不再重名才推荐（例如 `"{{ case_name }}.jsonl"` → 列出实际得到的三个名字）；
+* 冲突时**一个文件都不写**，不留半份产物；
+* 确实想只留最后一份：新增 `--allow-overwrite-filename`，这时以 `!` 告警说明"最终留下的是最后一份"；
+* 顺带说清 `--no-overwrite` 挡的是"目标文件已存在"（上一次的残留），**挡不住本次运行内部互相覆盖**。
+
+新增 `plan_export_files()` / `filename_collisions()` / `filename_variables()`（库接口）。
+
+### 2. 生成的一键刷新脚本基本跑不起来，而且提示指错了原因
+
+`init` 生成的 `*_render.bat` 只会在 PATH 上找 `spreadsheet-codegen`，或 `uv run` 同一条命令 ——
+在"用源码 / `python -m` 跑"的机器上**两条路都不通**，而失败提示说的是"依赖没装（跑一次
+setup.sh / uv sync）"：**指向了一个不存在的原因**。包名是 `spreadsheet_codegen`（下划线）、
+命令才是 `spreadsheet-codegen`（连字符），最稳的那条路反而没覆盖。
+
+* 回退链写全（顺序一致、两个平台同一套）：
+  `uv run spreadsheet-codegen` → `uv run python -m spreadsheet_codegen` →
+  `$SPREADSHEET_CODEGEN_PY -m spreadsheet_codegen` → `spreadsheet-codegen` → `python -m spreadsheet_codegen`；
+* 成功标记 + `goto`（`.bat`）/ 定案标记（`.sh`），每条路都真的会被试过；
+  `.sh` 全部失败时**原样带出工具的退出码**（`1/2/3/4`，CI 靠它分流），
+  而且只在"命令不存在"时才退到下一条路 —— 命令在却报错 = 工具真的失败，
+  再退到别的解释器会把真错误盖成"没装"；
+* **`.sh` 侧发布前自测抓到的两处静默错误**：`status` 初始为 0 又拿它当每条路的守卫，
+  没装 `uv` 的机器上第一条路根本不执行 → 后面每条路都被自己的守卫挡掉 → 脚本一件正事
+  没干却打印 `[完成]` 并以 0 退出；又因为 `run()` 以赋值结尾而恒返回 0，
+  `||` 兜底的第二条 uv 路永远走不到。现在改用独立的 `solved` 标记；
+* **`.bat` 侧发布前自测抓到的一处静默假成功**：脚本以 `echo` + `pause` 收尾，
+  两条内建命令都会把 `ERRORLEVEL` 归零 —— 五条路**全失败也以 0 结束**，
+  批处理与 CI 都看不出失败。现在 `pause` 之后显式
+  `if defined SPREADSHEET_CODEGEN_OK (exit /b 0) else (exit /b 1)`；
+* 失败提示改成**实话**：列出试过的所有方式 + 两条真正的出路
+  （`pip install spreadsheet-codegen`，或设 `SPREADSHEET_CODEGEN_PY`），不再说"依赖没装"；
+* **`.bat` 开头加 `chcp 65001`**：文件是 UTF-8，中文 Windows（GBK 控制台）下原本是乱码，
+  甚至因为字节被当成命令而报 `'xxx' is not recognized`；
+* 随包发布的示例脚本（`spreadsheet_codegen/examples/*/`，12 个文件）按新生成器重新生成。
+
+实测：把 PATH 剥到只剩 `python`（没 uv、没命令）跑生成的 `.bat`，修前两条路全失败，修后走
+`python -m spreadsheet_codegen` 通过。
+
+### 3. `excel.output` 的路径语义（**破坏性变更**）
+
+同一个 YAML 里 `template_file` 相对**YAML 所在目录**，而 `excel.output` 相对**当前工作目录**，
+且 `..` 不规范化 —— "文件跑到别处去了"是最费时间的排查。反馈里 `PasswordManager/` 下写
+`../password_vault_vertical.xlsx`，工作簿落到了上一级，而 `init` 摘要只写 `..\...`。
+
+* `excel.output` 现在与 `template_file` **同一条规则**：相对**配置文件所在目录**解析，
+  且**规范化**成绝对路径（`rules/../book.xlsx` 里的 `..` 不再原样留着）；
+* 命令行给的 `-o` / `-x` 仍是相对**当前工作目录**（终端用户的直觉）；
+* `init` 摘要打印绝对路径 + 一行说明（"excel.output：相对配置文件所在目录 …"）；
+* `render` 摘要新增"导出目录"行（绝对路径）；
+* **顺带修掉一个显示问题**：`rich` 会把过长的表格单元**省略成 `…`**，于是"路径只显示一半"
+  —— 现在路径**折行**而不是截断（`overflow="fold"`），用户能看到完整路径；
+* 指南 §2.2 补上这条规则的说明（此前文档完全没写 `excel.output` 的解析规则）。
+
+> 迁移：把 YAML 放在工作簿旁边、写 `output: "book.xlsx"` 的用法**完全不受影响**。
+> 只有当 `excel.output` 是相对路径且"配置文件不在当前工作目录"时才可能落点变化 ——
+> 那种情况原本就是"跟着 CWD 跑"，不可依赖。CHANGELOG 本条即告警期，0.12.0 起按新语义为准。
+
+### 4. `default` 的两种用途分开：`prefill` / `fallback`（P1）
+
+作者写 `default` 的本意常常只是"给新表一个提示值"，但运行时语义是"空 = 用默认值"。
+于是一旦某个字段是"某类型才有"的（网站的 `url`、银行卡的 `card_type`），`default`
+就从"体贴"变成"污染"：银行卡那列明明清空了，导出结果里却回落到 `https://example.com/login`
+—— **"没填"与"填了这个值"在结果里不可区分**，生成错数据且不报错（反馈附录 A4 有复现）。
+
+新增两个开关，**默认都开着**（= 0.10.0 的行为，已有配置一行都不用改）：
+
+| 字段 | 默认 | 含义 |
+| --- | --- | --- |
+| `prefill` | `true` | `init` 建表时是否把 `default` 写进新单元格 |
+| `fallback` | 跟 `prefill` | 单元格为空时是否回落 `default` |
+
+```yaml
+- name: url
+  default: "https://example.com/login"   # 仍然预填进新表当提示
+  fallback: false                        # 但清空之后就是空的
+```
+
+* `prefill: false` + `fallback: true` 是自相矛盾（既不预填、又要空时回落），配置期直接报错；
+* **两个引擎一致**：`fallback: false` 时 Excel 公式里也不回落默认值，
+  并且这条由测试用"公式求值器"守门（`test_fallback_false_agrees_with_the_excel_formula`）；
+* 变量名格子的 Excel 批注会写清"留空 = 使用默认值"还是"留空 = 这个参数没有值"；
+* `validate` 的变量清单新增「取值」列（预填 + 空则回落 / 只预填 / 不预填、不回落 / 可留空）。
+
+### 5. 带约束的变量无法留空 → `allow_blank`（P1）
+
+"某类型才有"的字段在旧版只能靠往 `choices` 里塞空串绕过：
+`choices: ["", "储蓄卡", …]` —— 下拉列表第一项是空的、读起来像"允许空"，而文档又说空值不合格，
+两边说法冲突，而且这个绕法**没有任何文档提示**（反馈作者是读源码试出来的）。
+
+* 新增 `allow_blank: true`：空值通过校验，并明说"可以留空"；
+* Excel 的下拉列表里**不再出现那个空选项**（选项就是你写的那些）；
+* 老写法（`choices` 含空串）仍然接受，但 `render` / `validate` 会给一条 `!` 提示建议改写；
+* 写了 `allow_blank` 却一条约束都没有 → 配置期报错（本来就没人拦空值）；
+* "必填"仍然是 `asserts` 的职责；指南 §3.5 补上这节（含"某类型才有的字段"完整写法）。
+
+### 6. `--outdir` 与 `--write-excel` 一次跑完（P1）
+
+以前"改了参数想把 xlsx 与 generated/ 都同步"要跑两遍 `render`（一个只写 Excel，
+一个只导文件，还会 `!` 提醒"Excel 里的表还是上一次的内容"）。
+两个选项现在**可以一起给**，一次渲染两边都落盘。
+
+### 7. 派生参数：`x.value` 在公式模式下**从未真正生效**（顺手挖出的真 bug）
+
+反馈报的是"`derived: "len(secret.value)"` 报'引用了未定义的变量 len'"。顺着修时发现
+更深的一层：`derived.to_excel` 翻译 `x.value` 这类属性访问时要把属性名传给 resolver，
+而 `excel_io` 的两个 resolver **只接受一个参数** —— 抛出的 `TypeError` 被翻译器当成
+"上下文不支持属性访问"，于是**任何**带 `.value` 的派生表达式都被降级成"往格子里写算好的值"：
+公式模式下参数改了它不再自动重算，**而且一句提示都没有**。`is_translatable()` 也受同一件事影响
+（它的探测 resolver 同样只收一个参数），所以它把这类表达式判成"翻译不了"。
+
+* 两个 resolver 改成 `resolve(name, attribute=None)`，正确支持 `.value` / `.text` / `.prefix` / `.suffix`；
+  拼错的属性名（`.valu`）现在**报错**而不是静默降级；
+* `is_translatable()` 的探测 resolver 同步修好；
+* 配置期的"引用未定义变量"报错会认出**已知但不支持**的函数并说明原因
+  （`upper()`：Python 与 Excel 的大小写映射不一致……），附上白名单与两条出路 ——
+  而不是说"引用了未定义的变量 'upper'"那种把人带偏的话；
+* **新增 `len`**（最常用、最容易补齐）：`len(x.value)` / `len(x)` / `x | len` / `x | length`
+  → Excel `LEN`。三种写法**完全等价，都量纯值**（裸名字就是纯值，见下面那条）；
+* 公式求值器（`check --values` 用的那个）补上 `LEN`，否则新功能没法被验证；
+* **另一个静默分叉**：派生表达式的前缀/后缀原先取自 **YAML**，而模板与公式取自**表里**的
+  C/D 列 —— 一旦有人在表里覆盖了前缀，`len(port.prefix)` 就会两处不一致。
+  现在派生上下文一律用**表里读到的**前后缀（含"local 派生引用 global 的前后缀"这条路径，
+  它一开始只把 local 的 values 传下去，global 名字又落回了 YAML）；
+* 指南 §15.3 补上**完整的函数白名单表**（以前只能翻源码 `_FUNCS`）。
+
+> **发布前自测抓到的三处静默分叉**（都由"两边必须给同一个答案"这条承诺兜底，
+> 全部配了**真的把 Excel 公式算一遍**再与 Python 比对的回归）：
+>
+> 1. **裸名字的语义**：派生上下文一开始直接复用了模板侧的 `VarValue`，于是 `x` 是
+>    **组合值**（`prefix+value+suffix`），而 Excel 侧 `resolve(name)` 指向**取值列**（纯值）。
+>    `a ~ a`（a 带前后缀）Python 给 `"XAZXAZ"`、Excel 给 `"AA"`；`len(a)` Python 给 3、Excel 给 1。
+>    指南 §15.1 写的就是"引用拿到的是**纯值**"，所以错的是 Python 这边 ——
+>    现在派生上下文用 `DerivedValue`（`__str__` 给纯值，`.prefix`/`.suffix` 照常可读）；
+> 2. **比较运算符按文本比**：`__lt__`/`__gt__` 等拿 `to_text` 逐字符比，
+>    于是 `min(10, 9)` 得到 **10**（`"10" < "9"`）、`10 < 9` 得到 **True** ——
+>    而 Excel 的 `MIN(10,9)` 是 9、`10<9` 是 `FALSE`。`min`/`max`/`<` 都在白名单里。
+>    现在按**值**比（两侧类型对不上时才退回文本比较）；
+> 3. **`x == 10` 恒为假**：`__eq__` 拿 `str(self)` 去和 `10` 比。现在非字符串标量先转文本。
+>
+> 顺带记一个**本次没修**的既有分叉：布尔的文本形式两边不一致 —— Python 的
+> `to_text(False)` 给 `"false"`，Excel 把 FALSE 拼进文本给 `"FALSE"`。所以派生出的
+> 布尔值直接印进模板会在 `check --values` 上报 `value_mismatch`。改 `to_text` 会影响
+> 所有快照模板里 `{{ flag }}` 的输出（**破坏性变更**），留到下一版单独处理。
+
+### 8. 公式模式支持 `{% elif %}`（P2）
+
+`elif` 原本报"`{% else %}` 没有对应的 `{% if %}`"（信息本身也把人带偏）。
+`elif` 是**无损**降级（Jinja 的 `elif` 就等于"`else` 里再套一个 `if`"），
+所以直接编译成嵌套 `IF`：`{% if c1 %}A{% elif c2 %}B{% else %}C{% endif %}`
+→ `IF(c1,A,IF(c2,B,C))`。端到端测试用公式求值器逐行核对与 Python 渲染一致。
+孤立的 `{% elif %}` / 缺 `{% endif %}` 的报错也改成点名正确的关键字。
+
+### 9. `check` 的退出码可区分（P2）
+
+以前所有失败都是 1，CI 里想区分"我的参数填错了"与"表里的输出过期了"只能 grep 文本，
+而这两件事的处置完全不同（一个要人改，一个可以自动重渲染）：
+
+| 退出码 | 含义 |
+| --- | --- |
+| `1` | 通用失败（模板语法、变量缺失、工作簿结构不对）—— **老脚本的 `if errorlevel 1` 照常有效** |
+| `2` | 配置 / 取值错误（YAML 写错、取值越界、`asserts` 不满足、模板写法公式模式表达不了） |
+| `3` | 输出过期（`check`） |
+| `4` | 环境问题（工作簿打不开 / 写不进） |
+
+新增 `InputError`（`ExcelError` 的子类，所以 `except ExcelError` 的库调用方不受影响），
+用来把"取值不对"这一类单独标出来。`check --json` 同时新增**稳定的分类枚举**
+`problem_kinds`（`output_stale` / `value_mismatch` / `case_header` / `missing_sheet` /
+`no_matching_case`），与 `problems` 一一对应 —— CI 按性质分流不必再 grep 中文。
+`docs/cli.md` 新增「退出码」一节与分流示例。
+
+发布前自测补上的几处（原先这张表只兑现了一部分）：
+
+* **`InputError` 其实不是 `ExcelError` 的子类**：定义时写成了 `CodeGenError`，而
+  `ExcelError` 就在下面几行 —— 于是文档承诺的"库调用方既有的 `except ExcelError` 照常工作"
+  是假的，`check_value_constraints` / `check_asserts` 的异常会**静默穿过** `except ExcelError`。
+  现在真的挂上了（顺带补了 `issubclass` 断言）；
+* **退出码 `4` 只有 `doctor` 会给**：`check` / `render` / `validate` / `init` 的工作簿读写失败
+  被包成普通 `ExcelError` → 退 `1`，而文档表格写的是这几个命令都给 `4`。新增
+  `WorkbookIOError`（`ExcelError` 的子类）把"读不出来 / 写不进去"单独标出来，
+  四个命令现在一致给 `4`；**文件不存在**仍走 `1`（那是"还没 init"，不是环境坏了）；
+
+* **坏掉的工作簿会甩 traceback**：`_doctor_workbook` 里 `load_workbook_file` 在 `try`
+  之外，结构读取那一段也只有 `finally` 没有 `except` —— 工作簿被 Excel 占着、文件损坏、
+  少了参数表，用户看到的是整页 Python traceback。而"工作簿坏了"**恰恰是用户来跑
+  `doctor` 最常见的原因**，等于在最需要它的时候失效。现在这些都变成报告里的一行 ERROR；
+* **退出码只有 1**：文档（本表、`docs/cli.md`、`doctor` 自己的 docstring）都写了
+  "配置错为 2"，实现却始终硬编码 1。现在收集错误时把退出码一起带下来，
+  YAML 加载失败 = `2`、工作簿打不开 = `4`、其余按异常性质（取值类 `2`、结构类 `1`）；
+  一次报出多类问题时取数值最大的那一类（`4` > `2` > `1`）。
+
+### 10. `init --force` 的防呆（P2）
+
+`--force` 是**数据丢失点**：重建会盖掉已填的参数（文档 Q3 也承认了），但没有任何防呆。
+现在它会先比一次参数指纹：**人填过东西**时要求显式 `--yes`：
+
+```text
+ERROR 这本工作簿里 2 个 Case 的参数已经不是 YAML 默认值（当前指纹 b7463bafa13c，
+      默认值应为 914186c24e51）—— 看起来人填过东西。
+  重建会把这些参数换成 YAML 默认值（原文件不会自动备份）。
+  → 确认要丢掉就加 --yes；只想改骨架不想丢数据，就别加 --force
+```
+
+刚生成、没人动过的工作簿**不会被拦**（老用法一条命令照常跑完）。
+新增库接口 `workbook_deviates_from_defaults()` / `default_input_fingerprint()`。
+
+> **发布前自测抓到的三处判据错误**（这一条本身是防"静默丢数据"的，结果自己会漏报/误报）：
+>
+> 1. **"渲染记录 == 当前参数"被当成了"参数还是默认值"** —— 两者毫无关系：记录里存的是
+>    *上次渲染时*的参数，等于当前只说明"渲染过"。于是
+>    `改了参数 → render → init --force`（**不带 `--yes`**）一路放行，
+>    把用户填的值静默换回 YAML 默认值 —— 正是这个防呆要挡的那一下。现在判据只有
+>    "当前参数 == 全默认值"；回归 `test_recorded_edited_workbook_is_blocked_after_render`
+>    （旧测试的配置关掉了 Template/HOWO 表，那条短路分支从没被走到，所以一直没红）；
+> 2. **基线没按 `prefill` 算**：`prefill: false` 的格子 `init` 根本不写（读回来是空串），
+>    而基线取的是 `default` —— 刚生成的工作簿被判成"人填过东西"；
+> 3. **派生参数让基线永远对不上**：基线"直接取 default"，读工作簿时派生值是**现算**的。
+>    现在两边都**只看输入参数**（派生值是输入的函数，比输入既充分又稳）。
+
+### 11. 长公式告警给出"怎么改"（P2）
+
+`validate` / `render` / `doctor` 一直提醒"最长公式 6120 字符（警告阈值 3000）"，
+但没说清**要不要理它**（硬上限是 8000，6120 其实能跑），也没给可操作的拆法。
+现在同一条告警带上三样东西：
+
+* **这一行有几个占位符**（平均每个展开多少字符）；
+* **距硬上限的余量**（"还有 1880 字符 ≈ 再放 5 个占位符"）；
+* **建议怎么拆**（"可按字段拆成 2–3 行"），并说明拆行的代价
+  （横向布局下"一个 Case 占更多单元格"、读起来变竖条）。
+
+新增 `formula.long_formula_warning()` / `formula.count_placeholders()`。
+
+### 文档
+
+* 指南 §2.2 路径规则、§3.5 `allow_blank`、§4.5.1 `prefill`/`fallback`、
+  §8.1 文件名冲突、§9.2 `case_filter` 的**裸变量 vs `.value` 对照表**、
+  §14.1.1 `elif`、§15.3 函数白名单（含 `len`/裸名字的口径：**派生表达式里裸名字是纯值**，
+  与 `case_filter` / `asserts` 里"裸名字是组合值"是两套语义，各自的表里都写清了）；
+* `docs/cli.md`：`init` 的 `--force`/`--yes` 与路径规则、`render` 的 `--allow-overwrite-filename`
+  与"两个选项可同用"、`check` 的 `problem_kinds`、**退出码表**、错误类型表；
+* 本文件（CHANGELOG）就是这次的完整清单。
+
+### 回归
+
+**427 项测试（351 → 427，+76）**、ruff / format / mypy 全过（覆盖率 86%+，门槛 85）。
+每个修复都配一条**会红**的回归：
+
+| 修复 | 守门的测试 |
+| --- | --- |
+| 文件名冲突 | `test_cli_blocks_export_filename_collision` / `..._allows_collision_with_explicit_opt_in` |
+| 一键脚本回退链 | `test_generated_sh_actually_runs`、`..._falls_back_to_module_invocation`、
+`..._reports_every_route_it_tried`、`..._propagates_failure`（**真跑 `.sh`**）+ 四条 `.bat` 形态/编码/回退链断言 |
+| `.bat` 退出码 | `test_bat_exits_non_zero_when_every_route_failed` |
+| 路径语义 | `test_cli_init_resolves_output_relative_to_config` / `test_doctor_finds_config_output_from_another_cwd` |
+| `prefill`/`fallback` | `tests/test_prefill_fallback.py`（10 项，含**两引擎一致**那一条） |
+| `allow_blank` | `tests/test_allow_blank.py`（11 项） |
+| `len` / `.value` | `tests/test_derived_attributes.py`（14 项） |
+| 裸名字 / 比较运算符 / 跨作用域前后缀 | `test_len_bare_variable_measures_the_pure_value`、`test_bare_reference_and_dot_value_agree_in_derived`、`test_numeric_comparison_matches_excel`、`test_local_derived_reads_global_prefix_from_the_sheet` —— **都用公式求值器把 Excel 侧算一遍再比** |
+| `elif` | `tests/test_formula_if.py` 新增 6 项（含端到端与 Python 逐行对拍） |
+| 退出码 | 各命令的 `exit_code == 2 / 3` 断言 + `test_cli_unreadable_workbook_is_an_environment_error`（4）+ `check --json` 的 `problem_kinds` |
+| `InputError` 继承 | `test_input_error_is_catchable_as_excel_error` |
+| `doctor` 不甩 traceback | `test_unreadable_workbook_is_reported_not_a_traceback`（退出码 4）、`..._missing_sheets_...`（退出码 1） |
+| `--force` 防呆 | `tests/test_init_force_guard.py`（13 项，含"渲染过也要拦"与 `prefill: false` / 派生参数的基线） |
+| 长公式告警 | `test_cli_warns_about_long_formula` + `test_cli_long_formula_counts_the_longest_line_only`、`test_longest_formula_counts_placeholders_of_the_longest_line` |
+
+`.sh` 的四条执行用例在 Windows 上会 skip（本地没有 POSIX shell），CI 的
+ubuntu / macos 会真跑；`.bat` 的回退链另有一条**剥掉 PATH** 的手工实测记录（见 §2）。
+
+### 来源
+
+本版条目来自一次真实使用的反馈（作者给的一份《spreadsheet_codegen 改进建议》文档，
+**在仓库之外**，所以这里不留链接）：作者用 0.10.0 做了一本密码管理表
+（三种密码类型 + 三种导出格式 + 行列风格与 `case_filter` 变体），跑了 57 项功能测试，
+所有条目**都来自实测**并带复现命令。
+反馈里的动手顺序（P0 四处静默出错 → 语义混淆 → 体验）已按序完成。
+
+---
+
 ## 0.10.0 — 改名为 spreadsheet_codegen（2026-09-30）
 
 **破坏性变更**：项目名从 `excel_codegen` 改为 **`spreadsheet_codegen`**

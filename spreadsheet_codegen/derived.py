@@ -221,8 +221,36 @@ _COMPARE = {
 }
 #: 表达式里的函数 -> Excel 函数。``int`` 用 ``TRUNC``：Python 的 ``int()`` 向零截断，
 #: 而 Excel 的 ``INT()`` 是向下取整（``int(-2.5)`` 在两边会差 1）。
-_FUNCS = {"min": "MIN", "max": "MAX", "abs": "ABS", "int": "TRUNC", "float": None}
-_FILTERS = {"abs": "ABS", "int": "TRUNC", "float": None, "string": None}
+#: ``len`` -> ``LEN``：Python 侧 ``len("abc")`` 与 Excel ``LEN("abc")`` 在"字符数"上一致
+#: （两边都按 Unicode 码点计），是最常用、也最容易补齐的一个。
+_FUNCS = {"min": "MIN", "max": "MAX", "abs": "ABS", "int": "TRUNC", "float": None, "len": "LEN"}
+_FILTERS = {"abs": "ABS", "int": "TRUNC", "float": None, "string": None, "len": "LEN", "length": "LEN"}
+
+#: 用户很容易写、但**本工具不支持**的函数/过滤器 —— 报错时要说清"是什么、为什么、怎么办"。
+#: 只写"引用了未定义的变量 'len'"会把人的心智带到完全不同的修法上（真踩过）。
+_KNOWN_UNSUPPORTED: dict[str, str] = {
+    "upper": "Python 的 upper() 与 Excel 的 UPPER() 大小写映射规则不完全一致（非 ASCII 会分叉）",
+    "lower": "Python 的 lower() 与 Excel 的 LOWER() 大小写映射规则不完全一致（非 ASCII 会分叉）",
+    "strip": "Excel 只有 TRIM()，它同时会把字符串中间的连续空格压成一个，与 Python 的 strip() 不同",
+    "lstrip": "Excel 没有只去左侧空格的函数",
+    "rstrip": "Excel 没有只去右侧空格的函数",
+    "replace": "Excel 的 SUBSTITUTE() 参数顺序与语义同 Python 的 replace() 不同",
+    "ceil": "Python 的 ceil() 与 Excel 的 CEILING 边界行为不同",
+    "floor": "Python 的 floor() 与 Excel 的 FLOOR 边界行为不同（负数）",
+    "sorted": "Excel 没有等价的排序函数",
+    "sum": "Excel 的 SUM() 面向区域，与 Python 的 sum() 面向可迭代对象语义不同",
+    "join": "Excel 没有等价的连接函数（有 TEXTJOIN，但只在较新的版本里有）",
+    "format": "Excel 没有等价的格式化函数（可用 TEXT()，但格式串受区域设置影响）",
+    "startswith": "Excel 没有等价的字符串前缀判断（可用 LEFT(...)=...）",
+    "endswith": "Excel 没有等价的字符串后缀判断（可用 RIGHT(...)=...）",
+}
+
+#: 一句"到底支持什么"，用在所有"不支持"的报错里（读者不必去翻源码）。
+SUPPORTED_EXPRESSIONS = (
+    "表达式里支持：+ - * / ** % ~（字符串拼接）、min/max/abs/int/float/len、"
+    "|abs/|int/|float/|string/|len/|length、比较与 and/or/not（条件位置）、"
+    "以及 a if 条件 else b"
+)
 
 #: 两种语言语义不同的运算：**故意不翻译**（翻译了就会"Excel 里看到的"与"导出的"不一致）
 _NOT_TRANSLATABLE = {
@@ -354,7 +382,11 @@ def _translate_filter(node, *, name: str, resolve, env: Environment) -> str:
         )
     function = _FILTERS.get(node.name)
     if function is None and node.name not in _FILTERS:
-        raise DerivedNotTranslatable(f"派生参数 {name!r} 用了过滤器 |{node.name}，Excel 侧没有对应函数")
+        raise DerivedNotTranslatable(
+            f"派生参数 {name!r} 用了过滤器 |{node.name}，Excel 侧没有对应函数。{SUPPORTED_EXPRESSIONS}"
+        )
+    if node.name in _LENGTH_NAMES and node.args:
+        raise DerivedNotTranslatable(f"派生参数 {name!r} 的 |{node.name} 不接受参数")
     value = _translate(node.node, name=name, resolve=resolve, env=env, condition=False)
     if function is None:  # float / string：Excel 里就是原值
         return f"({value})"
@@ -377,8 +409,10 @@ def _translate_call(node, *, name: str, resolve, env: Environment) -> str:
         )
     if function_name not in _FUNCS:
         raise DerivedNotTranslatable(
-            f"派生参数 {name!r} 调用了 {function_name}()，Excel 侧没有对应函数（支持 min/max/abs/int/float）"
+            f"派生参数 {name!r} 调用了 {function_name}()，Excel 侧没有对应函数。{SUPPORTED_EXPRESSIONS}"
         )
+    if function_name in _LENGTH_NAMES and len(node.args) != 1:
+        raise DerivedNotTranslatable(f"派生参数 {name!r} 的 {function_name}() 只支持一个参数")
     arguments = [_translate(argument, name=name, resolve=resolve, env=env, condition=False) for argument in node.args]
     excel_function = _FUNCS[function_name]
     if excel_function is None:  # float()：Excel 里数字就是数字
@@ -399,12 +433,42 @@ def _excel_literal(value: Any) -> str:
     return '"' + text.replace('"', '""') + '"'
 
 
+#: 需要"长度"的函数/过滤器（``len`` / ``|len`` / ``|length``）。
+#: 两种写法**完全等价**：都量**纯值**。
+#:
+#: * ``len(x)``        -> ``LEN(<取值格>)`` —— 取值格里就是纯值
+#: * ``len(x.value)``  -> ``LEN(<取值格>)`` —— 同一个格子
+#:
+#: 两种写法落到同一条公式，是因为派生表达式里裸名字就代表纯值（指南 §15.1），
+#: 与 Excel 侧 ``resolve(name)`` 指向取值列一致。Python 侧靠
+#: :class:`~spreadsheet_codegen.utils.DerivedValue`（``__str__`` 给纯值）对齐 ——
+#: 少了 ``__len__`` 会抛 ``TypeError``，而派生求值会把异常包成 DerivedError 之前
+#: 先被 Python 的算术吞掉，表现为"算出来是错的值"（真踩过）。
+_LENGTH_NAMES = frozenset({"len"})
+
+
+def _require_value_attribute(node, *, name: str, what: str) -> None:
+    """``len`` 只接受**一个参数**；参数形态不限（``x`` 与 ``x.value`` 都有明确定义）。
+
+    保留这个钩子是为了给出可操作的报错：``len()`` 参数个数不对时说明白该怎么改，
+    而不是等 Jinja 抛一句 ``TypeError``。
+    """
+    del node, name, what  # 参数形态都合法，无需逐节点校验
+
+
 def is_translatable(variable: VariableDef, *, env: Environment | None = None) -> bool:
     """这个派生表达式能不能写成 Excel 公式（不能就只能往格子里写算好的值）。"""
     if not is_derived(variable):
         return True
+
+    def probe(name: str, attribute: str | None = None) -> str:
+        # 属性要一并接住：真正的 resolver（excel_io 的两个）都接受 (name, attribute)，
+        # 这里只收一个参数的话，``x.value`` 会被当成 TypeError 而误判成"翻译不了"。
+        del attribute
+        return f"<{name}>"
+
     try:
-        to_excel(variable.derived or "", name=variable.name, resolve=lambda _: "A1", env=env)
+        to_excel(variable.derived or "", name=variable.name, resolve=probe, env=env)
         return True
     except DerivedNotTranslatable:
         return False
@@ -418,6 +482,90 @@ def untranslatable_names(config: ProjectConfig, *, env: Environment | None = Non
         for variable in [*config.global_variables, *config.local_variables]
         if is_derived(variable) and not is_translatable(variable, env=environment)
     ]
+
+
+#: "看着像函数、其实被当成变量引用了"的名字全集 —— 用来把报错指向真正的原因。
+_KNOWN_FUNC_NAMES: frozenset[str] = frozenset(
+    {
+        *_FUNCS,
+        *_FILTERS,
+        *_NOT_TRANSLATABLE,
+        *_KNOWN_UNSUPPORTED,
+        *_LENGTH_NAMES,
+        "round",
+        "string",
+        "length",
+    }
+)
+
+
+def _unsupported_names(expression: str, *, env: Environment) -> list[tuple[str, str]]:
+    """表达式里"被当成变量引用的已知函数/过滤器"，返回 ``[(名字, 为什么不能直接用)]``。
+
+    用户写 ``derived: "len(x)"`` 时，工具此前报"引用了未定义的变量 'len'" ——
+    而用户的心智是"我想调个函数"，两句话指向完全不同的修法。这里先认出这些名字，
+    再分别在**配置期**（引用范围检查）与**翻译期**（能否写成公式）给出对症的说明。
+    """
+    reasons: dict[str, str] = {}
+    for name in _KNOWN_FUNC_NAMES:
+        if name in _NOT_TRANSLATABLE:
+            reasons[name] = _NOT_TRANSLATABLE[name]
+        elif name in _KNOWN_UNSUPPORTED:
+            reasons[name] = _KNOWN_UNSUPPORTED[name]
+        elif name in _FUNCS or name in _FILTERS:
+            reasons[name] = "这个函数是支持的，但必须**调用**它（写成 len(x) / x|len），不能把它当变量用"
+
+    found: list[tuple[str, str]] = []
+    for name in sorted(expression_names(expression, env=env)):
+        if name in reasons:
+            found.append((name, reasons[name]))
+    return found
+
+
+def _unsupported_hint(expression: str, *, env: Environment) -> str:
+    """给"引用了未定义的变量"这类报错补一句"如果那是函数名，为什么用不了"。"""
+    found = _unsupported_names(expression, env=env)
+    if not found:
+        return ""
+    details = "；".join(f"{name}()：{why}" for name, why in found)
+    return (
+        f"\n  ⚠ 表达式里的 {details}。"
+        f"\n  {SUPPORTED_EXPRESSIONS}。"
+        f"\n  确实需要别的函数（例如字符串大小写）时，改成快照模式的模板变量，"
+        f"或在 Excel 里直接写公式。"
+    )
+
+
+def _check_length_usage(config: ProjectConfig, *, env: Environment) -> None:
+    """配置期检查 ``len`` 的用法：参数个数、以及写法是否合法。
+
+    ``len(x)``（量组合值）与 ``len(x.value)``（量纯值）**都合法**，所以这里只拦
+    ``len()`` 空参 / 多参、以及 ``|len`` 带参数这种写法错误。
+    """
+    for variable in derived_variables([*config.global_variables, *config.local_variables]):
+        expression = variable.derived or ""
+        try:
+            ast = env.parse("{{ " + expression + " }}")
+        except TemplateSyntaxError:  # pragma: no cover - 语法错由 expression_names 先报
+            continue
+
+        def walk(node, current: VariableDef) -> None:
+            if (
+                isinstance(node, nodes.Call)
+                and isinstance(node.node, nodes.Name)
+                and node.node.name in _LENGTH_NAMES
+                and len(node.args) != 1
+            ):
+                raise DerivedError(
+                    f"派生参数 {current.name!r} 的 {node.node.name}() 只接受一个参数"
+                    f"（例如 len({current.name}.value)）；表达式：{current.derived!r}"
+                )
+            if isinstance(node, nodes.Filter) and node.name in _LENGTH_NAMES | {"length"} and node.args:
+                raise DerivedError(f"派生参数 {current.name!r} 的 |{node.name} 不接受参数；表达式：{current.derived!r}")
+            for child in node.iter_child_nodes():
+                walk(child, current)
+
+        walk(ast, variable)
 
 
 def validate_config(config: ProjectConfig, *, env: Environment | None = None) -> list[str]:
@@ -441,6 +589,7 @@ def validate_config(config: ProjectConfig, *, env: Environment | None = None) ->
                 raise DerivedError(
                     f"派生参数 {variable.name!r}（global）引用了未定义的变量 {name!r}；"
                     "派生参数只能引用 YAML 里定义的 global / 同 Case 的 local"
+                    + _unsupported_hint(variable.derived or "", env=environment)
                 )
 
     for variable in derived_variables(config.local_variables):
@@ -449,10 +598,13 @@ def validate_config(config: ProjectConfig, *, env: Environment | None = None) ->
                 raise DerivedError(
                     f"派生参数 {variable.name!r}（local）引用了未定义的变量 {name!r}；"
                     "派生参数只能引用 YAML 里定义的 global / 同 Case 的 local"
+                    + _unsupported_hint(variable.derived or "", env=environment)
                 )
 
     ordered_derived(config.global_variables, scope="global 的派生参数", env=environment)
     ordered_derived(config.local_variables, scope="local 的派生参数", env=environment)
+    # len(x) 这种"量裸变量长度"的写法两边含义不同，配置期就说清楚
+    _check_length_usage(config, env=environment)
 
     untranslatable = untranslatable_names(config, env=environment)
     return (

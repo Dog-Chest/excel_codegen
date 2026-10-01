@@ -21,7 +21,7 @@ from spreadsheet_codegen import (
 )
 from spreadsheet_codegen.excel_io import check_value_constraints
 from spreadsheet_codegen.models import CaseData, VariableDef
-from spreadsheet_codegen.utils import ConfigError, VarValue
+from spreadsheet_codegen.utils import ConfigError, InputError, VarValue
 
 BASE = """\
 version: 1
@@ -204,7 +204,21 @@ def test_pattern_only_variable_gets_no_validation(tmp_path: Path) -> None:
         assert not book["Global Parameter"].data_validations.dataValidation
     finally:
         book.close()
-    with pytest.raises(ExcelError):
+    with pytest.raises(InputError):
+        check_value_constraints(config, {"mcu": VarValue(value="ATMEGA328")}, [])
+
+
+def test_input_error_is_catchable_as_excel_error(tmp_path: Path) -> None:
+    """``InputError`` 必须是 ``ExcelError`` 的**子类**：库调用方既有的
+    ``except ExcelError`` 要能接住"取值不对"这一整类。
+
+    0.11.0 新增这个类型时挂错了父类（直接继承 ``CodeGenError``），于是
+    ``except ExcelError`` 静默漏掉取值越界 / ``asserts`` 不满足 —— 而库调用方
+    正是最该接住它们的人。文档与 CHANGELOG 都写了"是子类"，这里把它钉住。
+    """
+    assert issubclass(InputError, ExcelError)
+    config = _config(tmp_path, '    - name: mcu\n      default: STM32F103\n      pattern: "STM32.*"\n')
+    with pytest.raises(ExcelError):  # 故意用父类接
         check_value_constraints(config, {"mcu": VarValue(value="ATMEGA328")}, [])
 
 
@@ -237,7 +251,7 @@ def test_check_value_constraints_reports_global_and_local(tmp_path: Path) -> Non
         CaseData(name="C1", column=5, values={"kind": VarValue(value="EXT")}),
         CaseData(name="C2", column=6, values={"kind": VarValue(value="FOO")}),
     ]
-    with pytest.raises(ExcelError) as excinfo:
+    with pytest.raises(InputError) as excinfo:
         check_value_constraints(config, globals_, cases)
     message = str(excinfo.value)
     assert "共 2 处" in message
@@ -265,7 +279,7 @@ def test_empty_value_violates_declared_constraints(tmp_path: Path) -> None:
         "    - name: draft\n      type: float\n      default: 20\n",
         "    - name: kind\n      choices: [EXT, INT]\n",
     )
-    with pytest.raises(ExcelError) as excinfo:
+    with pytest.raises(InputError) as excinfo:
         check_value_constraints(
             config,
             {"draft": VarValue(value=20)},
@@ -300,7 +314,7 @@ def _set_cell(path: Path, sheet: str, coordinate: str, value: object) -> None:
 def test_render_rejects_out_of_range_value(tmp_path: Path) -> None:
     config, excel = _end_to_end(tmp_path)
     _set_cell(excel, "Global Parameter", "B2", 205.59)
-    with pytest.raises(ExcelError) as excinfo:
+    with pytest.raises(InputError) as excinfo:
         render_all(config, excel)
     assert "大于上限 50" in str(excinfo.value)
 
@@ -323,5 +337,7 @@ def test_cli_validate_and_check_exit_nonzero(tmp_path: Path) -> None:
     runner = CliRunner()
     for command in ("validate", "check"):
         result = runner.invoke(app, [command, "-c", str(tmp_path / "demo.yaml"), "-x", str(excel)])
-        assert result.exit_code == 1, f"{command} 应当以退出码 1 结束"
+        # 退出码 2 = "取值/配置不对"（0.11.0 起可区分，见 docs/cli.md）；
+        # 以前所有失败都是 1，CI 里分不清"参数填错了"与"输出过期了"。
+        assert result.exit_code == 2, f"{command} 应当以退出码 2（取值错误）结束"
         assert "不在允许列表" in output_of(result)

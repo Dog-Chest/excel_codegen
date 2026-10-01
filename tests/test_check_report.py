@@ -113,7 +113,7 @@ def test_differences_on_identical_input() -> None:
 def test_check_lists_all_changed_lines(project_path: Path) -> None:
     excel = damage(project_path, rows=[4, 6, 8])
     result = runner.invoke(app, ["check", "-c", str(project_path), "-x", str(excel)])
-    assert result.exit_code == 1
+    assert result.exit_code == 3  # 输出过期（0.11.0 起可区分，见 docs/cli.md）
     # rich 会在中文之间折行，先把空白去掉再找
     text = "".join(((result.output or "") + (getattr(result, "stderr", "") or "")).split())
     # start_cell=B2 且写 Case 表头：Excel 第 3 行 = 模板第 2 行 → 破坏 4/6/8 行就是模板第 3/5/7 行
@@ -137,12 +137,30 @@ def test_check_json_is_pure_json_when_fresh(project_path: Path) -> None:
 def test_check_json_reports_problems_and_exit_code(project_path: Path) -> None:
     excel = damage(project_path, rows=[5, 7])
     result = runner.invoke(app, ["check", "-c", str(project_path), "-x", str(excel), "--json"])
-    assert result.exit_code == 1
+    assert result.exit_code == 3  # 输出过期
     payload = json.loads(result.output)
     assert payload["ok"] is False
     assert len(payload["problems"]) == 1
     assert "第 4 行不同" in payload["problems"][0]
     assert "第 6 行不同" in payload["problems"][0]
+
+
+def test_check_json_gives_stable_problem_kinds(project_path: Path) -> None:
+    """``problem_kinds`` 是**稳定枚举**：CI 按性质分流不必 grep 中文文本。
+
+    ``problems`` 仍是字符串数组（老消费方不用改），两者一一对应。
+    """
+    excel = damage(project_path, rows=[5])
+    result = runner.invoke(app, ["check", "-c", str(project_path), "-x", str(excel), "--json"])
+    payload = json.loads(result.output)
+    assert payload["problem_kinds"] == ["output_stale"]
+    assert len(payload["problem_kinds"]) == len(payload["problems"])
+
+    # 全部匹配时分类也是空数组，结构不随结果变形
+    fresh = make_fresh(project_path)
+    result = runner.invoke(app, ["check", "-c", str(project_path), "-x", str(fresh), "--json"])
+    payload = json.loads(result.output)
+    assert payload["problem_kinds"] == []
 
 
 def test_check_json_marks_parameter_drift(project_path: Path) -> None:

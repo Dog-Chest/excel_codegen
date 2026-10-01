@@ -197,5 +197,5 @@ def test_check_notices_fragment_change(tmp_path: Path) -> None:
 
     fragment.write_text("// v2 {{ L }}", encoding="utf-8")
     stale = runner.invoke(app, ["check", "-c", str(path), "-x", str(excel)])
-    assert stale.exit_code == 1
+    assert stale.exit_code == 3  # 输出过期（0.11.0 起可区分）
     assert "第 1 行不同" in ((stale.output or "") + (getattr(stale, "stderr", "") or "")).replace("\n", "")

@@ -8,7 +8,7 @@ import pytest
 from openpyxl import load_workbook
 
 from spreadsheet_codegen.excel_io import create_template, write_results
-from spreadsheet_codegen.formula import FormulaError, compile_formulas, compile_line
+from spreadsheet_codegen.formula import FormulaError, compile_formulas, compile_line, longest_formula
 from spreadsheet_codegen.models import ProjectConfig, load_config
 from spreadsheet_codegen.renderer import render_all
 
@@ -221,3 +221,34 @@ def test_python_render_matches_formula_inputs(formula_config: ProjectConfig, tmp
     # 每条渲染行都对应一条公式
     formulas = compile_formulas(formula_config.templates[0], formula_config, case_axes=[5])[0]
     assert len(formulas) == len(output.results["uart_init"][0].lines)
+
+
+# --------------------------------------------------------------------------- #
+# 长公式告警：占位符个数要数「最长那一行」的
+# --------------------------------------------------------------------------- #
+def test_longest_formula_counts_placeholders_of_the_longest_line() -> None:
+    """占位符个数必须是**最长那一行**的，不是整份模板的总数。
+
+    回归：早先三个调用点都传 ``count_placeholders(整份模板源码)``，而长度
+    ``longest`` 是单行的 —— 于是多行模板上"这一行有 N 个占位符（平均每个约 X 字符）"
+    与"还能再放 N 个"两个数都被摊薄了分母，模板越长错得越离谱。
+    """
+    source = "short {{ a }}\nlong {{ a }}{{ b }}{{ c }}\n"
+    # 与 compile_formulas 的 [case][line] 同构：第二行（下标 1）最长
+    lines_per_case = [["x" * 10, "y" * 30]]
+
+    longest, placeholders = longest_formula(lines_per_case, source)
+
+    assert longest == 30
+    assert placeholders == 3, "第二行有 3 个占位符；整份模板是 4 个，别数成 4"
+
+
+def test_longest_formula_without_a_matching_source_line_is_safe() -> None:
+    """源码行数与编译结果对不上时（理论上不会）不能崩，占位符按 0 算。"""
+    longest, placeholders = longest_formula([["y" * 30]], "only one {{ a }}\n")
+    assert longest == 30
+    assert placeholders == 1
+
+    longest, placeholders = longest_formula([["y" * 30], ["z" * 5]], "")
+    assert longest == 30
+    assert placeholders == 0

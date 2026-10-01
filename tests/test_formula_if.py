@@ -104,6 +104,83 @@ def test_nested_if(tmp_path: Path) -> None:
     assert formula.count("<>") == 0  # 条件都是显式比较，没有真假包装
 
 
+# --------------------------------------------------------------------------- #
+# {% elif %}（0.11.0 起支持）
+# --------------------------------------------------------------------------- #
+def _branch_structure(formula: str) -> list[str]:
+    """把公式里""IF(条件,真,假""的**顶层骨架**抽出来，用来核对分支嵌套顺序。
+
+    取值引用本身也含 ``ISBLANK(...)`` 的 ``IF`` 包装，所以不能靠数 ``IF(`` 的个数
+    —— 这里只看三层 IF 的**参数分隔**位置与分支字面量的先后。
+    """
+    markers = [marker for marker in ('"E"', '"I"', '"F"', '"X"') if marker in formula]
+    return markers
+
+
+def test_elif_compiles_to_nested_if(tmp_path: Path) -> None:
+    """``{% elif %}`` -> 嵌套 ``IF``。
+
+    以前它报的是"``{% else %}`` 没有对应的 ``{% if %}``" —— 指向了 else，
+    把人的心智带偏。``elif`` 本身是**无损**降级（Jinja 的 elif 就是 else 里再套 if）。
+    """
+    config = make_config(
+        tmp_path,
+        'x{% if kind.value == "EXT" %}E{% elif kind.value == "INT" %}I{% elif kind.value == "FAT" %}F'
+        "{% else %}X{% endif %}",
+    )
+    formula = compile_code(config)[0]
+    # 分支顺序：EXT 在最外层（最靠前），X 是最后的兜底（最靠后、且在最内层）
+    assert _branch_structure(formula) == ['"E"', '"I"', '"F"', '"X"']
+    # 三层 IF 从外到内嵌套：最后那个 X 后面要连着三个收尾括号
+    assert formula.endswith('"F","X")))')
+    # 每个分支的条件都被翻译成"取值 = 字面量"（不是真假包装）
+    assert formula.count('="EXT"') == 1 and formula.count('="INT"') == 1 and formula.count('="FAT"') == 1
+
+
+def test_elif_without_else_falls_back_to_empty(tmp_path: Path) -> None:
+    """没有 ``{% else %}`` 时兜底是空串（与 Jinja 一致）。"""
+    config = make_config(tmp_path, 'x{% if kind.value == "EXT" %}E{% elif kind.value == "INT" %}I{% endif %}')
+    formula = compile_code(config)[0]
+    assert _branch_structure(formula) == ['"E"', '"I"']
+    assert formula.endswith(',"I",""))')
+
+
+def test_elif_branch_can_contain_placeholders(tmp_path: Path) -> None:
+    """分支体里可以照常用占位符（它们各自编译成单元格拼接）。"""
+    config = make_config(
+        tmp_path, "{% if flag.value == 1 %}A={{ L }}{% elif flag.value == 2 %}B={{ L }}{% else %}C{% endif %}"
+    )
+    formula = compile_code(config)[0]
+    assert '"A="' in formula and '"B="' in formula
+    assert formula.rstrip().endswith('"C"))')
+    # 两个分支各拼接了一次 L 的引用（引用形态本身含 ISBLANK / ="" 的重复，所以只看有没有）
+    assert "MATCH(\"L\",'Global Parameter'!$A:$A,0)" in formula
+
+
+def test_stray_elif_points_at_elif(tmp_path: Path) -> None:
+    """孤立的 ``{% elif %}`` 报错要点名 elif，而不是说"else 没有对应的 if"。"""
+    config = make_config(tmp_path, "A{% elif flag.value == 1 %}B")
+    with pytest.raises(FormulaError, match="elif"):
+        compile_code(config)
+
+
+def test_elif_without_a_condition_is_reported(tmp_path: Path) -> None:
+    """``{% elif %}`` 后面没有条件 -> 明确报错，而不是崩在别的异常上。"""
+    config = make_config(tmp_path, "{% if flag.value == 1 %}A{% elif %}B{% endif %}")
+    with pytest.raises(FormulaError):
+        compile_code(config)
+
+
+def test_missing_endif_is_reported(tmp_path: Path) -> None:
+    """少了 ``{% endif %}`` 要说清"必须写在同一行内"，并给出快照模式的出路。"""
+    config = make_config(tmp_path, "{% if flag.value == 1 %}A{% elif flag.value == 2 %}B")
+    with pytest.raises(FormulaError) as excinfo:
+        compile_code(config)
+    message = str(excinfo.value)
+    assert "endif" in message
+    assert "snapshot" in message
+
+
 def test_jinja_comment_is_dropped(tmp_path: Path) -> None:
     config = make_config(tmp_path, "x = 1{# 这是注释，不该出现在结果里 #};")
     formula = compile_code(config)[0]

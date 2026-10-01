@@ -141,14 +141,14 @@ pip install -e ".[dev]"
 跨平台细节、外置盘注意事项与 Python 版本策略见 [`docs/setup.md`](docs/setup.md)。
 
 > **项目已改名**：原名 `excel-codegen`（名字里带 Microsoft 的商标 "Excel"），现为
-> **`spreadsheet-codegen`**，当前版本 **0.10.0**（[PyPI 页面](https://pypi.org/project/spreadsheet-codegen/)）。
+> **`spreadsheet-codegen`**，当前版本 **0.11.0**（[PyPI 页面](https://pypi.org/project/spreadsheet-codegen/)）。
 > 旧名在 PyPI 上只保留一个弃用版，请勿再使用；改名原因与法律声明见 [`NOTICE.md`](NOTICE.md)。
 > 发版流程（Trusted Publishing，仓库里不存 token）见 [`docs/publishing.md`](docs/publishing.md)。
 
 ## 开发
 
 ```bash
-uv run pytest --cov          # 349 项用例 + 覆盖率门槛（85%）
+uv run pytest --cov          # 用例 + 覆盖率门槛（85%）
 uv run ruff check .          # lint
 uv run ruff format --check . # 格式
 uv run mypy                  # 类型检查

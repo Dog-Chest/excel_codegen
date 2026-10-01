@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import hashlib
+import operator
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -14,9 +15,12 @@ from typing import Any
 __all__ = [
     "CodeGenError",
     "ConfigError",
+    "DerivedValue",
     "ExcelError",
+    "InputError",
     "RenderError",
     "VarValue",
+    "WorkbookIOError",
     "cell_ref",
     "column_index_to_letter",
     "column_letter_to_index",
@@ -44,6 +48,30 @@ class ConfigError(CodeGenError):
 
 class ExcelError(CodeGenError):
     """Excel 文件缺失、无法读取，或工作表结构与配置不一致。"""
+
+
+class WorkbookIOError(ExcelError):
+    """工作簿**读不出来 / 写不进去**：文件损坏、被 Excel 占着、没有权限。
+
+    与"工作簿结构与配置对不上"分开：那是**你给的东西不对**（改配置就行），
+    这是**环境问题**（关掉 Excel 再跑一次、修好文件）—— CLI 据此给退出码 ``4``，
+    CI 才能把"重试/人工介入"与"改配置"分开（见 docs/cli.md 的「退出码」一节）。
+
+    仍然是 :class:`ExcelError` 的子类，``except ExcelError`` 的调用方不受影响。
+    """
+
+
+class InputError(ExcelError):
+    """**用户填进表里的取值不对**（或 YAML 里的配置值不对）。
+
+    单独一个类型是为了让 CLI 能给出**可区分的退出码**（2 = "你给的东西不对"，
+    见 docs/cli.md）。
+
+    继承 :class:`ExcelError`（而不是直接挂在 ``CodeGenError`` 下）是**有意的**：
+    这两个错误都来自"参数表里的东西不对"，既有的 ``except ExcelError`` 调用方
+    因此照常能把它们接住 —— 0.11.0 新增这个类型时曾漏掉这层继承，等于给库调用方
+    挖了个静默的洞（``except ExcelError`` 接不到取值类错误了）。
+    """
 
 
 class RenderError(CodeGenError):
@@ -220,6 +248,148 @@ class VarValue:
     def __format__(self, format_spec: str) -> str:
         return format(str(self), format_spec)
 
+    # -- 数值运算：派生表达式（derived:）里可以直接算 ---------------------- #
+    # 派生表达式与模板看到的是同一个 VarValue，而表达式里写的是 `baud / 16`
+    # 这种**裸变量参与算术**的形态 —— 所以 VarValue 要对底层取值做代理。
+    # 只用标准库的 operator 转一次，不自己重写运算符语义。
+    def _operate(self, other: Any, function) -> Any:
+        return function(self.value, other.value if isinstance(other, VarValue) else other)
+
+    def _reverse_operate(self, other: Any, function) -> Any:
+        return function(other.value if isinstance(other, VarValue) else other, self.value)
+
+    def __add__(self, other: Any) -> Any:
+        return self._operate(other, operator.add)
+
+    def __radd__(self, other: Any) -> Any:
+        return self._reverse_operate(other, operator.add)
+
+    def __sub__(self, other: Any) -> Any:
+        return self._operate(other, operator.sub)
+
+    def __rsub__(self, other: Any) -> Any:
+        return self._reverse_operate(other, operator.sub)
+
+    def __mul__(self, other: Any) -> Any:
+        return self._operate(other, operator.mul)
+
+    def __rmul__(self, other: Any) -> Any:
+        return self._reverse_operate(other, operator.mul)
+
+    def __truediv__(self, other: Any) -> Any:
+        return self._operate(other, operator.truediv)
+
+    def __rtruediv__(self, other: Any) -> Any:
+        return self._reverse_operate(other, operator.truediv)
+
+    def __floordiv__(self, other: Any) -> Any:
+        return self._operate(other, operator.floordiv)
+
+    def __rfloordiv__(self, other: Any) -> Any:
+        return self._reverse_operate(other, operator.floordiv)
+
+    def __mod__(self, other: Any) -> Any:
+        return self._operate(other, operator.mod)
+
+    def __rmod__(self, other: Any) -> Any:
+        return self._reverse_operate(other, operator.mod)
+
+    def __pow__(self, other: Any) -> Any:
+        return self._operate(other, operator.pow)
+
+    def __rpow__(self, other: Any) -> Any:
+        return self._reverse_operate(other, operator.pow)
+
+    def __neg__(self) -> Any:
+        return -self.value
+
+    def __pos__(self) -> Any:
+        return +self.value
+
+    def __abs__(self) -> Any:
+        return abs(self.value)
+
+    def __float__(self) -> float:
+        return float(self.value)
+
+    def __int__(self) -> int:
+        return int(self.value)
+
+    def __len__(self) -> int:
+        """``len(x)`` 量的是 :meth:`__str__` 的长度。
+
+        * 模板侧（:class:`VarValue`）：组合值 ``prefix + value + suffix``；
+        * 派生表达式侧（:class:`DerivedValue`）：**纯值** —— 与 Excel 的
+          ``LEN(<取值格>)`` 完全一致（取值格里就是纯值）。
+
+        两边的差别来自"这个名字在那里代表什么"，不是两套算法。
+        """
+        return len(str(self))
+
+    def __eq__(self, other: object) -> bool:
+        """与 :meth:`__str__` 的文本比较；数字 / 布尔这类标量先转成文本再比。
+
+        转文本这一步是必需的：派生表达式里的 ``x == 10``（x 是 int）若不转，
+        就会拿 ``"10"`` 去和 ``10`` 比而恒为 ``False``，而 Excel 的 ``=10`` 是 ``TRUE``。
+        """
+        if isinstance(other, VarValue):
+            return str(self) == str(other)
+        if isinstance(other, str):
+            return str(self) == other
+        return str(self) == to_text(other)
+
+    def __ne__(self, other: object) -> bool:
+        result = self.__eq__(other)
+        return NotImplemented if result is NotImplemented else not result
+
+    def __hash__(self) -> int:
+        # 与 __eq__ 的**文本**口径一致：对象在字典 / 集合里的行为不能与"文本相等"打架。
+        # 注意 __eq__ 会把 10 这样的标量转成文本再比（为了对上 Excel 的 =10），
+        # 所以 ``VarValue(10) == 10`` 为真、而它俩的 hash 不同 —— 把 VarValue 与 int
+        # 混在同一个 dict / set 里会踩到这一点。项目内没有这种用法；真要混用先取 .value。
+        return hash(str(self))
+
+    # -- 排序 / 比较：**按值**比，不按文本 ---------------------------------- #
+    # 文本比较会静默算错：10 与 9 按文本是 "10" < "9"，于是 ``min(10, 9)`` 得到 10，
+    # 而 Excel 的 ``MIN(10,9)`` 是 9 —— min / max 与 < > 都在白名单里，不能两套答案。
+    def __lt__(self, other: Any) -> bool:
+        return self._compare(other, operator.lt)
+
+    def __le__(self, other: Any) -> bool:
+        return self._compare(other, operator.le)
+
+    def __gt__(self, other: Any) -> bool:
+        return self._compare(other, operator.gt)
+
+    def __ge__(self, other: Any) -> bool:
+        return self._compare(other, operator.ge)
+
+    def _compare(self, other: Any, op: Any) -> bool:
+        """按**值**比较；两侧类型对不上（数字 vs 文本）时退回文本比较，不炸。"""
+        left = self.value
+        right = other.value if isinstance(other, VarValue) else other
+        try:
+            return bool(op(left, right))
+        except TypeError:
+            return bool(op(self.text, to_text(right)))
+
     def as_dict(self) -> dict[str, Any]:
         """便于调试与测试的字典形式。"""
         return {"value": self.value, "prefix": self.prefix, "suffix": self.suffix}
+
+
+class DerivedValue(VarValue):
+    """派生表达式上下文里的变量：**裸名字就代表纯值**。
+
+    与模板侧的 :class:`VarValue` 只差 :meth:`__str__`：模板里 ``{{ x }}`` 是要写进
+    产物的**组合值**（带前后缀），而派生表达式里 ``x`` 是拿去**算**的 —— 文档 §15.1
+    与 Excel 侧（``resolve(name)`` 指向取值列）都按纯值来。
+
+    早先直接复用 ``VarValue``，于是同一个表达式在两边算出两个答案：``a ~ a``（a 带前后缀）
+    Python 给 ``"XAZXAZ"``、Excel 给 ``"AA"``；``len(a)`` Python 给 3、Excel 给 1。
+    这不是"两种口径"，是两边对同一个名字的理解不一致 —— 而公式模式的核心承诺就是
+    两边一致（见 CHANGELOG 0.11.0 §7）。
+    """
+
+    def __str__(self) -> str:
+        return self.text

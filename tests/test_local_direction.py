@@ -30,7 +30,7 @@ from spreadsheet_codegen.formula import compile_formulas, local_cell
 from spreadsheet_codegen.formula_eval import evaluate_template_values
 from spreadsheet_codegen.models import ProjectConfig, load_config
 from spreadsheet_codegen.renderer import render_all
-from spreadsheet_codegen.utils import ExcelError
+from spreadsheet_codegen.utils import ExcelError, InputError
 
 VERTICAL_YAML = """\
 version: 1
@@ -281,7 +281,7 @@ def test_constraint_message_points_at_the_row(workbook_path: Path, project: Proj
         cases = read_cases(workbook, project)
     finally:
         workbook.close()
-    with pytest.raises(ExcelError, match=r"第 3 行.*'port'"):
+    with pytest.raises(InputError, match=r"第 3 行.*'port'"):
         check_value_constraints(project, {}, cases)
 
 

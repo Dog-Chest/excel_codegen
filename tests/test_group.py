@@ -19,7 +19,7 @@ from typer.testing import CliRunner
 from spreadsheet_codegen import create_template, load_config, read_group_members, render_all
 from spreadsheet_codegen.cli import app
 from spreadsheet_codegen.excel_io import load_workbook_file, write_results
-from spreadsheet_codegen.utils import ConfigError, ExcelError
+from spreadsheet_codegen.utils import ConfigError, ExcelError, InputError
 
 runner = CliRunner()
 
@@ -244,7 +244,7 @@ def test_unknown_member_is_reported(tmp_path: Path) -> None:
     book = make_book(tmp_path)
     set_case(book, "E", 2, "NOPE")
     config = make_config(tmp_path)
-    with pytest.raises(ExcelError) as excinfo:
+    with pytest.raises(InputError) as excinfo:
         render_all(config, book)
     message = str(excinfo.value)
     assert "NOPE" in message
@@ -255,7 +255,7 @@ def test_group_constraints_are_checked(tmp_path: Path) -> None:
     book = make_book(tmp_path)
     set_member(book, "WBT7", l_tank=-5)  # min: 0
     config = make_config(tmp_path)
-    with pytest.raises(ExcelError) as excinfo:
+    with pytest.raises(InputError) as excinfo:
         render_all(config, book)
     assert "Tank Data" in str(excinfo.value)
     assert "WBT7" in str(excinfo.value)
@@ -271,7 +271,7 @@ def test_global_and_local_can_use_group_values_in_expressions(tmp_path: Path) ->
     config = load_config(path)
     book = create_template(config, tmp_path / "g.xlsx", cases=["A"], overwrite=True, include_scripts=False)
     set_member(book, "WBT6", l_tank=0)
-    with pytest.raises(ExcelError) as excinfo:
+    with pytest.raises(InputError) as excinfo:
         render_all(config, book)
     assert "asserts" in str(excinfo.value)
 

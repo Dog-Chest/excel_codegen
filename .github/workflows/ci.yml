@@ -3,7 +3,7 @@
 # 这个文件是**可选**的 —— 没有 GitHub 也能用，本地等价命令就是：
 #     uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest --cov
 # （见 README「安装」里的 uv 一节）。放在这里是为了把"多平台无缝 + 不许回归"变成可自动复查的事实：
-# 任何一次改动，三个系统 × 两个 Python 版本都会跑一遍 194 项测试、lint、类型检查与覆盖率门槛。
+# 任何一次改动，三个系统 × 两个 Python 版本都会跑一遍全部测试、lint、类型检查与覆盖率门槛。
 name: ci
 
 on:

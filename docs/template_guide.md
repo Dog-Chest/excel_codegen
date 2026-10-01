@@ -55,7 +55,7 @@ Jinja2 语法速查、Excel 表结构与填写规则、输出布局、导出代�
 
 | 字段 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- |
-| `output` | str | `template.xlsx` | `init` 默认输出路径（相对当前工作目录） |
+| `output` | str | `template.xlsx` | `init` / `render` / `check` / `doctor` 默认使用的工作簿路径。**相对配置文件所在目录**解析（与 `template_file` 同一条规则），并规范化成绝对路径。命令行 `-o` / `-x` 给的路径仍相对**当前工作目录** |
 | `template_sheet` | str \| null | `Template` | 隐藏参考表的名字（模板原文 + `## spreadsheet-codegen-meta` 元信息）；设为 `null` 不生成 |
 | `howto_sheet` | str \| null | `HOWTO` | 使用说明表，`create_template` 生成、`write_results` 刷新，**放第一张**；设为 `null` 不生成 |
 | `sheets.global` | str | `Global Parameter` | 全局表名（≤31 字符，不含 `[]:*?/\`） |
@@ -65,6 +65,11 @@ Jinja2 语法速查、Excel 表结构与填写规则、输出布局、导出代�
 
 `template_sheet` / `howto_sheet` 不能与 Global / Local / Output 表名冲突（配置阶段就会报错）。
 
+> **路径规则（0.11.0 起统一）**：配置里的相对路径一律**相对配置文件所在目录**解析 ——
+> `excel.output` 与 `template_file` 现在是一条规则。所以把规则集放进 `rules/` 子目录、
+> 写 `output: "../book.xlsx"` 时，工作簿会落在 `rules/` 的**上一级**（`..` 也会被折掉），
+> 而不是"运行命令时所在的目录"。命令行给的 `-o` / `-x` 仍然是相对当前工作目录 —— 那是终端用户的直觉。
+
 ### 2.3 `variables.global[]` / `variables.local[]`
 
 | 字段 | 类型 | 默认 | 说明 |
@@ -72,7 +77,9 @@ Jinja2 语法速查、Excel 表结构与填写规则、输出布局、导出代�
 | `name` | str | — | **必填**。必须是合法标识符 `[A-Za-z_][A-Za-z0-9_]*`，不能是保留名 `case_name` / `template_name` |
 | `description` | str | `""` | 写在 Excel 的描述列，纯注释 |
 | `unit` | str | `""` | 单位，**纯文档**：只写进 Excel 批注与 `validate` 清单，不会出现在生成结果里（要进结果请用 `suffix`） |
-| `default` | any | `""` | 默认值：Excel 单元格留空时使用；`init` 时预填进单元格。**与 `derived` 互斥** |
+| `default` | any | `""` | 默认值。**两种用途可以分开控制**，见 `prefill` / `fallback`。**与 `derived` 互斥** |
+| `prefill` | bool | `true` | `init` 建表时是否把 `default` **预填**进新单元格。设 `false` = 新表格里留空 |
+| `fallback` | bool | 跟 `prefill` | 单元格为空时是否**回落** `default`。设 `false` = "空就是空"，见 §4.5 |
 | `prefix` | str | `""` | 组合值前缀（写入 Excel 的 Prefix 列，可在 Excel 中覆盖） |
 | `suffix` | str | `""` | 组合值后缀 |
 | `type` | enum | `auto` | `auto` / `string` / `int` / `float` / `bool` / `raw`，见 3.2 |
@@ -80,6 +87,7 @@ Jinja2 语法速查、Excel 表结构与填写规则、输出布局、导出代�
 | `min` / `max` | number \| null | `null` | **取值约束**：数值上下限（`type` 为 `string` / `bool` / `raw` 时不允许）。见 3.5 |
 | `choices` | list \| null | `null` | **取值约束**：允许的取值集合，按文本比较，会写成 Excel 下拉列表。见 3.5 |
 | `pattern` | str \| null | `null` | **取值约束**：整串匹配的正则（`re.fullmatch`）。见 3.5 |
+| `allow_blank` | bool | `false` | **取值约束**：声明了约束时是否允许留空。见 3.5 |
 
 同名变量在 `global` 与 `local` 中重复是允许的（local 覆盖 global），但 `validate` 会给出警告；
 同一作用域内重名会直接报错。
@@ -187,9 +195,27 @@ variables:
 
 几个要点：
 
-* **空值也算不合格**。声明了约束就意味着"必须给一个合法取值"。这正好治了"新插一个空 Case 列
+* **空值默认算不合格**。声明了约束就意味着"必须给一个合法取值"。这正好治了"新插一个空 Case 列
   悄悄落进某个规则集"的老问题（见 §9.2）：`kind` 一旦有 `choices` 又没给 `default`，
   新列在渲染时就会报"取值（空）不在允许列表里"。
+* **"某类型才有的字段"要能留空，写 `allow_blank: true`**（0.11.0 起）：
+
+  ```yaml
+  local:
+    - name: card_type
+      description: "只有银行卡才有"
+      choices: ["储蓄卡", "信用卡", "借记卡"]
+      allow_blank: true         # 留空=这条记录没有这个字段
+      fallback: false           # 空单元格不回落默认值（见 §4.5）
+  ```
+
+  在这之前唯一的绕法是往 `choices` 里塞一个空串（`choices: ["", "储蓄卡", …]`）——
+  下拉列表第一项是空的、读起来像"允许空"，而文档又说空值不合格，两边说法冲突。
+  现在空串仍然被接受（老配置照常能跑，`render` / `validate` 会给一条 `!` 提示建议改写），
+  但**下拉列表里不会再出现那个空选项**。
+
+  `allow_blank` 只管"空值本身合不合法"；**必填仍然该由 `asserts` 表达**（§3.6）。
+  写了 `allow_blank` 却一条约束都没有会被配置校验拦下（本来就没人拦空值）。
 * **按文本比较**：`choices: [1, 2]` 里填 `1.0` 也算命中（整数浮点会规范化）。
 * **`min` / `max` 只能给数值类型**（`int` / `float` / `auto`）。写成 `type: string` 又加范围会在配置阶段报错。
 * **正则只由工具检查**：Excel 的数据有效性没有正则，所以 `pattern` 不会写进工作簿（写一个乱报错的校验不如不写）。
@@ -335,6 +361,50 @@ var L = {{ L }};       {# -> var L = 340 m;  而不是 340m #}
 > 1. 想"清掉" YAML 里的前缀/后缀，需要改 YAML（把 `prefix` / `suffix` 删掉或置空），
 >    因为 Excel 里的空格子被视为"未填写"。
 > 2. 反过来，如果你**不想要**那个空格，就别在 YAML 里写 —— 空格不会再被静默吃掉。
+
+#### 4.5.1 `default` 的两种用途：预填 vs 回落（0.11.0）
+
+`default` 同时承担两件事，而它们**未必都合你的意**：
+
+| 用途 | 什么时候发生 | 关掉它 |
+| --- | --- | --- |
+| **预填** | `init` 建表时把 `default` 写进新单元格（当提示值） | `prefill: false` |
+| **回落** | 读取时单元格为空 → 用 `default` 顶上 | `fallback: false` |
+
+**默认两个都开**，所以 0.10.0 及以前的配置行为**完全不变**。问题出在"某类型才有的字段"上：
+
+```yaml
+local:
+  - name: kind
+    default: "网站登录"
+  - name: url
+    default: "https://example.com/login"   # 只有"网站登录"类型才有 url
+```
+
+银行卡那一条记录本来没有 `url`，在表里把那格**清空**——默认语义下它会被判定为"未填写"，
+于是回落到 `https://example.com/login`，导出的数据里就多了一个不该有的 url（**不报错**）。
+"我没填"与"我填了这个值"在结果里不可区分。
+
+`fallback: false` 就是给这件事的开关：**清空即表示"没有这个字段"**：
+
+```yaml
+  - name: url
+    default: "https://example.com/login"   # 仍然预填进新表当提示
+    fallback: false                        # 但清空之后就是空的
+```
+
+| 写法 | 新表里 | 清空后读取时 |
+| --- | --- | --- |
+| 不写（默认） | 预填 `default` | 回落 `default`（老行为） |
+| `fallback: false` | 预填 `default` | **空** |
+| `prefill: false` | **留空** | **空**（`fallback` 跟着 `false`） |
+| `prefill: false` + `fallback: true` | — | 配置阶段直接报错（自相矛盾） |
+
+公式模式与快照模式**两边一致**：`fallback: false` 时 Excel 公式里也不会回落默认值
+（`check --values` 会把公式算一遍来守这条）。所以"参数表里看到的"与"导出的文件"不会分叉。
+
+> 每次跑 `render` / `validate` 时，如果某个 `choices` 里塞了空串（老绕法），
+> 会得到一条 `!` 提示，建议改成 `allow_blank: true`（§3.5）。
 
 ---
 
@@ -579,6 +649,29 @@ spreadsheet-codegen render --config examples/basic/example.yaml --excel examples
   `+`、`.`、`-`、空格、中文都是安全的（工况名可以直接当文件名用），要分目录请用不同的 `--outdir`。
 - 文件内容以 UTF-8 写入，并保证以换行符结尾。
 - 目标文件已存在时默认覆盖；加 `--no-overwrite` 可在冲突时报错。
+- **多份结果写同一个文件名会被拦住**（0.11.0 起），见下。
+
+### 8.1 文件名冲突：`filename` 忘了带变量
+
+`filename: "vault.jsonl"` 是**最自然的写法**，但 3 个 Case 会安静地互相覆盖 ——
+最后只剩一条记录，退出码 0，摘要里还把同一个路径打印三遍。这种"看起来成功、
+实际只含最后一条"的交付物比直接报错难发现得多，所以工具在**写盘之前**就拦住它：
+
+```text
+ERROR 这些导出文件名对多个 Case 求值成了同一个文件，会互相覆盖（最终只留下最后一份内容）：
+  vault.jsonl ← 'vault_jsonl' 的 3 份结果（'site_github', 'bank_icbc', 'app_steam'）
+    → 例如把 filename 改成 "{{ case_name }}.jsonl"（在这组 Case 上得到 app_steam.jsonl, bank_icbc.jsonl, site_github.jsonl）
+  文件名里请带上区分用的变量，例如 "{{ case_name }}.jsonl" 或 "{{ case_name }}_{{ template_name }}.jsonl"
+  （确实想只留最后一份，就在命令行加 --allow-overwrite-filename）
+```
+
+* 同一个模板内部、以及跨模板写同一个 `--outdir`，都算冲突；
+* 报错里给的建议是**验证过的**：它会真的拿那几个变量渲染一遍，确认这组 Case 不再重名才推荐；
+* 冲突时**一个文件都不写**（不会留下半份"看起来成功"的产物）；
+* 确实想只留最后一份：加 `--allow-overwrite-filename`。这时会以 `!` 告警说明"最终留下的是最后一份"。
+
+> 注意 `--no-overwrite` 挡的是"目标文件已存在"（上一次运行的残留），
+> **挡不住本次运行内部的互相覆盖** —— 那是这条检查负责的。
 
 ```yaml
 templates:
@@ -669,12 +762,31 @@ templates:
       // INT {{ case_name }} (L={{ L }})
 ```
 
+#### 变量怎么写：裸变量 vs `.value`
+
+**两种写法都能用，但比较的对象不同** —— 这是最容易踩的一处（`asserts` 用的是同一套规则）：
+
+| 写法 | 比较对象 | 用途 |
+| --- | --- | --- |
+| `kind == 'EXT'` | **组合值**（`prefix + value + suffix`，也就是 `{{ kind }}` 的输出） | 没配前后缀时的简写 |
+| `kind.value == 'EXT'` | **纯值**（单元格里填的那个值） | **推荐**：配了 `prefix` / `suffix` 也不受影响 |
+| `draft.value > 20` | 数值 | **数值比较必须用 `.value`**：裸变量是 `VarValue` 对象，直接和数字比会报错 |
+
+```yaml
+case_filter: "kind.value == 'EXT'"          # 推荐
+case_filter: "draft.value > 20"             # 数值比较
+case_filter: "kind.value == 'EXT' and draft.value <= 20"
+```
+
+> 为什么裸变量比较的是组合值：它与模板里的 `{{ x }}` 是**同一个东西**（工具保证这一点）。
+> 前后缀一旦非空，`kind == 'EXT'` 就会变成在比 `"prefixEXTsuffix"` → 这时请写 `.value`。
+
 语义与注意事项：
 
 | 主题 | 说明 |
 | --- | --- |
 | 变量当字符串用 | 等于**组合值**（和 `{{ x }}` 一致），所以 `kind == 'EXT'`、`port == 'GPIOA_PORT'` 都能写 |
-| 纯值 / 数值比较 | 用 `.value`：`draft.value > 20`、`kind.value == 'EXT'`（直接拿字符串和数字比会报错，工具会提示） |
+| 纯值 / 数值比较 | 用 `.value`：`draft.value > 20`、`kind.value == 'EXT'`（**推荐写法**；直接拿字符串和数字比会报错，工具会提示） |
 | 被跳过的 Case | 不渲染、不占输出列/行；`render` 摘要里会写"跳过 N 个" |
 | 与 `--case` 的关系 | `--case` 是**全局**过滤（先筛 Case 列表），`case_filter` 是**per-template** 过滤，两者可叠加 |
 | 报错方式 | 语法错误、引用了取不到的变量、错误的类型比较 → `RenderError`，不会静默变成"什么都没生成" |
@@ -840,7 +952,7 @@ templates:
 | `{{ x.prefix }}` / `{{ x.suffix }}` | 前缀 / 后缀 |
 | `{{ case_name }}` | 当前 Case 名（取 Local 表表头；横向布局向右拖会跟着换 Case） |
 | `{{ template_name }}` | 模板名（编译成常量） |
-| **行内 `{% if %}`** | `{% if 条件 %}A{% else %}B{% endif %}` → Excel `IF(...)`，见 14.1.1 |
+| **行内 `{% if %}` / `{% elif %}` / `{% else %}`** | → Excel 嵌套 `IF(...)`，见 14.1.1 |
 | `{# 注释 #}` | 整段丢掉（不进入公式） |
 
 **不支持**（会直接报错并给出行内容，让你决定是否改回快照模式）：
@@ -853,7 +965,7 @@ templates:
 {{ 未在 YAML 中定义的变量 }}            → 公式需要知道它是 global 还是 local
 ```
 
-### 14.1.1 行内 `{% if %}`
+### 14.1.1 行内 `{% if %}` / `{% elif %}`
 
 分支会让"一个 Case 占几行"变得不固定，而公式模式是**一行模板 → 一个单元格**，
 所以有一条硬约束：
@@ -865,6 +977,16 @@ y = {% if flag.value == 1 %}{{ L }}{% else %}- {{ L }}{% endif %};
 ```
 
 编译成 `IF(<条件>,<then>,<else>)`，分支里的 `{{ }}` 照常展开。可以嵌套。
+
+**`{% elif %}`（0.11.0 起支持）** 编译成嵌套 `IF`，与快照模式逐字一致：
+
+```jinja
+{% if kind.value == "EXT" %}E{% elif kind.value == "INT" %}I{% else %}X{% endif %}
+```
+
+→ `IF(<kind="EXT">,"E",IF(<kind="INT">,"I","X"))`。
+`elif` 是**无损**降级（Jinja 的 `elif` 本来就等价于"`else` 里再套一个 `if`"），
+所以不必为了一个三段分支退回快照模式。
 
 **条件里必须写属性**（`.value` / `.text` / `.prefix` / `.suffix`），不能裸写变量名：
 
@@ -1036,14 +1158,27 @@ templates:
 
 ### 15.3 能翻译成 Excel 公式的子集
 
+**函数 / 过滤器白名单**（只有这些会被翻译，别的都在配置阶段报错或降级）：
+
+| 写 | Excel | 说明 |
+| --- | --- | --- |
+| `min(a, b)` / `max(a, b)` | `MIN` / `MAX` | |
+| `abs(x)` / `\|abs` | `ABS` | |
+| `int(x)` / `\|int` | `TRUNC` | Excel 的 `INT` 是**向下**取整，`int(-2.5)` 在 Python 是 `-2`、`INT(-2.5)` 是 `-3`，所以用 `TRUNC` |
+| `float(x)` / `\|float` | 原值 | Excel 里数字就是数字 |
+| `len(x)` / `x \| len` / `x \| length` | `LEN` | 0.11.0 起支持。两种写法**完全等价**：都量**纯值**（裸名字就是纯值，见 §15.1），Excel 侧都是 `LEN(<取值格>)` —— 想要**组合值**的长度就自己拼：`len(x.prefix ~ x.value ~ x.suffix)` |
+| `x \| string` | 原值 | |
+| `x.prefix` / `x.suffix`（在条件里） | 前缀 / 后缀列 | |
+
+其余运算符与结构：
+
 | 可以 | 说明 |
 | --- | --- |
 | `+ - * / **` | `**` → `^` |
 | `%` | → `MOD(a,b)` |
 | `~` | 字符串拼接 → `&`（**不要用 `+` 拼字符串**，Excel 的 `+` 不做文本拼接） |
 | 括号、数字、字符串、`TRUE/FALSE` | |
-| `min / max / abs / int / float` | `int` → `TRUNC`（Excel 的 `INT` 是向下取整，负数会差 1） |
-| `\|abs` / `\|int` / `\|float` / `\|string` | |
+| `x.value` / `x.text` | 取值列（**推荐写法**：配了前后缀也不受影响） |
 | 比较 `== != > < >= <=` | → `= <> > < >= <=` |
 | `and / or / not` | **只能出现在条件里**（Python 的返回值语义与 Excel 不同，放别处不翻译） |
 | `a if cond else b` | → `IF(cond,a,b)` |
@@ -1053,10 +1188,17 @@ templates:
 | `round()` / `\|round` | Python 是**银行家舍入**（`round(2.5)==2`），Excel `ROUND` 是四舍五入（2.5→3）。翻过去就会出现"Excel 里看到的"与"导出文件"不一致 |
 | `ceil / floor` | 边界行为两边不同 |
 | `//` | Excel 没有等价的整除 |
-| 其它函数 / 过滤器 / 属性访问 | 没有对应物 |
+| `upper / lower / strip / replace / format / …` | Excel 侧要么没有对应物，要么语义不同（大小写映射、`TRIM` 会压缩中间空格、`SUBSTITUTE` 参数顺序不同）。写这些时**报错会说清是哪一条原因**，并列出支持的白名单 |
+| `sum / sorted / join` 等 | 面向可迭代对象，Excel 没有等价物 |
+| 其它属性访问（`x.xxx`） | 只有 `.value` / `.text` / `.prefix` / `.suffix` |
 
 **降级**不是报错：格子写 Python 算好的值，`validate` / `render` 会告警
 "这些派生参数写不成 Excel 公式…改输入后要重跑 --write-excel"。
+
+> 写了一个**已知但不支持**的函数（例如 `derived: "upper(x.value)"`）时，报错不会只说
+> "引用了未定义的变量 'upper'" —— 那会把人的心智带向完全不同的修法。它会说：
+> `⚠ 表达式里的 upper()：Python 的 upper() 与 Excel 的 UPPER() 大小写映射规则不完全一致`，
+> 并附上白名单与两条出路（改成快照模式的模板变量 / 在 Excel 里直接写公式）。
 
 ### 15.4 三条实践建议
 

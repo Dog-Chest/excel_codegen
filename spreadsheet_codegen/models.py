@@ -144,6 +144,17 @@ class VariableDef(BaseModel):
     #: 派生参数：一段 Jinja2 **表达式**，只能引用 ``global`` 与**同一个 Case** 的 ``local``。
     #: 例如 ``derived: "k_c * h_di"``。派生参数不用在 Excel 里填值（那一格由工具写成公式或算好的值）。
     derived: str | None = None
+    #: ``init`` 建表时是否把 ``default`` 预填进新格子（默认 ``True``，老行为不变）。
+    #: 设为 ``False``：新表格里这一列/行留空，``default`` 只作为"读取时的兜底值"存在
+    #: —— 适合"每次都该重新填"的参数。
+    prefill: bool | None = None
+    #: 单元格为空时是否回落 ``default``（默认 ``True``，老行为不变）。
+    #:
+    #: 设成 ``False`` 是"某类型才有的字段"的正解：``default`` 仍然预填进新表（起提示作用），
+    #: 但用户在表里**把这格清空**就表示"这条记录没有这个字段"，生成结果里它真的是空的 ——
+    #: 不会被默认值悄悄填上。默认语义下"没填"与"填了默认值"在结果里不可区分，是**生成错数据**的常见来源。
+    #: 与 :attr:`prefill` 一起写 ``false`` 时，这个变量就完全不受 ``default`` 影响。
+    fallback: bool | None = None
 
     #: 取值约束（可选，只对"填写型"变量有效；派生参数的值是算出来的，不能加）。
     #: ``min`` / ``max``：数值上下限。``type`` 为 string / bool / raw 时不允许。
@@ -154,6 +165,22 @@ class VariableDef(BaseModel):
     choices: list[Any] | None = None
     #: 整串匹配的正则（``re.fullmatch``）。
     pattern: str | None = None
+    #: 声明了约束时**是否允许空值**（默认 ``False``，老行为不变）。
+    #:
+    #: 默认语义是"有约束就意味着必须给一个合法取值"，空值算不合格。这对"某类型才有的字段"
+    #: 很别扭：``card_type`` 只有银行卡那几行才有，于是只能往 ``choices`` 里塞一个空串
+    #: （``choices: ["", "储蓄卡", ...]``）—— 下拉列表第一项是空的，读起来像"允许空"，
+    #: 而文档又说空值不合格，两边说法冲突，而且这个绕法没有任何文档提示。
+    #:
+    #: 写 ``allow_blank: true`` 就直说"这个变量可以留空"：
+    #:
+    #: * 空值通过校验（不再是"取值（空）不在允许列表里"）；
+    #: * Excel 的下拉列表里**不再出现那个空选项**（选项就是你写的那些）；
+    #: * 与 :attr:`fallback` 搭配最自然：``fallback: false`` + ``allow_blank: true``
+    #:   = "这条记录没有这个字段"。
+    #:
+    #: 注意"必填"仍然该由 :attr:`asserts`（或取值约束）表达 —— 这个开关只管"空值本身合不合法"。
+    allow_blank: bool = False
 
     @field_validator("name")
     @classmethod
@@ -242,6 +269,11 @@ class VariableDef(BaseModel):
     def _check_constraints(self) -> VariableDef:
         constrained = self.min is not None or self.max is not None or self.choices or self.pattern
         if not constrained:
+            if self.allow_blank:
+                raise ValueError(
+                    f"变量 {self.name!r} 写了 allow_blank 但没有任何取值约束 —— "
+                    "本来就没人拦空值，删掉 allow_blank 或加上 choices / min / max / pattern"
+                )
             return self
         if self.is_derived:
             raise ValueError(
@@ -262,6 +294,36 @@ class VariableDef(BaseModel):
                 raise ValueError(f"变量 {self.name!r} 的 default {problem}")
         return self
 
+    @model_validator(mode="after")
+    def _check_prefill_and_fallback(self) -> VariableDef:
+        """把 ``prefill`` / ``fallback`` 的默认值定下来，并拦住自相矛盾的写法。
+
+        默认（两个都不写）= **老行为**：既预填进新表，空单元格也回落 —— 已有配置一行都不用改。
+        ``prefill: false`` 时兜底值没有再落回的必要（表里根本没写过它），所以 ``fallback``
+        默认跟着变成 ``false``；显式写 ``fallback: true`` 是自相矛盾，直接报错。
+        """
+        if self.prefill is None:
+            self.prefill = True
+        if self.fallback is None:
+            self.fallback = bool(self.prefill)
+        if not self.prefill and self.fallback:
+            raise ValueError(
+                f"变量 {self.name!r} 同时写了 prefill: false 与 fallback: true —— 自相矛盾："
+                "既不预填进新表，又要空单元格回落，那 default 到底从哪来？"
+                "两个都想要就删掉 prefill，只要'空就是空'就两个都写 false"
+            )
+        if self.is_derived and (self.prefill is False or self.fallback is False):
+            raise ValueError(f"变量 {self.name!r} 是派生参数（值由表达式算出来），prefill / fallback 都不适用，请删掉")
+        return self
+
+    @property
+    def effective_default(self) -> Any:
+        """**回落**时该用的值：``fallback: false`` 时永远是 ``""``（空就是空）。
+
+        读表处一律用它代替裸的 ``default`` —— 否则"清空单元格表示没有这个字段"表达不出来。
+        """
+        return self.default if self.fallback else ""
+
     @property
     def is_derived(self) -> bool:
         return bool(self.derived)
@@ -275,7 +337,8 @@ class VariableDef(BaseModel):
         """给人和给 Excel 提示用的一句话约束描述。"""
         parts: list[str] = []
         if self.choices:
-            parts.append("可选: " + " / ".join(to_text(item) for item in self.choices))
+            allowed = [to_text(item) for item in self.choices if to_text(item) != ""]
+            parts.append("可选: " + " / ".join(allowed))
         if self.pattern:
             parts.append(f"格式: {self.pattern}")
         if self.min is not None and self.max is not None:
@@ -284,14 +347,20 @@ class VariableDef(BaseModel):
             parts.append(f"范围: >= {_number_text(self.min)}")
         elif self.max is not None:
             parts.append(f"范围: <= {_number_text(self.max)}")
+        if self.allow_blank:
+            parts.append("可以留空")
         return "；".join(parts)
 
     def value_problem(self, value: Any) -> str | None:
         """检查一个取值是否满足约束；返回问题描述，没问题返回 ``None``。
 
-        空值（``""``）在声明了约束时**算不合格** —— ``choices`` 之类的约束意味着"必须有个合法取值"。
+        空值（``""``）在声明了约束时**默认算不合格** —— ``choices`` 之类的约束意味着
+        "必须有个合法取值"。想让"某类型才有的字段"能留空，写 ``allow_blank: true``
+        （不必再往 ``choices`` 里塞空串）。
         """
         text = to_text(value)
+        if self.allow_blank and text.strip() == "":
+            return None
         if self.choices:
             allowed = [to_text(item) for item in self.choices]
             if text not in allowed:
